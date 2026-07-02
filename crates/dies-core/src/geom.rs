@@ -161,13 +161,25 @@ impl FieldGeometry {
     /// Used by commit-drive skills to bail before illegally entering a defense
     /// area (they run walls-only ORCA, so nothing deflects them out).
     pub fn in_defense_area(&self, p: Vector2, margin: f64) -> bool {
+        self.in_own_defense_area(p, margin) || self.in_opp_defense_area(p, margin)
+    }
+
+    /// True if `p` lies within `margin` mm of our own defense (penalty) area
+    /// (own goal at −x, team-relative). The keeper may legally play here.
+    pub fn in_own_defense_area(&self, p: Vector2, margin: f64) -> bool {
         let hl = self.field_length / 2.0;
         let depth = self.penalty_area_depth + margin;
         let half_w = self.penalty_area_width / 2.0 + margin;
-        // Own area (−x)
-        (p.x < -hl + depth && p.y.abs() < half_w)
-            // Opponent area (+x)
-            || (p.x > hl - depth && p.y.abs() < half_w)
+        p.x < -hl + depth && p.y.abs() < half_w
+    }
+
+    /// True if `p` lies within `margin` mm of the opponent's defense (penalty)
+    /// area (opponent goal at +x, team-relative). Off-limits to everyone.
+    pub fn in_opp_defense_area(&self, p: Vector2, margin: f64) -> bool {
+        let hl = self.field_length / 2.0;
+        let depth = self.penalty_area_depth + margin;
+        let half_w = self.penalty_area_width / 2.0 + margin;
+        p.x > hl - depth && p.y.abs() < half_w
     }
 }
 

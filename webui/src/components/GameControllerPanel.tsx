@@ -10,6 +10,7 @@ import {
   Pause,
   Target,
   Navigation,
+  RectangleVertical,
 } from "lucide-react";
 import { GcSimCommand, TeamColor, Vector2 } from "@/bindings";
 import { atom, useAtomValue } from "jotai";
@@ -148,6 +149,24 @@ const GameControllerPanel: React.FC = () => {
         icon: Navigation,
         color: "yellow",
         description: "Ball placement by yellow team",
+      },
+    ],
+    "Yellow Cards": [
+      {
+        command: { type: "YellowCard", data: { team_color: TeamColor.Blue } },
+        label: "Card Blue",
+        icon: RectangleVertical,
+        color: "blue",
+        description:
+          "Show a yellow card to the blue team (lowers max robots for 120s)",
+      },
+      {
+        command: { type: "YellowCard", data: { team_color: TeamColor.Yellow } },
+        label: "Card Yellow",
+        icon: RectangleVertical,
+        color: "yellow",
+        description:
+          "Show a yellow card to the yellow team (lowers max robots for 120s)",
       },
     ],
   };

@@ -63,7 +63,7 @@ const APPROACH_COMMIT_RADIUS: f64 = PLAYER_RADIUS;
 /// How long to wait after arming the reflex for the ball to depart before
 /// declaring a whiff and failing (so a dribbler-on hold can't linger and
 /// accumulate double-touch contact).
-const REFLEX_TIMEOUT: Duration = Duration::from_millis(600);
+const REFLEX_TIMEOUT: Duration = Duration::from_millis(5000);
 /// How long to wait for the ball to leave after commanding a kick before
 /// declaring the kick a whiff and failing.
 const VERIFY_WINDOW: Duration = Duration::from_millis(200);

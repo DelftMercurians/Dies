@@ -53,7 +53,7 @@ fn secure(passer: PlayerId, receiver: PlayerId) -> Step {
 
 fn main() {
     run_scenario(|| {
-        let a = PlayerId::new(0);
+        let a = PlayerId::new(4);
         let b = PlayerId::new(1);
         Scenario::looping(move || {
             vec![

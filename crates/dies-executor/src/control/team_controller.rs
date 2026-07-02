@@ -138,7 +138,13 @@ impl TeamController {
             .filter(|id| !self.removing_players.contains(id))
             .collect();
         let already_removing = self.removing_players.len();
-        let want_removed = active.len().saturating_sub(effective_limit);
+        // Size the target against the *full* controllable set, not `active`
+        // (which already excludes the robots being removed). Using `active`
+        // here subtracts the parked robots back out, so a carded robot that is
+        // still detected (being driven off-field) drops the count back to the
+        // limit, fires the release branch, returns to play, and re-triggers the
+        // removal next frame — oscillating in and out of control every frame.
+        let want_removed = controllable.len().saturating_sub(effective_limit);
         if want_removed > already_removing {
             let n_robots_to_remove = want_removed - already_removing;
             log::info!(
@@ -708,6 +714,21 @@ mod sidelining_tests {
             !removed.contains(&PlayerId::new(9)),
             "radio-lost is never a candidate"
         );
+    }
+
+    #[test]
+    fn stable_across_frames_while_carded_robot_still_detected() {
+        // Regression: a carded robot stays detected while it drives off-field.
+        // Re-running the plan every frame with the same over-limit allowance
+        // must keep the same robot parked, not flip-flop it in and out.
+        let mut c = tc();
+        let r = roster(&[0, 1, 2, 3, 4, 5]);
+        let first = c.plan_sidelining(&r, 5);
+        assert_eq!(first.len(), 1);
+        for _ in 0..5 {
+            let again = c.plan_sidelining(&r, 5);
+            assert_eq!(again, first, "removed set must be stable across frames");
+        }
     }
 
     #[test]

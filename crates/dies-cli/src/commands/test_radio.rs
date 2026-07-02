@@ -176,10 +176,11 @@ pub async fn test_radio(
                     Some(b) => {
                         let radios_up = b.radios_online.iter().filter(|x| **x).count();
                         log::info!(
-                            "--- t={:.0}s | conn={} proto_ok={} fw={} proto={} | ch={}MHz radios={}/{}{:?} max_robots={} | tx={:.0} rx={:.0} loop={:.0} Hz ---",
+                            "--- t={:.0}s | conn={} proto_ok={} fw={} proto={} | ch={}MHz radios={}/{}{:?} max_robots={} | tx={:.0} rx={:.0} loop={:.0} Hz  work_max_us={} overrung_frac={:.2} ---",
                             t, b.connected, b.protocol_ok, b.version, b.protocol_version,
                             b.channel_mhz, radios_up, b.num_radios, b.radios_online, b.max_robots,
                             b.tx_hz.unwrap_or(0.0), b.rx_hz.unwrap_or(0.0), b.loop_hz.unwrap_or(0.0),
+                            b.work_max_us.unwrap_or(0), b.overrun_frac.unwrap_or(0.0)
                         );
                     }
                     None => log::info!("--- t={:.0}s | link: <no base_info / disconnected> ---", t),

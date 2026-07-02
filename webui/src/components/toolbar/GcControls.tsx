@@ -1,5 +1,5 @@
 import React from "react";
-import { Hand, Play, ShieldOff } from "lucide-react";
+import { Hand, Play, RectangleVertical, ShieldOff } from "lucide-react";
 
 import {
   useExecutorSettings,
@@ -7,7 +7,7 @@ import {
   useStatus,
   useWorldState,
 } from "@/api";
-import { GcSimCommand, UiMode } from "@/bindings";
+import { GcSimCommand, TeamColor, UiMode } from "@/bindings";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -96,6 +96,53 @@ const GcControls: React.FC = () => {
               )}
             >
               <Play className="w-3.5 h-3.5 fill-current" />
+            </button>
+          </SimpleTooltip>
+        </div>
+      )}
+
+      {/* Yellow-card injection (sim only): lowers the team's max_allowed_bots
+          for 120s, forcing a robot to be sidelined — for testing removal. */}
+      {isSim && (
+        <div className="inline-flex items-center border border-border-muted h-7 bg-bg-surface">
+          <SimpleTooltip
+            title="Show blue a yellow card (sim) — sidelines a robot for 120s"
+            className="h-full"
+          >
+            <button
+              onClick={() =>
+                send({ type: "YellowCard", data: { team_color: TeamColor.Blue } })
+              }
+              className={cn(
+                "h-full px-2 flex items-center gap-1 text-[10px] font-semibold tracking-wide transition-colors",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
+                "text-text-muted hover:text-team-blue hover:bg-team-blue/10",
+              )}
+            >
+              <RectangleVertical className="w-3 h-3" />B
+            </button>
+          </SimpleTooltip>
+
+          <div className="w-px h-full bg-border-subtle" />
+
+          <SimpleTooltip
+            title="Show yellow a yellow card (sim) — sidelines a robot for 120s"
+            className="h-full"
+          >
+            <button
+              onClick={() =>
+                send({
+                  type: "YellowCard",
+                  data: { team_color: TeamColor.Yellow },
+                })
+              }
+              className={cn(
+                "h-full px-2 flex items-center gap-1 text-[10px] font-semibold tracking-wide transition-colors",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
+                "text-text-muted hover:text-team-yellow hover:bg-team-yellow/10",
+              )}
+            >
+              <RectangleVertical className="w-3 h-3" />Y
             </button>
           </SimpleTooltip>
         </div>

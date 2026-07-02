@@ -14,7 +14,7 @@ use scenarios::prelude::*;
 
 fn main() {
     run_scenario(|| {
-        let r = PlayerId::new(3);
+        let r = PlayerId::new(4);
         Scenario::looping(move || {
             vec![
                 // Step::skill("goto", r, move |h| {
@@ -23,20 +23,21 @@ fn main() {
                 // .timeout(15.0),
                 // Acquire + hold, facing -x (away from goal) so the follow-up
                 // Shoot has to orbit the ball to aim.
-                Step::skill("acquire + hold", r, move |h| {
-                    h.handle_ball(
-                        BallAction::Hold {
-                            heading: Angle::from_radians(PI),
-                        },
-                        AcquirePosition::Default,
-                    );
-                })
-                .timeout(20.0),
+                // Step::skill("acquire + hold", r, move |h| {
+                //     h.handle_ball(
+                //         BallAction::Hold {
+                //             heading: Angle::from_radians(PI),
+                //         },
+                //         AcquirePosition::Default,
+                //     );
+                // })
+                // .timeout(20.0),
                 // Live-swap to Shoot on the same skill instance: aim + kick.
                 Step::skill("shoot at goal", r, move |h| {
                     h.handle_ball(
-                        BallAction::Shoot {
-                            target: Vector2::new(-3000.0, 0.0),
+                        BallAction::Strike {
+                            target: Vector2::new(-4500.0, 0.0),
+                            acquire_first: false,
                         },
                         AcquirePosition::Default,
                     );

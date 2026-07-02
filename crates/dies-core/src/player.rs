@@ -200,6 +200,21 @@ pub struct PlayerGlobalMoveCmd {
     pub preferred_rotation_direction: RotationDirection,
 }
 
+/// QUICK HACK: per-robot kicker charge time (`kick_time_i`, u16 ms) tuned so
+/// each robot shoots close to 5 m/s. Robot 3 tops out at ~4.79 m/s, so it gets
+/// its max charge time. Unknown ids fall back to a sane default.
+fn kick_time_for_id(id: PlayerId) -> u16 {
+    match id.as_u32() {
+        0 => 5100,
+        1 => 5000,
+        2 => 5100,
+        3 => 8000, // maxes out at ~4.79 m/s
+        4 => 5300,
+        5 => 5100,
+        _ => 5100,
+    }
+}
+
 impl PlayerGlobalMoveCmd {
     pub fn zero(id: PlayerId) -> PlayerGlobalMoveCmd {
         PlayerGlobalMoveCmd {
@@ -228,7 +243,7 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
             heading_setpoint: val.heading_setpoint as f32,
             gen_command: glue::Radio_GenericCommand {
                 dribbler_speed_i: val.dribble_speed as i16,
-                kick_time_i: (6_000.0 * val.kick_speed as f32) as u16,
+                kick_time_i: kick_time_for_id(val.id),
                 time_to_kick: 0,
                 smart_kick_couter: val.kick_counter,
                 robot_command: val.robot_cmd.into(),

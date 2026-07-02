@@ -66,9 +66,20 @@ impl HandleBallSkill {
         if is_committed {
             // Commit drops robot + defense-box ORCA — bail rather than illegally
             // strike a ball inside (or wander into) a defense area (see `acquire`).
+            // The keeper is exempt from *our own* box (it may legally play there);
+            // the opponent's box is off-limits to everyone, keeper included.
             if let Some(field) = ctx.world.field_geom.as_ref() {
-                if field.in_defense_area(player_pos, DEFENSE_BAIL_MARGIN())
-                    || field.in_defense_area(ball_pos, BALL_IN_BOX_MARGIN())
+                let is_keeper =
+                    ctx.world.current_game_state.our_keeper_id == Some(ctx.player.id);
+                let banned = |p, m| {
+                    if is_keeper {
+                        field.in_opp_defense_area(p, m)
+                    } else {
+                        field.in_defense_area(p, m)
+                    }
+                };
+                if banned(player_pos, DEFENSE_BAIL_MARGIN())
+                    || banned(ball_pos, BALL_IN_BOX_MARGIN())
                 {
                     self.detail = "bail: defense area".into();
                     return self.fail();
