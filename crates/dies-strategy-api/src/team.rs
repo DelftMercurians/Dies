@@ -154,6 +154,7 @@ impl TeamContext {
     /// ```ignore
     /// ctx.pass(passer_id, receiver_id);              // coordinator picks geometry
     /// ctx.pass(passer_id, receiver_id).target_hint(p); // bias the receive point
+    /// ctx.pass(passer_id, receiver_id).forward_to(goal); // one-timer redirect
     /// ```
     pub fn pass(&mut self, passer: PlayerId, receiver: PlayerId) -> PassBuilder<'_> {
         PassBuilder {
@@ -161,6 +162,7 @@ impl TeamContext {
             passer,
             receiver,
             target_hint: None,
+            forward_to: None,
         }
     }
 
@@ -174,12 +176,19 @@ impl TeamContext {
     }
 
     /// Write a pass command into both members' slots (used by [`PassBuilder`]).
-    fn commit_pass(&mut self, passer: PlayerId, receiver: PlayerId, target_hint: Option<Vector2>) {
+    fn commit_pass(
+        &mut self,
+        passer: PlayerId,
+        receiver: PlayerId,
+        target_hint: Option<Vector2>,
+        forward_to: Option<Vector2>,
+    ) {
         if let Some(h) = self.players.get_mut(&passer) {
             h.set_pending_command(SkillCommand::Pass {
                 partner: receiver,
                 role: PassRole::Passer,
                 target_hint,
+                forward_to,
             });
         }
         if let Some(h) = self.players.get_mut(&receiver) {
@@ -187,6 +196,7 @@ impl TeamContext {
                 partner: passer,
                 role: PassRole::Receiver,
                 target_hint,
+                forward_to,
             });
         }
     }
@@ -236,6 +246,7 @@ pub struct PassBuilder<'a> {
     passer: PlayerId,
     receiver: PlayerId,
     target_hint: Option<Vector2>,
+    forward_to: Option<Vector2>,
 }
 
 impl PassBuilder<'_> {
@@ -245,12 +256,26 @@ impl PassBuilder<'_> {
         self.target_hint = Some(target);
         self
     }
+
+    /// Make the pass a **one-timer**: the receiver waits with the reflex kick
+    /// pre-armed, facing `target`, and redirects the arriving ball toward it the
+    /// instant it trips the breakbeam — it never takes possession. Success then
+    /// reports `forwarded: true` (or `false` if the reflex dudded and the ball
+    /// stuck to the dribbler — still a completed pass).
+    ///
+    /// The coordinator trusts the caller's geometry: keep the deflection angle
+    /// (incoming pass vs receiver→`target`) shallow, roughly ≲60°, or the ball
+    /// glances off the shell. The angle is emitted as a debug value.
+    pub fn forward_to(mut self, target: Vector2) -> Self {
+        self.forward_to = Some(target);
+        self
+    }
 }
 
 impl Drop for PassBuilder<'_> {
     fn drop(&mut self) {
         self.ctx
-            .commit_pass(self.passer, self.receiver, self.target_hint);
+            .commit_pass(self.passer, self.receiver, self.target_hint, self.forward_to);
     }
 }
 

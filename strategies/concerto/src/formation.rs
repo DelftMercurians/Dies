@@ -108,6 +108,43 @@ pub struct CaptureRole {
     pub pinned: Option<PlayerId>,
 }
 
+/// Live per-role enable switches (operator-facing strategy params). A disabled
+/// role is not *pushed* by the generator at all — zeroing importance would not
+/// be enough, since a zero-importance role still absorbs a body once the Spread
+/// floor guarantees one role per robot. Capture is not here: it is suppressed
+/// upstream by the `defense_only` param (which kills `pursuit`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct RoleToggles {
+    /// Shadow wall: wings + central anchor.
+    pub wall: bool,
+    /// Man-marking (one role per opponent).
+    pub mark: bool,
+    /// Wide supporters (Support slots 0..SUPPORT_COUNT).
+    pub support: bool,
+    /// Central box-runner / rebound poacher (Support slot SUPPORT_COUNT).
+    pub striker: bool,
+    /// Deep recycle pivot.
+    pub pivot: bool,
+    /// Rest defender held home while attacking.
+    pub balance: bool,
+    /// Counter outlet / permanent forward (Support slot SUPPORT_COUNT+1).
+    pub outlet: bool,
+}
+
+impl Default for RoleToggles {
+    fn default() -> Self {
+        Self {
+            wall: true,
+            mark: true,
+            support: true,
+            striker: true,
+            pivot: true,
+            balance: true,
+            outlet: true,
+        }
+    }
+}
+
 /// Result of a formation update: positioning for the non-capturing field robots,
 /// plus the capturer if the capture role was filled.
 pub struct FormationOutput {
@@ -142,6 +179,12 @@ pub struct Formation {
     /// loaded once from the environment so the offence/defence balance can be
     /// tuned and swept without recompiling.
     stance: config::StanceConfig,
+    /// Live per-role enable switches, fed each tick from strategy params.
+    toggles: RoleToggles,
+    /// Snapshot for change-detection: a toggle flip must recompute immediately
+    /// (an operator action, not world jitter — don't make it wait out the
+    /// cooldown while robots hold a role that no longer exists).
+    last_toggles: RoleToggles,
 }
 
 impl Default for Formation {
@@ -163,7 +206,14 @@ impl Formation {
             last_capturer: None,
             support_prev: HashMap::new(),
             stance: config::StanceConfig::from_env(),
+            toggles: RoleToggles::default(),
+            last_toggles: RoleToggles::default(),
         }
+    }
+
+    /// Feed the live per-role switches (call every tick, before `update`).
+    pub fn set_toggles(&mut self, toggles: RoleToggles) {
+        self.toggles = toggles;
     }
 
     /// Match every field robot (except the keeper and the reserved plan robots) to
@@ -231,7 +281,10 @@ impl Formation {
         // Capture appearing/disappearing must take effect this tick (don't make a
         // pursuit wait out the cooldown, or leave a stale capturer after we score).
         let capture_presence_changed = self.last_capture.is_some() != capture.is_some();
-        if (self.queued && cooldown_ok) || stale || capture_presence_changed {
+        // A role-toggle flip is likewise immediate: it's an operator action, and
+        // robots may be holding a role that no longer exists.
+        let toggles_changed = self.toggles != self.last_toggles;
+        if (self.queued && cooldown_ok) || stale || capture_presence_changed || toggles_changed {
             self.recompute(world, &assignable, &roles, capture);
             self.last_recalc = now;
             self.queued = false;
@@ -241,6 +294,7 @@ impl Formation {
         self.last_reserved = reserved.to_vec();
         self.last_plan_ctx = plan_ctx.clone();
         self.last_capture = capture.cloned();
+        self.last_toggles = self.toggles;
 
         // ── Emit commands; the capture-role robot is the capturer (driven by the
         //    Driver, so it gets no positioning command). ─────────────────────────
@@ -444,133 +498,137 @@ impl Formation {
         //    the full wall is committed (the importance-space form of leg-2's
         //    `k = SHADOW_MAX`); support is zeroed below so nothing forward outranks
         //    the outer wall slots.
-        let positions = geometry::shadow_arc(
-            ball,
-            own_goal,
-            config::SHADOW_MAX,
-            config::SHADOW_STANDOFF,
-            config::SHADOW_SPACING,
-        );
-        let shadow_center = (config::SHADOW_MAX as f64 - 1.0) / 2.0;
-        // The central shadow on the ball→goal ray is promoted to an "anchor": a
-        // sticky last-line field defender (distinct from the keeper at the mouth).
-        // In open play it is (a) pulled in to the penalty-area edge so a body
-        // always hugs the box, and (b) floored in importance so it doesn't
-        // collapse with ball_threat the way the wing wall does — otherwise when we
-        // commit forward (ball_threat→0) the whole wall drops below the
-        // striker/support roles and the box is left to the keeper alone. On
-        // set-piece defense the centre stays in the contiguous wall (leg-2 fix).
-        let pen_depth = world
-            .field()
-            .map(|f| f.penalty_area_depth)
-            .unwrap_or(1000.0);
-        let anchor_standoff = pen_depth + config::ANCHOR_BOX_MARGIN;
-        // Count-aware wall sizing (the core dynamic-robot-count fix): always emit
-        // the central anchor as the one guaranteed home body, then emit only as
-        // many threat-scaled wings as the field-robot count affords —
-        // `clamp(field_n - forward_reserve - 1, 0, SHADOW_MAX-1)`. A short-handed
-        // team thus thins its wall (e.g. 3 field robots → anchor only) and frees
-        // bodies forward, instead of pinning every robot to a fixed 3-wide wall.
-        // Wings are kept in stable index order (not ball-dependent) so the
-        // generated shadow slot set is constant within a match → no role churn.
-        // Sized from `field_n` (plan-reserved carrier included), never the
-        // assignable count, so the wall keeps its width across a possession flip.
-        // On set-piece defense the full wall is always committed (leg-2).
-        let wing_budget = if setpiece_defense {
-            config::SHADOW_MAX
-        } else {
-            (field_n as f64 - self.stance.forward_reserve - 1.0)
-                .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
-        };
-        let mut wings_pushed = 0usize;
-        for (i, pos) in positions.into_iter().enumerate() {
-            let off_center = (i as f64 - shadow_center).abs();
-            let is_anchor = off_center < 1e-9 && !setpiece_defense;
-            if !is_anchor {
-                if wings_pushed >= wing_budget {
-                    continue;
+        if self.toggles.wall {
+            let positions = geometry::shadow_arc(
+                ball,
+                own_goal,
+                config::SHADOW_MAX,
+                config::SHADOW_STANDOFF,
+                config::SHADOW_SPACING,
+            );
+            let shadow_center = (config::SHADOW_MAX as f64 - 1.0) / 2.0;
+            // The central shadow on the ball→goal ray is promoted to an "anchor": a
+            // sticky last-line field defender (distinct from the keeper at the mouth).
+            // In open play it is (a) pulled in to the penalty-area edge so a body
+            // always hugs the box, and (b) floored in importance so it doesn't
+            // collapse with ball_threat the way the wing wall does — otherwise when we
+            // commit forward (ball_threat→0) the whole wall drops below the
+            // striker/support roles and the box is left to the keeper alone. On
+            // set-piece defense the centre stays in the contiguous wall (leg-2 fix).
+            let pen_depth = world
+                .field()
+                .map(|f| f.penalty_area_depth)
+                .unwrap_or(1000.0);
+            let anchor_standoff = pen_depth + config::ANCHOR_BOX_MARGIN;
+            // Count-aware wall sizing (the core dynamic-robot-count fix): always emit
+            // the central anchor as the one guaranteed home body, then emit only as
+            // many threat-scaled wings as the field-robot count affords —
+            // `clamp(field_n - forward_reserve - 1, 0, SHADOW_MAX-1)`. A short-handed
+            // team thus thins its wall (e.g. 3 field robots → anchor only) and frees
+            // bodies forward, instead of pinning every robot to a fixed 3-wide wall.
+            // Wings are kept in stable index order (not ball-dependent) so the
+            // generated shadow slot set is constant within a match → no role churn.
+            // Sized from `field_n` (plan-reserved carrier included), never the
+            // assignable count, so the wall keeps its width across a possession flip.
+            // On set-piece defense the full wall is always committed (leg-2).
+            let wing_budget = if setpiece_defense {
+                config::SHADOW_MAX
+            } else {
+                (field_n as f64 - self.stance.forward_reserve - 1.0)
+                    .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
+            };
+            let mut wings_pushed = 0usize;
+            for (i, pos) in positions.into_iter().enumerate() {
+                let off_center = (i as f64 - shadow_center).abs();
+                let is_anchor = off_center < 1e-9 && !setpiece_defense;
+                if !is_anchor {
+                    if wings_pushed >= wing_budget {
+                        continue;
+                    }
+                    wings_pushed += 1;
                 }
-                wings_pushed += 1;
+                let stagger = if setpiece_defense {
+                    1.0
+                } else {
+                    config::SHADOW_STAGGER.powf(off_center)
+                };
+                let threat_factor = if is_anchor {
+                    (0.5 + 0.5 * ball_threat).max(config::ANCHOR_THREAT_FLOOR)
+                } else {
+                    0.5 + 0.5 * ball_threat
+                };
+                let position = if is_anchor {
+                    geometry::goal_ray_point(ball, own_goal, anchor_standoff)
+                } else {
+                    pos
+                };
+                roles.push(Role {
+                    id: RoleId {
+                        kind: RoleKind::Shadow,
+                        slot: i as u16,
+                    },
+                    position,
+                    importance: config::IMP_SHADOW_BASE * threat_factor * stagger,
+                    face: ball,
+                });
             }
-            let stagger = if setpiece_defense {
-                1.0
-            } else {
-                config::SHADOW_STAGGER.powf(off_center)
-            };
-            let threat_factor = if is_anchor {
-                (0.5 + 0.5 * ball_threat).max(config::ANCHOR_THREAT_FLOOR)
-            } else {
-                0.5 + 0.5 * ball_threat
-            };
-            let position = if is_anchor {
-                geometry::goal_ray_point(ball, own_goal, anchor_standoff)
-            } else {
-                pos
-            };
-            roles.push(Role {
-                id: RoleId {
-                    kind: RoleKind::Shadow,
-                    slot: i as u16,
-                },
-                position,
-                importance: config::IMP_SHADOW_BASE * threat_factor * stagger,
-                face: ball,
-            });
         }
 
         // 2. Marking — one role per opponent, slot = stable opponent index.
-        let mut opp_ids: Vec<PlayerId> = world.opp_player_ids();
-        opp_ids.sort_by_key(|id| id.as_u32());
-        for (slot, oid) in opp_ids.iter().enumerate() {
-            // A plan robot is already pressuring this opponent — don't double up.
-            if engaged_opps.contains(oid) {
-                continue;
-            }
-            if let Some(opp) = world.opp_player(*oid) {
-                let opp_threat = geometry::threat(
-                    opp.position,
-                    own_goal,
-                    config::THREAT_GOAL_NEAR,
-                    config::THREAT_GOAL_FAR,
-                );
-                // Fix A: no hard threat cutoff. Mark importance ramps to ~0 with
-                // opp_threat·openness, so a far opponent's mark simply loses the
-                // match (staffed only if a robot has nothing better) instead of
-                // blinking in/out at a threshold — one fewer role-set discontinuity.
-                // Stand off the opponent toward our own goal (goal-side marking),
-                // and never cross midfield chasing them onto the opponent half.
-                let to_goal = own_goal - opp.position;
-                let n_tg = to_goal.norm();
-                let mut pos = if n_tg > 1e-6 {
-                    opp.position + to_goal / n_tg * config::MARK_STANDOFF
-                } else {
-                    opp.position
-                };
-                pos.x = pos.x.min(config::MARK_MAX_X);
-                // How open is the ball→opponent lane (can this opponent receive a
-                // pass and become a threat)? Exclude the opponent itself, which sits
-                // at the lane endpoint and would otherwise read as a blocker.
-                let others: Vec<PlayerState> = world
-                    .opp_players()
-                    .iter()
-                    .filter(|p| p.id != *oid)
-                    .cloned()
-                    .collect();
-                let openness = geometry::lane_openness(
-                    ball,
-                    opp.position,
-                    &others,
-                    config::MARK_LANE_CORRIDOR,
-                );
-                roles.push(Role {
-                    id: RoleId {
-                        kind: RoleKind::Mark,
-                        slot: slot as u16,
-                    },
-                    position: pos,
-                    importance: config::IMP_MARK_BASE * opp_threat * openness,
-                    face: ball,
-                });
+        if self.toggles.mark {
+            let mut opp_ids: Vec<PlayerId> = world.opp_player_ids();
+            opp_ids.sort_by_key(|id| id.as_u32());
+            for (slot, oid) in opp_ids.iter().enumerate() {
+                // A plan robot is already pressuring this opponent — don't double up.
+                if engaged_opps.contains(oid) {
+                    continue;
+                }
+                if let Some(opp) = world.opp_player(*oid) {
+                    let opp_threat = geometry::threat(
+                        opp.position,
+                        own_goal,
+                        config::THREAT_GOAL_NEAR,
+                        config::THREAT_GOAL_FAR,
+                    );
+                    // Fix A: no hard threat cutoff. Mark importance ramps to ~0 with
+                    // opp_threat·openness, so a far opponent's mark simply loses the
+                    // match (staffed only if a robot has nothing better) instead of
+                    // blinking in/out at a threshold — one fewer role-set discontinuity.
+                    // Stand off the opponent toward our own goal (goal-side marking),
+                    // and never cross midfield chasing them onto the opponent half.
+                    let to_goal = own_goal - opp.position;
+                    let n_tg = to_goal.norm();
+                    let mut pos = if n_tg > 1e-6 {
+                        opp.position + to_goal / n_tg * config::MARK_STANDOFF
+                    } else {
+                        opp.position
+                    };
+                    pos.x = pos.x.min(config::MARK_MAX_X);
+                    // How open is the ball→opponent lane (can this opponent receive a
+                    // pass and become a threat)? Exclude the opponent itself, which sits
+                    // at the lane endpoint and would otherwise read as a blocker.
+                    let others: Vec<PlayerState> = world
+                        .opp_players()
+                        .iter()
+                        .filter(|p| p.id != *oid)
+                        .cloned()
+                        .collect();
+                    let openness = geometry::lane_openness(
+                        ball,
+                        opp.position,
+                        &others,
+                        config::MARK_LANE_CORRIDOR,
+                    );
+                    roles.push(Role {
+                        id: RoleId {
+                            kind: RoleKind::Mark,
+                            slot: slot as u16,
+                        },
+                        position: pos,
+                        importance: config::IMP_MARK_BASE * opp_threat * openness,
+                        face: ball,
+                    });
+                }
             }
         }
 
@@ -611,46 +669,48 @@ impl Formation {
         };
         // Placed greedily; each supporter excludes spots already claimed by an
         // earlier one (see `taken` below) so two never converge on the same outlet.
-        let mut taken: Vec<Vector2> = Vec::with_capacity(support_count);
-        for slot in 0..support_count {
-            // 0 → right-flank bias, 1 → left-flank bias, 2 → centre. The sign is only
-            // a soft tie-break now; the `taken` exclusion is what structurally keeps
-            // supporters from resolving to the same `best_support_pos`.
-            let sign = match slot {
-                0 => 1.0,
-                1 => -1.0,
-                _ => 0.0,
-            };
-            let slot_key = slot as u16;
-            let pos = geometry::best_support_pos(
-                ball,
-                world.opp_players(),
-                sign,
-                half_len,
-                half_wid,
-                config::SUPPORT_LANE_CORRIDOR,
-                opp_pen_depth,
-                opp_pen_half_width,
-                attacking,
-                config::SUPPORT_FLANK_Y_FRACS,
-                config::SUPPORT_GOAL_LINE_SETBACK,
-                &taken,
-                config::SUPPORT_MIN_SEPARATION,
-                self.support_prev.get(&slot_key).copied(),
-                config::SUPPORT_STICKINESS,
-                config::SUPPORT_STICKY_RADIUS,
-            );
-            self.support_prev.insert(slot_key, pos);
-            taken.push(pos);
-            roles.push(Role {
-                id: RoleId {
-                    kind: RoleKind::Support,
-                    slot: slot as u16,
-                },
-                position: pos,
-                importance: support_imp,
-                face: world.opp_goal_center(),
-            });
+        if self.toggles.support {
+            let mut taken: Vec<Vector2> = Vec::with_capacity(support_count);
+            for slot in 0..support_count {
+                // 0 → right-flank bias, 1 → left-flank bias, 2 → centre. The sign is only
+                // a soft tie-break now; the `taken` exclusion is what structurally keeps
+                // supporters from resolving to the same `best_support_pos`.
+                let sign = match slot {
+                    0 => 1.0,
+                    1 => -1.0,
+                    _ => 0.0,
+                };
+                let slot_key = slot as u16;
+                let pos = geometry::best_support_pos(
+                    ball,
+                    world.opp_players(),
+                    sign,
+                    half_len,
+                    half_wid,
+                    config::SUPPORT_LANE_CORRIDOR,
+                    opp_pen_depth,
+                    opp_pen_half_width,
+                    attacking,
+                    config::SUPPORT_FLANK_Y_FRACS,
+                    config::SUPPORT_GOAL_LINE_SETBACK,
+                    &taken,
+                    config::SUPPORT_MIN_SEPARATION,
+                    self.support_prev.get(&slot_key).copied(),
+                    config::SUPPORT_STICKINESS,
+                    config::SUPPORT_STICKY_RADIUS,
+                );
+                self.support_prev.insert(slot_key, pos);
+                taken.push(pos);
+                roles.push(Role {
+                    id: RoleId {
+                        kind: RoleKind::Support,
+                        slot: slot as u16,
+                    },
+                    position: pos,
+                    importance: support_imp,
+                    face: world.opp_goal_center(),
+                });
+            }
         }
 
         // 3b. Central box-runner — a single advanced body just in front of the
@@ -666,7 +726,7 @@ impl Formation {
         // keeps the same robot central, and the change no longer reads as a tactical
         // role flip. Importance scales with `af` (≈0 on set-piece defense, so it is
         // unstaffed there too) so the central body fades in only as we commit forward.
-        {
+        if self.toggles.striker {
             let front_x =
                 world.opp_goal_center().x - (opp_pen_depth + config::BOX_RUNNER_FRONT_MARGIN);
             // Bias to the side away from the ball; default to +y when the ball is
@@ -756,7 +816,7 @@ impl Formation {
         // central body does. Only while attacking (ball advanced, our goal safe),
         // and only when passing is enabled at all — with PASS_SUCCESS_BASE = 0 no
         // recycle can ever be played to it, so the body is freed instead.
-        if attacking && config::PASS_SUCCESS_BASE > 0.0 {
+        if self.toggles.pivot && attacking && config::PASS_SUCCESS_BASE > 0.0 {
             let y_mag = ball.y.abs().clamp(config::PIVOT_Y_MIN, config::PIVOT_Y_MAX);
             let py = if ball.y >= 0.0 { y_mag } else { -y_mag };
             let px = (ball.x - config::PIVOT_SETBACK).clamp(-half_len + 400.0, half_len - 400.0);
@@ -783,7 +843,7 @@ impl Formation {
         // pivot it replaces); when defending, the 3-wide wall already lights up.
         // Count gate: a short-handed team (field_n < balance_min_bots) can't spare a
         // dedicated rest defender on top of the anchor, so that body goes forward.
-        if attacking && (field_n as f64) >= self.stance.balance_min_bots {
+        if self.toggles.balance && attacking && (field_n as f64) >= self.stance.balance_min_bots {
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Balance,
@@ -844,7 +904,7 @@ impl Formation {
             ball_threat,
         )
         .max(outlet_floor);
-        if !setpiece_defense && outlet_gate > 0.0 {
+        if self.toggles.outlet && !setpiece_defense && outlet_gate > 0.0 {
             let far = if ball.y > 0.0 { -1.0 } else { 1.0 };
             let pos = Vector2::new(
                 config::OUTLET_X.clamp(-half_len + 400.0, half_len - 400.0),
@@ -1107,6 +1167,38 @@ mod tests {
         assert!(engaged
             .iter()
             .any(|r| r.id.kind == RoleKind::Mark && r.id.slot == 1));
+    }
+
+    #[test]
+    fn role_toggles_remove_roles_from_generation() {
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, -2000.0, 1000.0),
+            player(3, 0.0, 0.0),
+        ];
+        let opp = vec![player(11, 500.0, 0.0), player(12, -1000.0, 1000.0)];
+        let world = world_with(own, opp, 1);
+        let mut f = Formation::new();
+
+        let on = f.generate_roles(&world, &PlanContext::default(), None, 3, 3);
+        assert!(on.iter().any(|r| r.id.kind == RoleKind::Shadow));
+        assert!(on.iter().any(|r| r.id.kind == RoleKind::Mark));
+        assert!(on.iter().any(|r| r.id.kind == RoleKind::Support));
+
+        f.set_toggles(RoleToggles {
+            wall: false,
+            mark: false,
+            support: false,
+            striker: false,
+            pivot: false,
+            balance: false,
+            outlet: false,
+        });
+        let off = f.generate_roles(&world, &PlanContext::default(), None, 3, 3);
+        // Only the Spread floor survives — one role per assignable robot, so
+        // nobody is left roleless when the whole catalog is switched off.
+        assert!(off.iter().all(|r| r.id.kind == RoleKind::Spread));
+        assert_eq!(off.len(), 3);
     }
 
     #[test]

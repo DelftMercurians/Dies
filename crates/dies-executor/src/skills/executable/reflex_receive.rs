@@ -61,6 +61,11 @@ pub struct ReflexReceiveSkill {
     /// Whether the ball ever reached the mouth (gates the departure success edge, so
     /// a ball whizzing past at range never counts as a fired one-timer).
     was_near: bool,
+    /// Suppresses the skill's own [`ARRIVE_TIMEOUT`] (mirror of the strike's
+    /// hold-fire gate): set by the pass coordinator, which drives this skill
+    /// directly through a gated Stage that can outlive the standalone budget and
+    /// owns every pass-level clock itself. Standalone command use is unaffected.
+    no_arrive_timeout: bool,
 }
 
 impl ReflexReceiveSkill {
@@ -78,7 +83,29 @@ impl ReflexReceiveSkill {
             status: SkillStatus::Running,
             first_tick: None,
             was_near: false,
+            no_arrive_timeout: false,
         }
+    }
+
+    /// Update the geometry in place (used when composed inside the pass
+    /// coordinator, which feeds fresh ball/intercept/forward points each frame).
+    pub fn reconfigure(
+        &mut self,
+        from_pos: Vector2,
+        intercept_pos: Vector2,
+        target: Vector2,
+        capture_limit: f64,
+    ) {
+        self.from_pos = from_pos;
+        self.intercept_pos = intercept_pos;
+        self.target = target;
+        self.capture_limit = capture_limit;
+    }
+
+    /// Suppress the skill's own no-arrival timeout (see the field doc).
+    /// Coordinator-only.
+    pub(crate) fn set_no_arrive_timeout(&mut self, on: bool) {
+        self.no_arrive_timeout = on;
     }
 
     fn fail(&mut self) -> SkillProgress {
@@ -157,7 +184,7 @@ impl ExecutableSkill for ReflexReceiveSkill {
             }
         }
 
-        if now - first > ARRIVE_TIMEOUT() {
+        if !self.no_arrive_timeout && now - first > ARRIVE_TIMEOUT() {
             log::warn!("reflex_receive: no ball arrived, disarming");
             return self.fail();
         }

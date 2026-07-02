@@ -64,8 +64,23 @@ def _read_parquet(b):
 
 
 def _read_arrow(b):
+    """Read an Arrow IPC stream, tolerating a torn tail.
+
+    Live recordings (and runs killed mid-write) can end in a partial batch;
+    keep every complete batch instead of failing the whole load.
+    """
     with ipc.open_stream(io.BytesIO(b) if isinstance(b, bytes) else b) as r:
-        return r.read_all().to_pandas()
+        batches = []
+        while True:
+            try:
+                batches.append(r.read_next_batch())
+            except StopIteration:
+                break
+            except OSError:  # pyarrow raises OSError on a truncated message
+                break
+        import pyarrow as pa
+
+        return pa.Table.from_batches(batches, schema=r.schema).to_pandas()
 
 
 def _split_vec2(wide):

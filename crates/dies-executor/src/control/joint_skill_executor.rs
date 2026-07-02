@@ -125,11 +125,14 @@ impl JointSkillExecutor {
             }
             if let Some((reason, ball_state)) = cancel {
                 coord.force_terminate(reason, ball_state);
-            } else if let SlotReq::Pass { .. } = classify(commands.get(&passer)) {
-                // Refresh the target hint from the passer's command if present.
-                if let Some(Some(SkillCommand::Pass { target_hint, .. })) = commands.get(&passer) {
-                    coord.update_target_hint(*target_hint);
-                }
+            } else if let Some(Some(SkillCommand::Pass {
+                target_hint,
+                forward_to,
+                ..
+            })) = commands.get(&passer)
+            {
+                // Refresh the hints from the passer's command if present.
+                coord.update_hints(*target_hint, *forward_to);
             }
         }
 
@@ -165,16 +168,20 @@ impl JointSkillExecutor {
             if matched {
                 // Create exactly once, from the lower id.
                 if id < partner {
-                    let target_hint = match commands.get(&id) {
-                        Some(Some(SkillCommand::Pass { target_hint, .. })) => *target_hint,
-                        _ => None,
+                    let (target_hint, forward_to) = match commands.get(&id) {
+                        Some(Some(SkillCommand::Pass {
+                            target_hint,
+                            forward_to,
+                            ..
+                        })) => (*target_hint, *forward_to),
+                        _ => (None, None),
                     };
                     let (p, r) = match role {
                         PassRole::Passer => (id, partner),
                         PassRole::Receiver => (partner, id),
                     };
                     self.coordinators
-                        .push(PassCoordinator::new(p, r, target_hint));
+                        .push(PassCoordinator::new(p, r, target_hint, forward_to));
                     covered.insert(id);
                     covered.insert(partner);
                     // Fresh pass — drop any stale terminal status/result.
@@ -320,6 +327,7 @@ mod tests {
             partner: PlayerId::new(partner),
             role,
             target_hint: None,
+            forward_to: None,
         })
     }
 
@@ -393,12 +401,13 @@ mod tests {
     #[test]
     fn reassigning_one_side_orphans_the_pass() {
         let mut jse = JointSkillExecutor::new();
-        // Passer holds the ball so the pass survives Secure into Setup, where the
-        // reassignment can orphan it.
-        let mut passer = player(0, Vector2::new(0.0, 0.0), 0.0);
-        passer.breakbeam_ball_detected = true;
+        // Free ball near the passer: the pass stays alive in Stage (the passer
+        // never holds), so the reassignment can orphan it.
         let w = world(
-            vec![passer, player(1, Vector2::new(2000.0, 0.0), 0.0)],
+            vec![
+                player(0, Vector2::new(0.0, 0.0), 0.0),
+                player(1, Vector2::new(2000.0, 0.0), 0.0),
+            ],
             Some(Vector2::new(60.0, 0.0)),
             0.016,
         );

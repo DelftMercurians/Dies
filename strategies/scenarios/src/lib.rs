@@ -186,6 +186,61 @@ impl Step {
         step
     }
 
+    /// Like [`Step::pass`] but as a **one-timer**: the receiver redirects the
+    /// arriving ball toward `forward_to` via the pre-armed reflex kick instead
+    /// of catching it. Succeeds on the typed `PassResult::Success` whether the
+    /// deflection fired or the reflex dudded into a catch (the distinction is
+    /// logged).
+    pub fn pass_forward(
+        passer: PlayerId,
+        receiver: PlayerId,
+        target_hint: Option<Vector2>,
+        forward_to: Vector2,
+    ) -> Self {
+        let mut armed = false;
+        let mut frames: u32 = 0;
+        let mut step = Step::new(
+            format!("one-timer {passer}->{receiver}"),
+            "Pass",
+            move |ctx| {
+                frames += 1;
+                // Issue the pass into both slots (committed on the builder's drop).
+                let builder = ctx.pass(passer, receiver).forward_to(forward_to);
+                if let Some(hint) = target_hint {
+                    builder.target_hint(hint);
+                } else {
+                    drop(builder);
+                }
+                if ctx
+                    .player_ref(passer)
+                    .map(|p| p.skill_status() == SkillStatus::Running)
+                    .unwrap_or(false)
+                {
+                    armed = true;
+                }
+                if armed || frames > ARM_GRACE_FRAMES {
+                    if let Some(result) = ctx.pass_result(passer) {
+                        return match result {
+                            PassResult::Success { forwarded, .. } => {
+                                if !*forwarded {
+                                    tracing::info!("one-timer dudded into a catch");
+                                }
+                                StepOutcome::Succeeded
+                            }
+                            PassResult::Failure { reason, .. } => {
+                                tracing::warn!("one-timer pass failed: {reason:?}");
+                                StepOutcome::Failed
+                            }
+                        };
+                    }
+                }
+                StepOutcome::Running
+            },
+        );
+        step.players = vec![passer, receiver];
+        step
+    }
+
     /// Idle for `seconds` of world time, then succeed. Useful for letting the
     /// field settle between skills or pacing a loop.
     pub fn wait(seconds: f64) -> Self {

@@ -1,14 +1,18 @@
-//! Bounce the ball between two robots with the joint pass coordinator — on a
-//! loop. Exercises `ctx.pass`, the typed `PassResult`, and the drive-through
-//! reflex-strike release.
+//! One-timer passes on a loop: pass to a teammate that redirects the ball
+//! toward the goal with the pre-armed reflex kick — the pass→shot chain with
+//! zero handling latency. Exercises `ctx.pass(..).forward_to(..)`, the
+//! coordinator's one-timer mode, and the `Success { forwarded }` verdict.
 //!
-//! Self-seeding: the pass never holds the ball and never chases a loose one —
-//! it fails fast if the passer already possesses the ball or if the ball is too
-//! far away. So between passes the next passer first *frees* the ball: after a
-//! catch the ball sits on the receiver's dribbler, and backing away from it IS
-//! the release (no skill ever "hands over" a held ball). The `release` step
-//! backs the robot off to a comfortable staging distance (still well inside the
-//! pass's start-distance guard), then the pass stages and strikes.
+//! Geometry: the receive point is hinted off the ball→goal line so the
+//! deflection angle (incoming pass vs receiver→goal) stays shallow (~45°) —
+//! the coordinator trusts the caller here and only emits
+//! `pass.<a>-<b>.deflection_deg` for observability. After each shot the ball
+//! usually ends up out of play / in the goal and the auto-ref re-centers it,
+//! so each loop iteration starts from a similar layout.
+//!
+//! Self-seeding works like the catch-pass scenario (`pass.rs`): the pass never
+//! holds and never chases, so between passes the next passer first *frees* the
+//! ball by backing off to a comfortable staging distance.
 
 use scenarios::prelude::*;
 
@@ -16,6 +20,12 @@ use scenarios::prelude::*;
 /// the coordinator's staging point (~200 mm) but well inside its start-distance
 /// guard (600 mm).
 const FREE_DIST: f64 = 400.0;
+
+/// Receive points for the one-timer, offset laterally from the center→goal
+/// line: from a ball near midfield the incoming pass and the outgoing
+/// redirect toward [`OPP_GOAL`] meet at a shallow (~45°) deflection.
+const HINT_HIGH: Vector2 = Vector2::new(2500.0, 900.0);
+const HINT_LOW: Vector2 = Vector2::new(2500.0, -900.0);
 
 /// Free the ball for `passer`: if the robot holds it (or is pressed against
 /// it), back straight away from the ball to [`FREE_DIST`]; if it is too far,
@@ -51,11 +61,11 @@ fn main() {
         Scenario::looping(move || {
             vec![
                 release(a),
-                Step::pass(a, b, None).timeout(15.0),
-                Step::wait(10.0),
+                Step::pass_forward(a, b, Some(HINT_HIGH), OPP_GOAL).timeout(30.0),
+                Step::wait(3.0),
                 release(b),
-                Step::pass(b, a, None).timeout(15.0),
-                Step::wait(10.0),
+                Step::pass_forward(b, a, Some(HINT_LOW), OPP_GOAL).timeout(30.0),
+                Step::wait(3.0),
             ]
         })
     });

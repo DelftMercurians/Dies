@@ -141,21 +141,47 @@ pub enum SkillCommand {
     /// other named as `partner`. A dedicated joint coordinator (ticked once per
     /// frame, not per-player) owns both robots through one state machine.
     ///
+    /// **Release mechanics**: the passer NEVER holds the ball. It stages behind
+    /// the free ball on the pass axis (hold-fire) while the receiver gets into
+    /// position, then releases via the drive-through reflex strike
+    /// ([`BallAction::Strike`] with `acquire_first: false`) — a single
+    /// firmware-timed contact with verified departure. Consequences:
+    /// - The ball must be FREE and near the passer at pass start. Commanding a
+    ///   pass while the passer holds the ball fails fast with
+    ///   [`PassFailure::BallLost`] (ball handling lives entirely in
+    ///   `HandleBall`; release it by moving away first).
+    /// - A whiff fails BOTH robots jointly and immediately
+    ///   ([`PassFailure::KickFailed`]) — the receiver never chases the ball back
+    ///   toward the passer; the strategy re-decides.
+    ///
     /// **Parameters**:
     /// - `partner`: The other robot in the pass (receiver if this is the passer,
     ///   passer if this is the receiver)
     /// - `role`: Whether this robot is the `Passer` or `Receiver`
     /// - `target_hint`: Optional bias for where the receiver should end up; if
     ///   `None`, the coordinator computes the intercept geometry itself
+    /// - `forward_to`: `None` = catch pass (receiver secures the ball on its
+    ///   dribbler). `Some(point)` = **one-timer**: the receiver waits with the
+    ///   firmware reflex kick pre-armed, facing `point`, and redirects the ball
+    ///   toward it the instant it trips the breakbeam — zero handling latency.
+    ///   The coordinator TRUSTS the strategy to request sane deflection geometry
+    ///   (the incoming ball must still reach the mouth while the robot faces the
+    ///   outgoing direction — keep the deflection angle shallow, roughly ≲60°);
+    ///   it only emits the angle as a debug value.
     ///
     /// **Completion** (joint - both robots report the same status):
-    /// - `Succeeded` when the receiver's breakbeam (or vision fallback) confirms possession
+    /// - `Succeeded` when the receiver's breakbeam (or vision fallback) confirms
+    ///   possession (`forwarded: false`), or — in one-timer mode — when the
+    ///   deflection is verified (ball arrived at the mouth then departed fast;
+    ///   `forwarded: true`). A one-timer whose reflex duds but where the ball
+    ///   ends up seated on the receiver still succeeds as a catch.
     /// - `Failed` with a typed [`PassResult`] reason otherwise (the coordinator
     ///   never leaves a robot stuck; both are released on any terminal outcome)
     Pass {
         partner: PlayerId,
         role: PassRole,
         target_hint: Option<Vector2>,
+        forward_to: Option<Vector2>,
     },
 
     /// Strip the ball off an opponent that is holding it on its dribbler.
@@ -291,8 +317,12 @@ pub enum PassRole {
 /// `pass_results` map on the world update.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PassResult {
-    /// The receiver captured the ball.
-    Success { receiver: PlayerId },
+    /// The pass reached the receiver. `forwarded` distinguishes how it ended:
+    /// `false` = the ball is seated on the receiver's dribbler (a catch — also
+    /// the outcome of a one-timer whose reflex dudded but where the ball still
+    /// stuck); `true` = the one-timer fired and the ball was verified departing
+    /// onward toward the pass's `forward_to` point.
+    Success { receiver: PlayerId, forwarded: bool },
     /// The pass failed; see `reason`. Both robots have been released cleanly.
     Failure {
         reason: PassFailure,
@@ -304,9 +334,15 @@ pub enum PassResult {
 /// every other terminal condition is one of these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PassFailure {
-    /// The passer never secured the ball (not within secure distance, or lost it
-    /// before the kick). The pass never chases a loose ball.
+    /// The ball was not passable: too far from the passer at start, already on
+    /// the passer's dribbler (a pass never starts from possession), moved away /
+    /// taken by an opponent while staging, or lost from vision. The pass never
+    /// chases a loose ball.
     BallLost,
+    /// The strike never connected: the reflex kick whiffed (armed but the ball
+    /// never departed) or the drive-through had to bail. The ball is still loose
+    /// near the passer; the strategy re-decides — the receiver never chases.
+    KickFailed,
     /// The ball was kicked but the receiver could not reach the intercept point
     /// (trajectory diverged beyond the capture window).
     ReceiverMissed,

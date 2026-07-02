@@ -260,8 +260,16 @@ pub struct SimulationConfig {
     // PHYSICAL CONSTANTS
     /// Gravity vector in mm/s^2
     pub gravity: Vector<f64>,
-    /// Angular damping (rolling friction) on the ball
+    /// Linear damping on the ball (rapier, proportional to speed). Kept at 0 —
+    /// rolling friction is modelled by [`Self::ball_roll_decel`] instead, because
+    /// proportional decay has the wrong shape (kills fast balls in the first
+    /// metre, lets slow balls creep forever).
     pub ball_damping: f64,
+    /// Constant rolling deceleration (mm/s²) applied to the ball's planar
+    /// velocity each step — real carpet friction: speed falls linearly with
+    /// time, v² linearly with distance. Calibrated against the 2026-07-02 real
+    /// match logs (`.analysis/ball_speed_real.py`): median ≈ 1310 mm/s².
+    pub ball_roll_decel: f64,
     /// Time between vision updates
     pub vision_update_step: f64,
 
@@ -337,7 +345,8 @@ impl Default for SimulationConfig {
         SimulationConfig {
             // PHYSICAL CONSTANTS
             gravity: Vector::z() * -9.81 * 1000.0,
-            ball_damping: 0.8,
+            ball_damping: 0.0,
+            ball_roll_decel: 1310.0,
             vision_update_step: 1.0 / 40.0,
 
             // ROBOT MODEL PARAMETERS
@@ -345,7 +354,9 @@ impl Default for SimulationConfig {
             player_height: 140.0,
             dribbler_radius: BALL_RADIUS + 120.0,
             dribbler_angle: PI / 6.0,
-            kicker_strength: 300000.0,
+            // Calibrated against the 2026-07-02 real match logs: real launch
+            // speed p50 ≈ 4310 mm/s; 300k launched at ≈ 3960.
+            kicker_strength: 326000.0,
             player_cmd_timeout: 0.1,
             dribbler_strength: 0.6,
             command_delay: 30.0 / 1000.0,
@@ -2497,7 +2508,7 @@ impl Simulation {
         self.query_pipeline
             .update(&self.rigid_body_set, &self.collider_set);
 
-        // Reset ball forces
+        // Reset ball forces + apply rolling friction
         if let Some(ball) = self.ball.as_ref() {
             let ball_body = self
                 .rigid_body_set
@@ -2505,6 +2516,17 @@ impl Simulation {
                 .unwrap();
             ball_body.reset_forces(true);
             ball_body.set_linear_damping(self.config.ball_damping);
+            // Constant-decel rolling friction on the planar velocity (see the
+            // `ball_roll_decel` doc — proportional damping has the wrong decay
+            // shape). Applied regardless of the micro-bounce z-state; airborne
+            // balls are rare and flat kicks dominate.
+            let v = *ball_body.linvel();
+            let speed = (v.x * v.x + v.y * v.y).sqrt();
+            if speed > 1e-6 {
+                let dec = self.config.ball_roll_decel * self.integration_parameters.dt;
+                let scale = (speed - dec).max(0.0) / speed;
+                ball_body.set_linvel(Vector::new(v.x * scale, v.y * scale, v.z), true);
+            }
         }
 
         // Update players
@@ -3353,8 +3375,17 @@ impl SimulationBuilder {
 impl Default for SimulationBuilder {
     fn default() -> Self {
         // By default we add 6 players on each side, lined up on their respective
-        // half of the field
-        let mut builder = SimulationBuilder::new(SimulationConfig::default());
+        // half of the field.
+        //
+        // Realism (sim2real hardware noise) is env-opt-in here, like in headless
+        // self-play: setting `DIES_REALISM_LEVEL` / `DIES_REALISM_*` degrades the
+        // default (interactive/webui) sim without a recompile. With no env set
+        // this is the perfect actuator, so tests and normal runs are unaffected.
+        let config = SimulationConfig {
+            realism: RealismConfig::from_env(),
+            ..Default::default()
+        };
+        let mut builder = SimulationBuilder::new(config);
         let field_width = builder.sim.config.field_geometry.field_width / 2.0;
         let field_length = builder.sim.config.field_geometry.field_length / 2.0;
         let boundary_width = builder.sim.config.field_geometry.boundary_width;

@@ -409,6 +409,14 @@ pub struct HandleBallSkill {
     /// Per-command strategy opt-in for firmware magnet capture (default `true`).
     /// ANDed with the `MAGNET_ENABLED` tunable and the robot's ToF capability.
     magnet: bool,
+    /// External hold-fire gate for the drive-through `Strike`: while set, the
+    /// commit latch is never engaged, so the skill stages behind the ball
+    /// (aimed, `avoid_ball` on, kicker disarmed) indefinitely. Set only by the
+    /// pass coordinator, which drives this skill directly — it stages the passer
+    /// and releases the strike once the receiver is ready. Timer-safe: the
+    /// drive-through has no approach timeout and `REFLEX_TIMEOUT` only starts
+    /// on the commit that the gate suppresses.
+    strike_gated: bool,
     status: SkillStatus,
     stage: Stage,
     /// World time (`t_received`, s) of the first tick. Sim-clock based for
@@ -455,6 +463,7 @@ impl HandleBallSkill {
             action,
             acquire,
             magnet,
+            strike_gated: false,
             status: SkillStatus::Running,
             stage: Stage::Acquire,
             first_tick: None,
@@ -476,11 +485,16 @@ impl HandleBallSkill {
         }
     }
 
-    /// Reconfigure (used by the pass coordinator's Secure phase, which drives this
-    /// skill directly rather than through the executor).
+    /// Reconfigure (used by the pass coordinator, which drives this skill
+    /// directly rather than through the executor).
     pub fn reconfigure(&mut self, action: BallAction, acquire: AcquirePosition) {
         self.action = action;
         self.acquire = acquire;
+    }
+
+    /// Set the strike hold-fire gate (see the field doc). Coordinator-only.
+    pub(crate) fn set_strike_gate(&mut self, gated: bool) {
+        self.strike_gated = gated;
     }
 
     /// Whether to engage firmware magnet capture this tick. All gates ANDed:
@@ -728,7 +742,10 @@ impl ExecutableSkill for HandleBallSkill {
             return SkillProgress::Continue(input);
         };
         let ball_pos = ball.position.xy();
-        let ball_vel_norm = ball.velocity.norm();
+        // Planar speed: the sim ball micro-bounces in place (large transient
+        // |vz| with zero ground speed), so the 3-D norm must not feed the
+        // kick-departure verify.
+        let ball_vel_norm = ball.velocity.xy().norm();
 
         // Debounced silent re-acquire if the ball is lost during an act stage.
         // Distance-dependent grace: a far blow-out re-acquires fast; a ball still
@@ -1040,6 +1057,81 @@ mod tests {
             acquire_first: false,
         });
         assert!(s.shot().is_none());
+    }
+
+    #[test]
+    fn gated_strike_stages_and_never_arms_until_ungated() {
+        // The pass coordinator's hold-fire gate: a drive-through strike parked
+        // in commit-ready geometry (staged 200 mm behind the ball on the strike
+        // axis) must NOT latch/arm while gated — it stages with ball avoidance
+        // on. Ungating the same geometry commits and arms the reflex next tick.
+        let target = Vector2::new(2000.0, 0.0);
+        let mut s = skill(BallAction::Strike {
+            target,
+            acquire_first: false,
+        });
+        s.set_strike_gate(true);
+        let p = player(0, Vector2::new(-200.0, 0.0), 0.0);
+        let ball = Vector2::new(0.0, 0.0);
+        let tc = team_ctx();
+
+        let w0 = world_at(&p, ball, 0.0);
+        match s.tick(ctx(&w0, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    !matches!(input.kicker, KickerControlInput::ReflexKick),
+                    "gated strike must not arm the reflex"
+                );
+                assert!(input.avoid_ball, "gated strike must keep ball avoidance");
+            }
+            other => panic!("expected Continue while gated, got {other:?}"),
+        }
+
+        s.set_strike_gate(false);
+        let w1 = world_at(&p, ball, 0.016);
+        match s.tick(ctx(&w1, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    matches!(input.kicker, KickerControlInput::ReflexKick),
+                    "ungated strike from staging must commit and arm the reflex"
+                );
+                assert!(!input.avoid_ball);
+            }
+            other => panic!("expected Continue while committing, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strike_departure_verifies_even_when_the_latch_breaks() {
+        // Regression: the kicked ball outruns the ball filter, so the estimate
+        // jumps PAST the commit-latch release band on the very frame it finally
+        // moves. The departure verify used to live inside the committed branch
+        // and missed its own kick — the robot re-staged after the departed ball
+        // and only "succeeded" metres downfield. Once armed, the verify must
+        // run regardless of the latch.
+        let target = Vector2::new(2000.0, 0.0);
+        let mut s = skill(BallAction::Strike {
+            target,
+            acquire_first: false,
+        });
+        let p = player(0, Vector2::new(-200.0, 0.0), 0.0);
+        let tc = team_ctx();
+
+        // Tick 1: commit-ready geometry → latch + arm (kick origin stamped).
+        let w0 = world_at(&p, Vector2::new(0.0, 0.0), 0.0);
+        match s.tick(ctx(&w0, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert!(matches!(input.kicker, KickerControlInput::ReflexKick));
+            }
+            other => panic!("expected armed Continue, got {other:?}"),
+        }
+
+        // Tick 2: the ball estimate jumps 600 mm down the axis — far outside the
+        // latch release band (unlatched this same frame) — the departure must
+        // still verify as success.
+        let w1 = world_at(&p, Vector2::new(600.0, 0.0), 0.016);
+        assert!(matches!(s.tick(ctx(&w1, &tc, &p)), SkillProgress::Done(_)));
+        assert_eq!(s.status(), SkillStatus::Succeeded);
     }
 
     #[test]

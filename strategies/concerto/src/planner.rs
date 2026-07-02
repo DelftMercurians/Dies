@@ -1083,8 +1083,14 @@ mod tests {
                 ..
             } => {
                 assert!((target.x - world.opp_goal_center().x).abs() < 1.0);
-                assert!((target.y - config::CLEAR_AIM_Y).abs() < 1.0, "ball at +y → aim +y side of mouth: {target:?}");
-                assert!(target.y.abs() < world.goal_width() / 2.0, "aim must be inside the mouth");
+                assert!(
+                    (target.y - config::CLEAR_AIM_Y).abs() < 1.0,
+                    "ball at +y → aim +y side of mouth: {target:?}"
+                );
+                assert!(
+                    target.y.abs() < world.goal_width() / 2.0,
+                    "aim must be inside the mouth"
+                );
             }
             other => panic!("expected a clearance Strike, got {other:?}"),
         }

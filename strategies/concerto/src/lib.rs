@@ -112,6 +112,11 @@ impl Strategy for ConcertoStrategy {
     }
 
     fn params(&self) -> Vec<ParamSpec> {
+        // Per-role formation switches: turning one off removes the role from the
+        // matching entirely (the body is freed for other roles, never parked on a
+        // zero-importance slot). The capturer has no switch of its own — the
+        // `defense_only` toggle already suppresses it (it kills `pursuit`, so no
+        // CaptureRole is ever handed to Formation).
         vec![
             ParamSpec::bool("defense_only", "Defense only (suppress offense)", false),
             ParamSpec::bool(
@@ -119,6 +124,13 @@ impl Strategy for ConcertoStrategy {
                 "Warmup: pose in the logo (triangle) formation",
                 false,
             ),
+            ParamSpec::bool("role_wall", "Role: wall (shadow wings + anchor)", true),
+            ParamSpec::bool("role_mark", "Role: man-marking", true),
+            ParamSpec::bool("role_support", "Role: wide supporters", true),
+            ParamSpec::bool("role_striker", "Role: striker / box-runner", true),
+            ParamSpec::bool("role_pivot", "Role: recycle pivot", true),
+            ParamSpec::bool("role_balance", "Role: rest defender", true),
+            ParamSpec::bool("role_outlet", "Role: counter outlet", true),
         ]
     }
 
@@ -433,6 +445,15 @@ impl Strategy for ConcertoStrategy {
 
         // ── Formation: one cost-aware matching over all field robots (the capturer
         //    is one of the roles in pursuit). ─────────────────────────────────────
+        self.formation.set_toggles(formation::RoleToggles {
+            wall: ctx.param_bool("role_wall"),
+            mark: ctx.param_bool("role_mark"),
+            support: ctx.param_bool("role_support"),
+            striker: ctx.param_bool("role_striker"),
+            pivot: ctx.param_bool("role_pivot"),
+            balance: ctx.param_bool("role_balance"),
+            outlet: ctx.param_bool("role_outlet"),
+        });
         let fout = self
             .formation
             .update(&world, &reserved, &plan_context, capture.as_ref(), now);
@@ -520,8 +541,7 @@ impl Strategy for ConcertoStrategy {
         // non-kicker stages on our half, clear of the center circle, so nobody
         // scrambles back when the real PrepareKickoff clamps arrive. The kicker
         // is never in these commands (reserved in prep, capturer when live).
-        let kickoff_staging =
-            matches!(game_state, GameState::PrepareKickoff | GameState::Kickoff);
+        let kickoff_staging = matches!(game_state, GameState::PrepareKickoff | GameState::Kickoff);
         let circle_keepout = world
             .field()
             .map(|f| f.center_circle_radius)
@@ -829,11 +849,7 @@ mod tests {
     use super::*;
     use dies_strategy_protocol::{BallState, WorldSnapshot};
 
-    fn world_with_ball(
-        own: Vec<PlayerState>,
-        ball_pos: Vector2,
-        ball_vel: Vector2,
-    ) -> World {
+    fn world_with_ball(own: Vec<PlayerState>, ball_pos: Vector2, ball_vel: Vector2) -> World {
         World::new(WorldSnapshot {
             timestamp: 0.0,
             dt: 0.016,
@@ -876,7 +892,11 @@ mod tests {
             player(4, -3000.0, -400.0),
         ];
         let wall = vec![PlayerId::new(2), PlayerId::new(3), PlayerId::new(4)];
-        let w = world_with_ball(own, Vector2::new(-1000.0, 400.0), Vector2::new(-1800.0, 0.0));
+        let w = world_with_ball(
+            own,
+            Vector2::new(-1000.0, 400.0),
+            Vector2::new(-1800.0, 0.0),
+        );
         assert_eq!(elect_wall_striker(&w, &wall, None), Some(PlayerId::new(3)));
     }
 

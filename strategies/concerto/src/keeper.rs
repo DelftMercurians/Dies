@@ -769,11 +769,13 @@ mod tests {
             "goal-bound: {target:?}"
         );
         assert!(
-            (target.y - config::CLEAR_AIM_Y).abs() < 1e-6
-                && target.y.abs() < w.goal_width() / 2.0,
+            (target.y - config::CLEAR_AIM_Y).abs() < 1e-6 && target.y.abs() < w.goal_width() / 2.0,
             "inside the mouth on the ball side: {target:?}"
         );
         let neg = clear_target(&w, Vector2::new(-4000.0, -300.0));
-        assert!((neg.y + config::CLEAR_AIM_Y).abs() < 1e-6, "mirror: {neg:?}");
+        assert!(
+            (neg.y + config::CLEAR_AIM_Y).abs() < 1e-6,
+            "mirror: {neg:?}"
+        );
     }
 }

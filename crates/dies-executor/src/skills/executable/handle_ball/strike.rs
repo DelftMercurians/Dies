@@ -43,6 +43,32 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "along"), along);
         tc.debug_value(dkey(ctx, "perp"), perp);
 
+        // Departure / whiff verify — armed-state gated, NOT latch gated. The kicked
+        // ball outruns the ball filter, so the estimate often jumps PAST the latch
+        // release band on the very frame it finally moves; a verify inside the
+        // committed branch misses its own kick and the robot re-stages after the
+        // departed ball (observed: "success" only declared 4 m downfield once it
+        // re-committed behind the arrived ball). Once the reflex has been armed,
+        // check departure every tick until success/timeout. Directional on purpose
+        // (displacement + speed along the strike axis) so someone else's kick or
+        // the sim ball's vertical micro-bounce can't count as our departure.
+        if let (Some(kick_ball), Some(armed_at)) = (self.kick_ball_pos, self.armed_at) {
+            let along_depart = (ball_pos - kick_ball).dot(&dir);
+            let vel_along = ball_vel.dot(&dir);
+            let armed_ms = (now - armed_at) * 1000.0;
+            tc.debug_value(dkey(ctx, "depart_along"), along_depart);
+            tc.debug_value(dkey(ctx, "armed_ms"), armed_ms);
+            if along_depart > KICK_DEPART_DIST() || vel_along > KICK_DEPART_SPEED() {
+                log::debug!("strike departed: d{along_depart:.0} v{vel_along:.0}");
+                self.status = SkillStatus::Succeeded;
+                return SkillProgress::success();
+            }
+            if now - armed_at > REFLEX_TIMEOUT.as_secs_f64() {
+                log::warn!("handle_ball: reflex strike did not connect");
+                return self.fail();
+            }
+        }
+
         let mut input = PlayerControlInput::new();
         input.with_yaw(heading);
         input.with_dribbling(DRIBBLER_SPEED());
@@ -52,9 +78,19 @@ impl HandleBallSkill {
         // collapsing into the hull at contact — doesn't disarm the reflex
         // mid-strike. A genuine blow-out clears the latch and re-stages;
         // REFLEX_TIMEOUT bounds the attempt.
-        if committed(along, perp) {
+        //
+        // The external hold-fire gate (pass coordinator) suppresses the latch
+        // entirely: the staging point is already inside the commit corridor, so a
+        // gated strike waits there lined up and commits the tick after ungating.
+        if self.strike_gated {
+            self.commit_latched = false;
+        } else if committed(along, perp) {
             self.commit_latched = true;
         }
+        tc.debug_value(
+            dkey(ctx, "gated"),
+            if self.strike_gated { 1.0 } else { 0.0 },
+        );
         let is_committed = self.commit_latched && latched(along, perp);
         // Drive-and-reflex-kick: while committed and the ToF sees the ball, hand the
         // final centimetres to firmware magnet capture with the reflex armed
@@ -94,21 +130,11 @@ impl HandleBallSkill {
             input.add_global_velocity(commit_velocity(dir, along, perp_vec, ball_vel, pt));
 
             input.with_kicker(KickerControlInput::ReflexKick);
-            let kick_ball = *self.kick_ball_pos.get_or_insert(ball_pos);
-            let armed_at = *self.armed_at.get_or_insert(now);
-            let along_depart = (ball_pos - kick_ball).dot(&dir);
-            let armed_ms = (now - armed_at) * 1000.0;
-            tc.debug_value(dkey(ctx, "depart_along"), along_depart);
-            tc.debug_value(dkey(ctx, "armed_ms"), armed_ms);
-            self.detail = format!("striking d{along_depart:.0} {armed_ms:.0}ms");
-            if along_depart > KICK_DEPART_DIST() || ball.velocity.norm() > KICK_DEPART_SPEED() {
-                self.status = SkillStatus::Succeeded;
-                return SkillProgress::success();
-            }
-            if now - armed_at > REFLEX_TIMEOUT.as_secs_f64() {
-                log::warn!("handle_ball: reflex strike did not connect");
-                return self.fail();
-            }
+            // Arm-state bookkeeping only — the departure/whiff verify runs above,
+            // independent of the latch.
+            self.kick_ball_pos.get_or_insert(ball_pos);
+            self.armed_at.get_or_insert(now);
+            self.detail = format!("striking a{along:.0} p{perp:.0}");
         } else {
             self.commit_latched = false;
             let staging = stage_point(ball_pos, dir, pt, ctx.world.field_geom.as_ref());

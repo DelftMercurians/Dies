@@ -438,9 +438,10 @@ fn map_pass_failure(reason: PassFailure) -> FailReason {
             FailReason::PossessionLost
         }
         // The pass never really got going (passer lost it, or a side dropped out).
-        PassFailure::BallLost | PassFailure::PartnerLeft | PassFailure::Cancelled => {
-            FailReason::SkillFailed
-        }
+        PassFailure::BallLost
+        | PassFailure::PartnerLeft
+        | PassFailure::Cancelled
+        | PassFailure::KickFailed => FailReason::SkillFailed,
     }
 }
 
@@ -510,6 +511,7 @@ mod tests {
         let world = World::new(snap());
         let mut ctx = ctx_with(Some(PassResult::Success {
             receiver: PlayerId::new(3),
+            forwarded: false,
         }));
         let mut d = Driver::new();
         d.set_waypoint(pass_waypoint(), PlayerId::new(2));
