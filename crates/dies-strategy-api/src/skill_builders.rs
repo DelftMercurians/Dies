@@ -27,6 +27,7 @@ pub struct GoToBuilder<'a> {
     player: &'a mut PlayerHandle,
     position: Vector2,
     heading: Option<Angle>,
+    hold_ground: bool,
 }
 
 impl<'a> GoToBuilder<'a> {
@@ -36,6 +37,7 @@ impl<'a> GoToBuilder<'a> {
             player,
             position,
             heading: None,
+            hold_ground: false,
         }
     }
 
@@ -58,6 +60,14 @@ impl<'a> GoToBuilder<'a> {
         }
         self
     }
+
+    /// Refuse to be deflected by opponents charging at this robot while still
+    /// avoiding opponents it drives toward (ORCA closing-speed attribution).
+    /// For wall/hold roles.
+    pub fn hold_ground(mut self, hold: bool) -> Self {
+        self.hold_ground = hold;
+        self
+    }
 }
 
 impl Drop for GoToBuilder<'_> {
@@ -65,6 +75,7 @@ impl Drop for GoToBuilder<'_> {
         self.player.set_pending_command(SkillCommand::GoToPos {
             position: self.position,
             heading: self.heading,
+            hold_ground: self.hold_ground,
         });
     }
 }
@@ -335,10 +346,15 @@ mod tests {
 
         let cmd = player.take_pending_command().unwrap();
         match cmd {
-            SkillCommand::GoToPos { position, heading } => {
+            SkillCommand::GoToPos {
+                position,
+                heading,
+                hold_ground,
+            } => {
                 assert_eq!(position.x, 100.0);
                 assert_eq!(position.y, 200.0);
                 assert!(heading.is_none());
+                assert!(!hold_ground);
             }
             _ => panic!("Expected GoToPos"),
         }

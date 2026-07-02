@@ -440,7 +440,9 @@ mod tests {
         assert!(cmd.is_some());
 
         match cmd.unwrap() {
-            SkillCommand::GoToPos { position, heading } => {
+            SkillCommand::GoToPos {
+                position, heading, ..
+            } => {
                 assert_eq!(position, Vector2::new(2000.0, 1000.0));
                 assert!(heading.is_none());
             }
@@ -460,7 +462,9 @@ mod tests {
         assert!(cmd.is_some());
 
         match cmd.unwrap() {
-            SkillCommand::GoToPos { position, heading } => {
+            SkillCommand::GoToPos {
+                position, heading, ..
+            } => {
                 assert_eq!(position, Vector2::new(2000.0, 1000.0));
                 assert!(heading.is_some());
                 assert!((heading.unwrap().radians() - 1.0).abs() < 1e-6);

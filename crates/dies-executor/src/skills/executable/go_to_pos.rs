@@ -29,6 +29,7 @@ tunables! {
 pub struct GoToPosSkill {
     target_pos: Vector2,
     target_heading: Option<Angle>,
+    hold_ground: bool,
     pos_tolerance: f64,
     vel_tolerance: f64,
     status: SkillStatus,
@@ -36,10 +37,11 @@ pub struct GoToPosSkill {
 
 impl GoToPosSkill {
     /// Create a new GoToPos skill.
-    pub fn new(target_pos: Vector2, target_heading: Option<Angle>) -> Self {
+    pub fn new(target_pos: Vector2, target_heading: Option<Angle>, hold_ground: bool) -> Self {
         Self {
             target_pos,
             target_heading,
+            hold_ground,
             pos_tolerance: DEFAULT_POS_TOLERANCE(),
             vel_tolerance: DEFAULT_VEL_TOLERANCE(),
             status: SkillStatus::Running,
@@ -65,9 +67,15 @@ impl ExecutableSkill for GoToPosSkill {
     }
 
     fn update_params(&mut self, command: &SkillCommand) {
-        if let SkillCommand::GoToPos { position, heading } = command {
+        if let SkillCommand::GoToPos {
+            position,
+            heading,
+            hold_ground,
+        } = command
+        {
             self.target_pos = *position;
             self.target_heading = *heading;
+            self.hold_ground = *hold_ground;
             // Reset status to Running if we were completed
             if matches!(self.status, SkillStatus::Succeeded | SkillStatus::Failed) {
                 self.status = SkillStatus::Running;
@@ -92,6 +100,7 @@ impl ExecutableSkill for GoToPosSkill {
 
         let mut input = PlayerControlInput::new();
         input.with_position(self.target_pos);
+        input.hold_ground = self.hold_ground;
 
         if let Some(heading) = self.target_heading {
             input.with_yaw(heading);

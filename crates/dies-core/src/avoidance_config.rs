@@ -78,6 +78,13 @@ pub struct AvoidanceConfig {
     /// Run ORCA reciprocal avoidance. When false, the path-follower velocity
     /// passes through untouched (useful for isolating layers when debugging).
     pub orca_enabled: bool,
+    /// Honor per-robot `hold_ground` requests: a flagged robot (concerto's
+    /// shadow wall) scales its ORCA responsibility toward opponents by closing
+    /// -speed attribution, so it refuses to be deflected by a charging attacker
+    /// while still fully avoiding opponents it is itself driving toward. When
+    /// false, opponents always get full responsibility (pre-hold-ground
+    /// behavior).
+    pub orca_hold_ground: bool,
 }
 
 impl Default for AvoidanceConfig {
@@ -103,6 +110,7 @@ impl Default for AvoidanceConfig {
             replan_target_tol: 150.0,
             planner_enabled: true,
             orca_enabled: true,
+            orca_hold_ground: true,
         }
     }
 }

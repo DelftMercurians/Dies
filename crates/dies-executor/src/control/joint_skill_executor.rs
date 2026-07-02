@@ -431,6 +431,7 @@ mod tests {
             Some(SkillCommand::GoToPos {
                 position: Vector2::new(-2000.0, 0.0),
                 heading: None,
+                hold_ground: false,
             }),
         );
         jse.tick_all(&cmds2, &ctx());

@@ -390,6 +390,7 @@ impl PlayerController {
                 pref_velocity: pref,
                 radius: PLAYER_RADIUS,
                 max_speed: input.speed_limit.unwrap_or(self.max_speed),
+                hold_ground: input.hold_ground,
                 neighbors: neighbors.to_vec(),
                 statics: statics.to_vec(),
             };

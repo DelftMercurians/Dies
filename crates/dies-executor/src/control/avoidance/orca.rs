@@ -9,8 +9,11 @@
 //! Reciprocity between own robots is **motion-gated**: two moving robots split
 //! avoidance 50/50 (this is what kills the mutual-dodge dance the old MTP had),
 //! but a stationary robot does not yield — the mover takes the full burden, and
-//! a robot holding position ignores movers entirely. Opponents always get full
-//! responsibility (we take the whole burden, since they don't cooperate).
+//! a robot holding position ignores movers entirely. Opponents normally get full
+//! responsibility (we take the whole burden, since they don't cooperate); a
+//! robot flagged `hold_ground` (concerto's shadow wall) instead scales that
+//! responsibility by closing-speed attribution, so it is not deflected by an
+//! attacker charging *at it* but still fully avoids opponents it drives toward.
 //! Static obstacles (walls, defense areas, ball) are folded in as one linearised
 //! half-plane each, capping the approach speed by the remaining clearance.
 //!
@@ -35,6 +38,10 @@ pub struct OrcaAgent {
     pub pref_velocity: Vector2,
     pub radius: f64,
     pub max_speed: f64,
+    /// Attribution-scale responsibility toward opponents (see
+    /// [`OrcaSolver::responsibility`]) so this robot holds its line against a
+    /// charging attacker. Set from `PlayerControlInput::hold_ground`.
+    pub hold_ground: bool,
     pub neighbors: Vec<DynamicAgent>,
     pub statics: Vec<StaticObstacle>,
 }
@@ -46,6 +53,7 @@ pub struct OrcaSolver {
     clearance: f64,
     stationary_speed: f64,
     prefer_steering: bool,
+    hold_ground_enabled: bool,
 }
 
 impl OrcaSolver {
@@ -57,6 +65,7 @@ impl OrcaSolver {
             clearance: cfg.robot_clearance,
             stationary_speed: cfg.stationary_speed,
             prefer_steering: cfg.prefer_steering,
+            hold_ground_enabled: cfg.orca_hold_ground,
         }
     }
 
@@ -67,6 +76,7 @@ impl OrcaSolver {
         self.clearance = cfg.robot_clearance;
         self.stationary_speed = cfg.stationary_speed;
         self.prefer_steering = cfg.prefer_steering;
+        self.hold_ground_enabled = cfg.orca_hold_ground;
     }
 
     /// Collision-free velocity closest to `pref_velocity`, clamped to
@@ -149,8 +159,8 @@ impl OrcaSolver {
         })
     }
 
-    /// Reciprocal ORCA half-plane for a neighbouring robot. Own robots split the
-    /// avoidance (responsibility 0.5); opponents get full responsibility.
+    /// Reciprocal ORCA half-plane for a neighbouring robot. The avoidance split
+    /// (who takes how much of the correction) is decided by [`Self::responsibility`].
     fn agent_line(&self, agent: &OrcaAgent, other: &DynamicAgent, dt: f64) -> Line {
         let inv_tau = 1.0 / self.tau;
         let rel_position = other.position - agent.position;
@@ -240,7 +250,24 @@ impl OrcaSolver {
 
     /// How much of the avoidance the ego takes for this neighbour.
     ///
-    /// - Opponents: always 1.0 — they don't cooperate, we take the whole burden.
+    /// - Opponents: 1.0 — they don't cooperate, we take the whole burden.
+    ///   Exception: a `hold_ground` ego (concerto's shadow wall) scales this by
+    ///   **closing-speed attribution**: `min(1, ego_closing / (s + max(0,
+    ///   opp_closing − ego_closing)))` with `s = stationary_speed`, where ego
+    ///   closing is judged from intent (`pref_velocity`) and the opponent's
+    ///   from observed velocity. Not closing at all → resp = 0 *exactly* — this
+    ///   must be exact, not merely small, because in the already-overlapping
+    ///   branch `u` is `1/dt`-scaled and any residual fraction leaks a large
+    ///   retreat velocity (the "shoved defender" this exists to kill). An
+    ///   attacker charging a tangentially-tracking waller therefore causes no
+    ///   deflection and no contact-flee. Closing at least as fast as them →
+    ///   resp = 1 (an opponent parked on the ego's setpoint or path gets full
+    ///   avoidance — a hold-ground robot never rams; mutual head-on approaches
+    ///   are unchanged from the unflagged behavior). In between, only the
+    ///   opponent's *excess* closing speed is attributed to them; `s` keeps the
+    ///   ratio continuous under velocity noise. Note this also covers
+    ///   radio-lost own robots (`is_own: false`): they coast to a stop within
+    ///   ~1 s of radio loss, and a stationary neighbour restores resp = 1.
     /// - Own robots: reciprocity is **motion-gated**. A stationary robot does
     ///   not yield to a moving one, so the mover takes the full burden:
     ///   - ego holding (pref ≈ 0), other moving → 0.0 (don't respond)
@@ -249,7 +276,19 @@ impl OrcaSolver {
     ///   - both holding → 0.5 (no real interaction either way)
     fn responsibility(&self, agent: &OrcaAgent, other: &DynamicAgent) -> f64 {
         if !other.is_own {
-            return 1.0;
+            if !(self.hold_ground_enabled && agent.hold_ground) {
+                return 1.0;
+            }
+            let rel = other.position - agent.position;
+            let dist = rel.norm();
+            if dist < 1.0e-6 {
+                return 1.0;
+            }
+            let n = rel / dist;
+            let ego_closing = agent.pref_velocity.dot(&n).max(0.0);
+            let opp_closing = (-other.velocity.dot(&n)).max(0.0);
+            let excess = (opp_closing - ego_closing).max(0.0);
+            return (ego_closing / (self.stationary_speed + excess)).min(1.0);
         }
         // Ego intent from its preferred velocity; neighbour motion from its
         // observed velocity (we can't see its intent).
@@ -447,6 +486,7 @@ mod tests {
             pref_velocity: pref,
             radius: 90.0,
             max_speed: 3000.0,
+            hold_ground: false,
             neighbors: Vec::new(),
             statics: Vec::new(),
         }
@@ -455,6 +495,15 @@ mod tests {
     fn own(pos: Vector2, vel: Vector2) -> DynamicAgent {
         DynamicAgent {
             is_own: true,
+            position: pos,
+            velocity: vel,
+            radius: 90.0,
+        }
+    }
+
+    fn opp(pos: Vector2, vel: Vector2) -> DynamicAgent {
+        DynamicAgent {
+            is_own: false,
             position: pos,
             velocity: vel,
             radius: 90.0,
@@ -578,6 +627,123 @@ mod tests {
         let v = solver().solve(&a, 0.02);
         assert!(v.x < 0.0, "should recover inward, got {:?}", v);
         assert!(v.x.is_finite() && v.y.is_finite());
+    }
+
+    #[test]
+    fn hold_ground_ignores_charging_opponent() {
+        // Flagged ego tracking tangentially (pref ⟂ the opponent's approach)
+        // while an attacker charges straight at it: ego closing ≈ 0 → resp ≈ 0
+        // → the ego keeps tracking, no sideways dodge.
+        let mut a = agent(
+            Vector2::zeros(),
+            Vector2::new(0.0, 400.0),
+            Vector2::new(0.0, 400.0),
+        );
+        a.hold_ground = true;
+        a.neighbors
+            .push(opp(Vector2::new(400.0, 0.0), Vector2::new(-2000.0, 0.0)));
+        let v = solver().solve(&a, 0.02);
+        assert!(
+            (v - a.pref_velocity).norm() < 30.0,
+            "hold-ground robot should not be deflected, got {:?}",
+            v
+        );
+    }
+
+    #[test]
+    fn unflagged_keeps_full_responsibility() {
+        // Same geometry without the flag: today's behavior — the ego takes the
+        // full burden and dodges the charging opponent.
+        let mut a = agent(
+            Vector2::zeros(),
+            Vector2::new(0.0, 400.0),
+            Vector2::new(0.0, 400.0),
+        );
+        a.neighbors
+            .push(opp(Vector2::new(400.0, 0.0), Vector2::new(-2000.0, 0.0)));
+        let v = solver().solve(&a, 0.02);
+        assert!(
+            (v - a.pref_velocity).norm() > 100.0,
+            "unflagged robot should dodge, got {:?}",
+            v
+        );
+    }
+
+    #[test]
+    fn hold_ground_still_avoids_parked_opponent() {
+        // Flagged ego driving at a stationary opponent: their closing speed is
+        // zero → resp saturates at 1 → identical avoidance to the unflagged
+        // case (a hold-ground robot never rams).
+        let mk = |hold: bool| {
+            let mut a = agent(
+                Vector2::zeros(),
+                Vector2::new(1000.0, 0.0),
+                Vector2::new(1000.0, 0.0),
+            );
+            a.hold_ground = hold;
+            a.neighbors.push(opp(Vector2::new(600.0, 0.0), Vector2::zeros()));
+            solver().solve(&a, 0.02)
+        };
+        let flagged = mk(true);
+        let unflagged = mk(false);
+        assert!(
+            (flagged - unflagged).norm() < 1.0e-6,
+            "parked opponent must yield identical avoidance: {:?} vs {:?}",
+            flagged,
+            unflagged
+        );
+        assert!(
+            (flagged - Vector2::new(1000.0, 0.0)).norm() > 1.0,
+            "expected avoidance of parked opponent, got {:?}",
+            flagged
+        );
+    }
+
+    #[test]
+    fn hold_ground_no_flee_on_contact() {
+        // Opponent already overlapping and pushing into a flagged ego whose
+        // pref is tangential: the 1/dt collision-resolution branch must not
+        // send the ego flying (resp ≈ 0 anchors the constraint at the ego's
+        // current velocity).
+        let mut a = agent(
+            Vector2::zeros(),
+            Vector2::new(0.0, 200.0),
+            Vector2::new(0.0, 200.0),
+        );
+        a.hold_ground = true;
+        a.neighbors
+            .push(opp(Vector2::new(150.0, 0.0), Vector2::new(-500.0, 0.0)));
+        let v = solver().solve(&a, 0.02);
+        assert!(
+            (v - a.pref_velocity).norm() < 60.0,
+            "pushed hold-ground robot must not flee, got {:?}",
+            v
+        );
+    }
+
+    #[test]
+    fn hold_ground_head_on_matches_unflagged() {
+        // Both closing at speed: attribution saturates at 1, so the flag must
+        // not change the output — no new foul exposure from mutual approaches.
+        let mk = |hold: bool| {
+            let mut a = agent(
+                Vector2::zeros(),
+                Vector2::new(1000.0, 0.0),
+                Vector2::new(1000.0, 0.0),
+            );
+            a.hold_ground = hold;
+            a.neighbors
+                .push(opp(Vector2::new(800.0, 0.0), Vector2::new(-1000.0, 0.0)));
+            solver().solve(&a, 0.02)
+        };
+        let flagged = mk(true);
+        let unflagged = mk(false);
+        assert!(
+            (flagged - unflagged).norm() < 1.0e-6,
+            "head-on closing must be unchanged by the flag: {:?} vs {:?}",
+            flagged,
+            unflagged
+        );
     }
 
     #[test]

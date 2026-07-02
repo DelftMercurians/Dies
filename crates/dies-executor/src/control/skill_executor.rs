@@ -312,9 +312,11 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
     use super::super::skills::executable::*;
 
     match cmd {
-        SkillCommand::GoToPos { position, heading } => {
-            Box::new(GoToPosSkill::new(*position, *heading))
-        }
+        SkillCommand::GoToPos {
+            position,
+            heading,
+            hold_ground,
+        } => Box::new(GoToPosSkill::new(*position, *heading, *hold_ground)),
         SkillCommand::GoToBounded {
             position,
             heading,

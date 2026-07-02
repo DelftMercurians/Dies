@@ -372,12 +372,15 @@ mod tests {
         let cmd = SkillCommand::GoToPos {
             position: Vector2::new(1000.0, 500.0),
             heading: Some(Angle::from_radians(0.0)),
+            hold_ground: false,
         };
 
         let transformed = transformer.transform_skill_command(&cmd);
 
         match transformed {
-            SkillCommand::GoToPos { position, heading } => {
+            SkillCommand::GoToPos {
+                position, heading, ..
+            } => {
                 assert_eq!(position, Vector2::new(1000.0, 500.0));
                 assert_eq!(heading, Some(Angle::from_radians(0.0)));
             }

@@ -166,6 +166,13 @@ pub struct PlayerControlInput {
     /// (robot edge may reach the physical wall, "just robot radius").
     pub wall_care: f64,
 
+    /// Hold the line against opponents: scale ORCA responsibility toward them by
+    /// closing-speed attribution instead of the full burden, so this robot is not
+    /// deflected by an attacker charging at it while still fully avoiding
+    /// opponents it drives toward. Set by strategies for wall/hold roles (see
+    /// `SkillCommand::GoToPos`); gated globally by `AvoidanceConfig::orca_hold_ground`.
+    pub hold_ground: bool,
+
     pub fan_speed: Option<f64>,
     pub kick_speed: Option<f64>,
     pub avoid_robots: bool,
@@ -206,6 +213,7 @@ impl Default for PlayerControlInput {
             avoid_ball_care: 0.0,
             avoid_wall: true,
             wall_care: 1.0,
+            hold_ground: false,
             fan_speed: None,
             kick_speed: None,
             avoid_robots: false,

@@ -223,6 +223,15 @@ export interface AvoidanceConfig {
 	 * passes through untouched (useful for isolating layers when debugging).
 	 */
 	orca_enabled: boolean;
+	/**
+	 * Honor per-robot `hold_ground` requests: a flagged robot (concerto's
+	 * shadow wall) scales its ORCA responsibility toward opponents by closing
+	 * -speed attribution, so it refuses to be deflected by a charging attacker
+	 * while still fully avoiding opponents it is itself driving toward. When
+	 * false, opponents always get full responsibility (pre-hold-ground
+	 * behavior).
+	 */
+	orca_hold_ground: boolean;
 }
 
 export interface TeamPlayerId {

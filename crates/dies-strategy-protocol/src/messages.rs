@@ -172,6 +172,7 @@ mod tests {
             Some(SkillCommand::GoToPos {
                 position: crate::Vector2::new(100.0, 200.0),
                 heading: None,
+                hold_ground: false,
             }),
         );
         skill_commands.insert(PlayerId::new(2), None);

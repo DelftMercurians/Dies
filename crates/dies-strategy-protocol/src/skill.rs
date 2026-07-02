@@ -39,11 +39,15 @@ pub enum SkillCommand {
     /// **Parameters**:
     /// - `position`: Target position in mm
     /// - `heading`: Optional target heading; if `None`, robot maintains current heading
+    /// - `hold_ground`: Refuse to be deflected by opponents charging at this
+    ///   robot (ORCA closing-speed attribution) while still avoiding opponents
+    ///   it drives toward. For wall/hold roles.
     ///
     /// **Completion**: `Succeeded` when robot arrives at position (within tolerance)
     GoToPos {
         position: Vector2,
         heading: Option<Angle>,
+        hold_ground: bool,
     },
 
     /// Move to a target position with aggressive direct-velocity control,
