@@ -203,7 +203,18 @@ impl Formation {
             .count();
 
         // Generate the role set (positions/importance recomputed every tick).
-        let roles = self.generate_roles(world, plan_ctx, capture, assignable.len(), field_n);
+        let mut roles = self.generate_roles(world, plan_ctx, capture, assignable.len(), field_n);
+        // Slot-hold: a reserved plan robot standing in/near a wall slot IS that
+        // slot's coverage (the wall reflex striker working at its own post, or a
+        // carrier standing in the line), so its importance fades out instead of
+        // pulling a backfill body across the field — and fades back in
+        // continuously if the body actually leaves.
+        let reserved_pos: Vec<Vector2> = reserved
+            .iter()
+            .filter_map(|id| world.own_player(*id))
+            .map(|p| p.position)
+            .collect();
+        apply_slot_hold(&mut roles, &reserved_pos);
         let role_by_id: HashMap<RoleId, &Role> = roles.iter().map(|r| (r.id, r)).collect();
 
         // ── Decide whether to recompute the assignment (cadence) ────────
@@ -895,6 +906,14 @@ impl Formation {
                 if role.id.kind == RoleKind::Capture {
                     continue;
                 }
+                // Shadow roles are exempt: the wall must never step aside because
+                // a scrum arrived at it — between ball and goal is exactly where
+                // its value peaks. Shadow staffing is moderated by the body-
+                // proximity slot-hold in `update` instead (a body standing in a
+                // slot IS its coverage; the ball being fought over there is not).
+                if role.id.kind == RoleKind::Shadow {
+                    continue;
+                }
                 let prox = contest_pts
                     .iter()
                     .map(|pt| {
@@ -906,6 +925,28 @@ impl Formation {
         }
 
         roles
+    }
+}
+
+/// Fade Shadow-slot importance by the proximity of reserved plan-robot bodies:
+/// `imp *= smoothstep(SHADOW_HOLD_NEAR, SHADOW_HOLD_FAR, dist_to_nearest)`. A
+/// body physically standing in a wall slot covers it, so the matcher must not
+/// staff a second robot there; only Shadow is moderated this way (other kinds
+/// keep the ball-contest suppression above).
+fn apply_slot_hold(roles: &mut [Role], reserved_pos: &[Vector2]) {
+    if reserved_pos.is_empty() {
+        return;
+    }
+    for role in roles.iter_mut() {
+        if role.id.kind != RoleKind::Shadow {
+            continue;
+        }
+        let d = reserved_pos
+            .iter()
+            .map(|p| (role.position - p).norm())
+            .fold(f64::INFINITY, f64::min);
+        role.importance *=
+            geometry::smoothstep(config::SHADOW_HOLD_NEAR, config::SHADOW_HOLD_FAR, d);
     }
 }
 

@@ -304,25 +304,28 @@ pub fn best_finishing_pocket(
 
 /// Pick an advancement-hoof direction by scoring *rays*, not landing points.
 ///
-/// The predecessor (`safe_kick_target`) aimed at a predicted resting point
-/// (`ball + dir × travel`) and required it to land in-field — so every term
-/// depended on a roll-distance estimate that is wrong whenever kick speed or
-/// surface friction differs from the model (and always differs on a real
-/// carpet). This scorer needs no travel estimate: candidates are restricted to
-/// the cone from the ball to the two opponent back-line corners, so wherever
-/// the ball actually stops the outcome is benign — undershoot settles in their
-/// half, overshoot crosses THEIR goal line (a deep free kick for them, with our
-/// forward already pressing). Only a deflection can reach a touchline.
+/// This scorer needs no travel estimate (the old resting-point scorer depended
+/// on a roll-distance model that is always wrong on a real carpet): candidates
+/// are restricted to the cone from the ball to the opponent GOAL MOUTH, posts
+/// inset by `mouth_inset` as execution margin. The mouth cone — not the full
+/// back line — is what makes every outcome benign under the Div-B aimless-kick
+/// rule (a ball from our half that crosses halfway and then their goal line
+/// outside the goal untouched = opponent free kick back at our kick position):
+/// undershoot settles in their half, an untouched full-length ray is a goal,
+/// and a blocked ray is a keeper/defender touch (rebound, or a corner for us).
+/// A wide back-line exit — the old cone's "benign overshoot" — is exactly the
+/// penalized case, so it is no longer a candidate at all.
 ///
-/// Rays are scored goal > our forward > safety > depth:
+/// Rays are scored goal > our forward > safety > centre:
 /// - exiting through an *open* goal-mouth window ([`goal_free_gaps`], keeper
-///   shadow inflated) — beyond shot range the goal is simply the best hoof;
+///   shadow inflated) — prefer the ray that can actually score;
 /// - passing near one of `mates` (our players in the opponent half — the
-///   permanent outlet / supporters), the long ball to the target man;
-/// - a mild penalty for opponents sitting on the ray (they intercept en route);
+///   permanent outlet / supporters), a within-mouth tiebreak for rebounds;
+/// - a mild penalty for opponents sitting on the ray (an en-route touch is
+///   rule-safe but costs possession midfield);
 /// - a small centre-bias tiebreak (all rays exit at the same depth).
 ///
-/// Returns the ray's back-line exit point to aim at (the driver only uses it
+/// Returns the ray's goal-line exit point to aim at (the driver only uses it
 /// for heading — where the ball stops is deliberately not modelled), or `None`
 /// when the cone is degenerate (ball essentially on the opponent back line —
 /// the strike-zone branch owns that region).
@@ -344,15 +347,15 @@ pub fn hoof_ray_target(
     open_penalty: f64,
     ray_corridor: f64,
     center_w: f64,
-    cone_inset: f64,
+    mouth_inset: f64,
 ) -> Option<Vector2> {
     let depth = opp_goal_x - ball.x;
-    if depth <= cone_inset {
+    if depth <= mouth_inset {
         return None; // on/behind their back line — no forward cone left
     }
-    // Cone from the ball to the (inset) opponent back-line corners. Every ray in
-    // it exits the field through x = opp_goal_x with |y| ≤ half_wid − inset.
-    let y_lim = half_wid - cone_inset;
+    // Cone from the ball to the (inset) goal posts. Every ray in it exits the
+    // field through the goal mouth: |y| ≤ goal_width/2 − inset.
+    let y_lim = (goal_width / 2.0 - mouth_inset).max(1.0);
     let a_lo = (-y_lim - ball.y).atan2(depth);
     let a_hi = (y_lim - ball.y).atan2(depth);
 
@@ -399,14 +402,18 @@ pub fn hoof_ray_target(
     // open goal-mouth window. The windows can be slivers far narrower than the
     // sweep spacing (a keeper leaves ~170mm inside each post), so they must be
     // explicit candidates — and the midpoint is the right aim anyway (the same
-    // choice `best_shot` makes).
-    let steps = ((a_hi - a_lo) / 5.0_f64.to_radians()).ceil().max(1.0) as usize;
+    // choice `best_shot` makes). The mouth cone is narrow from long range
+    // (~5° at full field), so the sweep step is fine-grained.
+    let steps = ((a_hi - a_lo) / 1.5_f64.to_radians()).ceil().max(1.0) as usize;
     let sweep = (0..=steps).map(|i| {
         let theta = a_lo + (a_hi - a_lo) * (i as f64) / (steps as f64);
         ball.y + theta.tan() * depth
     });
-    // Window midpoints lie within the mouth, well inside the (inset) cone.
-    let windows = gaps.iter().map(|&(g_lo, g_hi)| 0.5 * (g_lo + g_hi));
+    // Window midpoints are inside the mouth but can fall between a post and the
+    // inset bound; clamp them into the cone so the execution margin holds.
+    let windows = gaps
+        .iter()
+        .map(move |&(g_lo, g_hi)| (0.5 * (g_lo + g_hi)).clamp(-y_lim, y_lim));
 
     sweep
         .chain(windows)
@@ -664,6 +671,19 @@ pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Time (s) and miss distance (mm) of the ball's closest approach to `pos`,
+/// assuming straight-line ball motion. Negative time = the approach is in the
+/// past (ball receding). `None` if the ball is (near) stationary.
+pub fn ball_closest_approach(ball: Vector2, vel: Vector2, pos: Vector2) -> Option<(f64, f64)> {
+    let speed2 = vel.norm_squared();
+    if speed2 < 1e-6 {
+        return None;
+    }
+    let t = (pos - ball).dot(&vel) / speed2;
+    let miss = (pos - (ball + vel * t)).norm();
+    Some((t, miss))
+}
+
 /// Continuous threat a field position poses to our goal, in [0, 1].
 ///
 /// Combines proximity to our goal (closer = higher) with a directional term
@@ -783,6 +803,23 @@ pub fn shadow_arc(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closest_approach_head_on_offset_and_receding() {
+        let ball = Vector2::new(0.0, 0.0);
+        let vel = Vector2::new(1000.0, 0.0);
+        // Head-on: reaches the point in 2 s, miss 0.
+        let (t, d) = ball_closest_approach(ball, vel, Vector2::new(2000.0, 0.0)).unwrap();
+        assert!((t - 2.0).abs() < 1e-9 && d < 1e-9);
+        // Laterally offset: same time, miss = the offset.
+        let (t, d) = ball_closest_approach(ball, vel, Vector2::new(2000.0, 500.0)).unwrap();
+        assert!((t - 2.0).abs() < 1e-9 && (d - 500.0).abs() < 1e-9);
+        // Behind the ball's travel: approach is in the past.
+        let (t, _) = ball_closest_approach(ball, vel, Vector2::new(-1000.0, 0.0)).unwrap();
+        assert!(t < 0.0);
+        // Stationary ball: no approach.
+        assert!(ball_closest_approach(ball, Vector2::new(0.0, 0.0), ball).is_none());
+    }
 
     #[test]
     fn boundary_rescue_pushes_inward_near_top_touchline() {
@@ -1273,7 +1310,7 @@ mod tests {
     fn hoof(ball: Vector2, opps: &[PlayerState], mates: &[Vector2]) -> Option<Vector2> {
         hoof_ray_target(
             ball, opps, mates, 4500.0, 1000.0, None, 110.0, 280.0, 21.5, 3000.0, 3000.0, 2000.0,
-            1200.0, 1500.0, 600.0, 0.3, 200.0,
+            1200.0, 1500.0, 600.0, 0.3, 150.0,
         )
     }
 
@@ -1288,22 +1325,17 @@ mod tests {
     }
 
     #[test]
-    fn hoof_ray_from_kickoff_spot_exists_and_exits_their_back_line() {
+    fn hoof_ray_from_kickoff_spot_exists_and_is_goal_bound() {
         // Regression: the old landing-point scorer had NO legal direction from the
         // exact center spot (in-x needed ≥33° off-axis, in-y needed ≤33°).
         let t = hoof(Vector2::new(0.0, 0.0), &[], &[]).expect("kickoff hoof must exist");
         assert!(
             (t.x - 4500.0).abs() < 1e-6,
-            "exit must be on their back line"
+            "exit must be on their goal line"
         );
         assert!(
-            t.y.abs() <= 2800.0 + 1e-6,
-            "exit must respect the cone inset"
-        );
-        // With an empty field the open mouth is the best exit.
-        assert!(
-            t.y.abs() < 500.0,
-            "open goal should attract the hoof, got {t:?}"
+            t.y.abs() <= 350.0 + 1e-6,
+            "exit must be inside the (inset) goal mouth, got {t:?}"
         );
     }
 
@@ -1329,7 +1361,7 @@ mod tests {
             1500.0,
             600.0,
             0.3,
-            200.0,
+            150.0,
         )
         .expect("hoof must exist");
         assert!(

@@ -248,31 +248,20 @@ impl Planner {
                         rescue: false,
                     }
                 } else if let (true, Some(aim)) = (in_range, shot) {
-                    // A real aimed shot is on. Close to goal (inside the
-                    // strike-finish zone), finish it FIRST-TIME with a reflex
-                    // `Strike` rather than the orbit-to-aim `Shoot`: the aimed
-                    // Shoot's kick gate refuses any marginally-covered corridor and
-                    // orbits indefinitely instead of firing — the dithering observed
-                    // in the finishing battery, where a carrier sits on a central box
-                    // position for seconds and never gets a shot away. From inside
-                    // the zone aim precision matters far less than decisiveness (the
-                    // window midpoint is still the target), and a strike-through fires
-                    // immediately, forcing a save/rebound/goal instead of holding the
-                    // ball until the defence recovers. Farther out (between
-                    // STRIKE_FINISH_RANGE and SHOOT_RANGE) keep the precise aimed
-                    // Shoot — there the lane is cleaner and accuracy is what pays.
-                    let close = carrier_pos.x > 0.0
-                        && (carrier_pos - opp_goal).norm() < config::STRIKE_FINISH_RANGE;
-                    let action = if close {
-                        BallAction::Strike {
+                    // A real aimed shot is on: finish FIRST-TIME with a reflex
+                    // `Strike` — one uninterrupted approach → contact → kick episode.
+                    // The orbit-to-aim `Shoot` is retired: its kick gate refused any
+                    // marginally-covered corridor and orbited indefinitely (the
+                    // dithering observed in the finishing battery), and its capture
+                    // hold made the action flip with every breakbeam flicker (the
+                    // capturing→shooting→capturing churn that deadlocked HandleBall's
+                    // possession-blind Hold). The window midpoint is still the target;
+                    // decisiveness beats the last few degrees of aim.
+                    Waypoint::Handle {
+                        action: BallAction::Strike {
                             target: aim.target,
                             acquire_first: false,
-                        }
-                    } else {
-                        BallAction::Shoot { target: aim.target }
-                    };
-                    Waypoint::Handle {
-                        action,
+                        },
                         rescue: false,
                     }
                 } else {
@@ -289,7 +278,10 @@ impl Planner {
                         target_area,
                     };
                     let hoof = |target: Vector2| Waypoint::Handle {
-                        action: BallAction::Shoot { target },
+                        action: BallAction::Strike {
+                            target,
+                            acquire_first: false,
+                        },
                         rescue: false,
                     };
 
@@ -398,19 +390,31 @@ impl Planner {
                     .own_player(robot)
                     .map(|p| p.position)
                     .unwrap_or(ball_pos);
-                let finish = (!on_boundary)
-                    .then(|| self.contested_finish(world, ball_pos, opp_goal, actor_pos))
-                    .flatten();
-                // Acquire and hold; the next replan (on the possession flip) swaps
-                // this Hold to the real action as a live param update — same skill
-                // instance, no teardown. `rescue` biases the approach inward off a
-                // boundary; the driver computes the live approach heading.
-                let waypoint = finish.unwrap_or(Waypoint::Handle {
-                    action: BallAction::Hold {
-                        heading: goalward_heading(ball_pos, opp_goal),
-                    },
-                    rescue: on_boundary,
-                });
+                let waypoint = if on_boundary {
+                    // A ball pinned on a line must be scooped inward, never struck
+                    // (a strike would kick it out). `rescue` biases the approach
+                    // inward; the driver computes the live approach heading.
+                    Waypoint::Handle {
+                        action: BallAction::Hold {
+                            heading: goalward_heading(ball_pos, opp_goal),
+                        },
+                        rescue: true,
+                    }
+                } else {
+                    // Strike the loose ball directly: decide the release target NOW
+                    // (from the ball position) and run one uninterrupted HandleBall
+                    // strike-through episode. The old capture-then-swap (Hold, then
+                    // replan to the real action on the possession flip) made the
+                    // action track the flickering breakbeam — the churn that
+                    // deadlocked the possession-blind Hold stage. The We-branch uses
+                    // the same target ladder, so a mid-strike possession flip
+                    // re-emits an equivalent Strike (a no-op live swap).
+                    self.contested_finish(world, ball_pos, opp_goal, actor_pos)
+                        .unwrap_or_else(|| Waypoint::Handle {
+                            action: self.strike_release(world, robot, ball_pos, inputs),
+                            rescue: false,
+                        })
+                };
                 Plan {
                     waypoints: vec![waypoint],
                     active_robot: robot,
@@ -538,6 +542,52 @@ impl Planner {
         .unwrap_or(opp_goal)
     }
 
+    /// The strike ladder: where a reflex strike-through from `from` should go.
+    /// Shared decision for the Loose-branch (strike the loose ball directly) and
+    /// mirrored by the We-branch's shot/hoof choices, so a possession flip
+    /// mid-episode re-derives an equivalent `Strike` — a no-op live swap instead of
+    /// the breakbeam-tracking action churn that deadlocked the Hold stage.
+    fn strike_release(
+        &self,
+        world: &World,
+        actor: PlayerId,
+        from: Vector2,
+        inputs: &PlanInputs,
+    ) -> BallAction {
+        let opp_goal = world.opp_goal_center();
+        // 1. A real aimed-shot window in range → strike at the window midpoint.
+        let shot = geometry::best_shot(
+            from,
+            opp_goal.x,
+            world.goal_width(),
+            world.opp_players(),
+            Self::opp_keeper(world),
+            config::SHOT_ROBOT_RADIUS,
+            Self::keeper_shot_radius(world),
+            config::BALL_RADIUS,
+            config::SHOT_KEEPER_BIAS,
+        )
+        .filter(|s| s.angle >= config::SHOT_MIN_ANGLE)
+        .filter(|_| (from - opp_goal).norm() < config::SHOOT_RANGE);
+        let target = if let Some(shot) = shot {
+            shot.target
+        } else if from.x > 0.0 && (from - opp_goal).norm() < config::STRIKE_FINISH_RANGE {
+            // 2. Strike zone with no clean window → finish at the widest sliver
+            //    (or goal centre) — force the save/rebound rather than settle.
+            self.finish_strike_target(world, from, opp_goal)
+        } else {
+            // 3. Out of range → the forward release: kick-ahead into open space,
+            //    falling back to the back-line-cone hoof.
+            self.best_kickahead_target(world, actor, inputs)
+                .map(|(_, t, _)| t)
+                .unwrap_or_else(|| self.release_target(world, actor, inputs))
+        };
+        BallAction::Strike {
+            target,
+            acquire_first: false,
+        }
+    }
+
     /// First-time finish: when a *contested* ball sits in the attacking strike zone
     /// and a reflex strike is imminent (both an opponent and our actor are right on
     /// it), striking it goalward on contact beats trying to settle the 50/50 — which
@@ -583,11 +633,17 @@ impl Planner {
             config::THREAT_GOAL_FAR,
         );
         if threat > config::SHADOW_RELIEF_THREAT {
-            // Defensive third: firm clear toward a wing, away from our goal mouth.
+            // Defensive third: firm clear aimed at the opponent goal mouth on the
+            // ball's flank side — a reflex strike-through, fired on contact (no
+            // capture hold while pressed). Goal-bound so a full-length roll-out is
+            // a goal or a keeper touch, never a Div-B aimless-kick reset.
             let sign = if ball_pos.y >= 0.0 { 1.0 } else { -1.0 };
-            let target = Vector2::new(config::CLEAR_TARGET_X, sign * config::CLEAR_TARGET_MIN_Y);
+            let target = Vector2::new(world.opp_goal_center().x, sign * config::CLEAR_AIM_Y);
             Waypoint::Handle {
-                action: BallAction::Shoot { target },
+                action: BallAction::Strike {
+                    target,
+                    acquire_first: false,
+                },
                 rescue: false,
             }
         } else {
@@ -618,7 +674,7 @@ impl Planner {
     }
 
     /// Last-resort release target (restart with nothing on, or a carrier at the
-    /// dribble cap with no hoof): the back-line-cone hoof, falling back to a
+    /// dribble cap with no hoof): the goal-mouth-cone hoof, falling back to a
     /// goal-biased point when even the cone is degenerate.
     fn release_target(&self, world: &World, carrier: PlayerId, inputs: &PlanInputs) -> Vector2 {
         let half_len = world.field_length() / 2.0;
@@ -646,10 +702,10 @@ impl Planner {
     }
 
     /// Advancement hoof: score kick *directions* within the cone from the ball to
-    /// the opponent back-line corners (see [`geometry::hoof_ray_target`] — travel-
-    /// calibration-free, biased goal > forward teammate > open lane). Our players
-    /// already in the opponent half (the permanent outlet, supporters) are the
-    /// target-man candidates.
+    /// the opponent goal mouth (see [`geometry::hoof_ray_target`] — travel-
+    /// calibration-free, goal-bound so a full-length roll-out can never be a
+    /// Div-B aimless kick). Our players already in the opponent half (the
+    /// permanent outlet, supporters) still bias the ray within the mouth.
     fn hoof_target(
         &self,
         world: &World,
@@ -684,7 +740,7 @@ impl Planner {
             config::HOOF_OPEN_PENALTY,
             config::HOOF_RAY_CORRIDOR,
             config::HOOF_CENTER_W,
-            config::HOOF_CONE_INSET,
+            config::HOOF_MOUTH_INSET,
         )
     }
 
@@ -1004,9 +1060,10 @@ mod tests {
     }
 
     #[test]
-    fn contest_near_our_goal_clears_to_a_wing() {
+    fn contest_near_our_goal_clears_at_their_goal_mouth() {
         // We hold the ball deep in our half with an opponent pressing → high threat
-        // → clear hard to a wing (give up possession to kill the danger).
+        // → clear hard, aimed inside the opponent goal mouth on the ball's flank
+        // side (goal-bound: a full-length roll-out can't be an aimless kick).
         let ball = Vector2::new(-3500.0, 200.0);
         let own = vec![player(1, -4000.0, 0.0), player(2, -3500.0, 200.0)];
         let opp = vec![player(9, -3300.0, 200.0)];
@@ -1022,13 +1079,14 @@ mod tests {
             .expect("should produce a plan");
         match &plan.waypoints[0] {
             Waypoint::Handle {
-                action: BallAction::Shoot { target },
+                action: BallAction::Strike { target, .. },
                 ..
             } => {
-                assert!((target.x - config::CLEAR_TARGET_X).abs() < 1.0);
-                assert!(target.y.abs() >= config::CLEAR_TARGET_MIN_Y - 1.0);
+                assert!((target.x - world.opp_goal_center().x).abs() < 1.0);
+                assert!((target.y - config::CLEAR_AIM_Y).abs() < 1.0, "ball at +y → aim +y side of mouth: {target:?}");
+                assert!(target.y.abs() < world.goal_width() / 2.0, "aim must be inside the mouth");
             }
-            other => panic!("expected a clearance Shoot, got {other:?}"),
+            other => panic!("expected a clearance Strike, got {other:?}"),
         }
     }
 
@@ -1132,9 +1190,10 @@ mod tests {
     }
 
     #[test]
-    fn long_range_aimed_shot_keeps_the_precise_shoot() {
+    fn long_range_aimed_shot_is_also_a_reflex_strike() {
         // Same open mouth but from OUTSIDE the strike-finish zone (still in range):
-        // accuracy matters more than decisiveness, so keep the orbit-to-aim Shoot.
+        // every shot is a reflex strike-through now — the orbit-to-aim Shoot is
+        // retired (its capture hold made the action churn with breakbeam flicker).
         let carrier = Vector2::new(700.0, 0.0); // ~3800mm from goal: >zone, <range
         let own = vec![player(1, -4000.0, 0.0), player(2, carrier.x, carrier.y)];
         let opp = vec![player(9, -4000.0, 0.0)];
@@ -1148,19 +1207,21 @@ mod tests {
             matches!(
                 &plan.waypoints[0],
                 Waypoint::Handle {
-                    action: BallAction::Shoot { .. },
+                    action: BallAction::Strike { .. },
                     ..
                 }
             ),
-            "a long-range aimed shot should keep the precise Shoot, got {:?}",
+            "a long-range aimed shot should be a reflex Strike, got {:?}",
             plan.waypoints[0]
         );
     }
 
     #[test]
-    fn uncontested_loose_ball_in_zone_is_settled_not_struck() {
-        // A loose ball in the strike zone with NO opponent near it: we win it clean,
-        // so settle (Hold) and build — don't hack at goal.
+    fn uncontested_loose_ball_in_zone_is_struck_first_time() {
+        // A loose ball in the strike zone: strike it goalward directly — one
+        // uninterrupted HandleBall episode. The old settle-then-replan (Hold, swap
+        // to the shot on the possession flip) tracked the flickering breakbeam and
+        // deadlocked the possession-blind Hold stage (2026-07-02 GreenTea freeze).
         let ball = Vector2::new(2600.0, 200.0);
         let own = vec![player(1, -4000.0, 0.0), player(2, 2400.0, 200.0)];
         let opp = vec![player(9, 3800.0, 0.0)]; // far from the ball
@@ -1179,11 +1240,42 @@ mod tests {
             matches!(
                 &plan.waypoints[0],
                 Waypoint::Handle {
-                    action: BallAction::Hold { .. },
+                    action: BallAction::Strike { .. },
                     ..
                 }
             ),
-            "an uncontested loose ball should be settled, got {:?}",
+            "a loose ball in the zone should be struck first-time, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn loose_ball_on_boundary_is_rescued_not_struck() {
+        // A loose ball pinned on a touchline must still be scooped inward (Hold +
+        // rescue) — striking there would kick it over the line.
+        let half_w = 3000.0;
+        let ball = Vector2::new(1000.0, half_w - 50.0);
+        let own = vec![player(1, -4000.0, 0.0), player(2, 800.0, half_w - 300.0)];
+        let world = world_contest(ball, own, vec![], None);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(
+                &world,
+                &Possession::Loose,
+                Some(PlayerId::new(2)),
+                &inputs(),
+            )
+            .expect("should produce a plan");
+        assert!(
+            matches!(
+                &plan.waypoints[0],
+                Waypoint::Handle {
+                    action: BallAction::Hold { .. },
+                    rescue: true,
+                }
+            ),
+            "a boundary ball should be rescued (Hold), got {:?}",
             plan.waypoints[0]
         );
     }
@@ -1239,7 +1331,7 @@ mod tests {
         match &plan.waypoints[0] {
             Waypoint::Pass { .. } => panic!("passing is disabled; got a Pass"),
             Waypoint::Handle {
-                action: BallAction::Shoot { target },
+                action: BallAction::Strike { target, .. },
                 ..
             } => {
                 assert!(
@@ -1318,30 +1410,6 @@ mod tests {
             }
             other => panic!("expected a release Strike, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn open_play_carrier_does_not_emit_release() {
-        // Without an attacking restart, the same carrier must NOT strike-through
-        // (open play keeps capture-then-aim Shoot / Pass / Carry untouched).
-        let own = vec![player(1, -4000.0, 0.0), player(2, -1000.0, 0.0)];
-        let world = world_with(own, vec![], 1);
-        let mut planner = Planner::new();
-
-        let plan = planner
-            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
-            .expect("should produce a plan");
-        assert!(
-            !matches!(
-                plan.waypoints[0],
-                Waypoint::Handle {
-                    action: BallAction::Strike { .. },
-                    ..
-                }
-            ),
-            "open play must not emit Strike, got {:?}",
-            plan.waypoints[0]
-        );
     }
 
     #[test]
@@ -1603,10 +1671,13 @@ mod tests {
     }
 
     #[test]
-    fn deep_carrier_with_no_clean_shot_does_not_strike() {
-        // The same crowded-mouth situation but the carrier is in its own half,
-        // far out of shooting range: the strike-finish must NOT fire there (a give
-        // away that deep is a counter), it falls back to the normal recycle/carry.
+    fn deep_carrier_with_no_clean_shot_hoofs_forward() {
+        // The same crowded-mouth situation but the carrier is in its own half, far
+        // out of shooting range: the shot/finish gates (SHOOT_RANGE,
+        // STRIKE_FINISH_RANGE) must not fire there — the release falls through to
+        // the kick-ahead ladder and exits through their back line (the ray hoof,
+        // whose failure distribution from deep is benign), still as a reflex
+        // Strike.
         let ball = Vector2::new(-1500.0, 0.0);
         let own = vec![
             player(1, -4000.0, 0.0), // keeper
@@ -1623,16 +1694,17 @@ mod tests {
         let plan = planner
             .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
             .expect("should produce a plan");
-        assert!(
-            !matches!(
-                plan.waypoints[0],
-                Waypoint::Handle {
-                    action: BallAction::Strike { .. },
-                    ..
-                }
-            ),
-            "must not strike-finish from deep in our own half, got {:?}",
-            plan.waypoints[0]
-        );
+        match &plan.waypoints[0] {
+            Waypoint::Handle {
+                action: BallAction::Strike { target, .. },
+                ..
+            } => {
+                assert!(
+                    (target.x - world.field_length() / 2.0).abs() < 1e-6,
+                    "deep release must hoof through their back line, got {target:?}"
+                );
+            }
+            other => panic!("expected a forward release Strike, got {other:?}"),
+        }
     }
 }

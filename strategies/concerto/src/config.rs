@@ -224,38 +224,43 @@ pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
 /// move the opponent out from between us and goal, after which we replan normally.
 pub const ESCAPE_STEP: f64 = 300.0;
 
-// ── Advancement hoof (ray-based, travel-calibration-free) ────────────────────
-// The old hoof aimed at a predicted *resting point* (`ball + dir × HOOF_TRAVEL`)
-// and required it to land in-field. Every term depended on the roll-distance
-// estimate, which encodes kick speed ÷ sim damping and is wrong whenever either
-// is (real kicks ~5000mm/s vs the modelled 4000 → every hoof overshot by ~25%),
-// and from the exact kickoff spot NO direction satisfied both bounds (in-x needs
-// ≥33° off-axis, in-y needs ≤33°) so the scorer returned None. The replacement
-// scores *directions* instead: candidates are restricted to the cone from the
-// ball to the two opponent back-line corners, so however far the ball actually
-// rolls the outcome is benign — undershoot settles in their half, overshoot
-// crosses THEIR goal line (their deep free kick, with our forward pressing). The
-// only way a hoof reaches a touchline is a deflection. Roll distance never enters.
-/// Bonus for a ray whose back-line exit falls inside an open goal-mouth window
-/// (keeper-shadow aware) — beyond shot range, the goal is simply the best hoof.
+// ── Advancement hoof (ray-based, travel-calibration-free, goal-mouth cone) ───
+// The hoof scores *directions*, not landing points, so no roll-distance model
+// enters (the old resting-point scorer broke whenever kick speed or carpet
+// friction differed from the model). Candidates are restricted to the cone from
+// the ball to the opponent GOAL MOUTH (posts inset by [`HOOF_MOUTH_INSET`]) —
+// not the full back line. Rationale: the Div-B aimless-kick rule awards the
+// opponent a free kick AT OUR KICK POSITION whenever a ball kicked from our half
+// crosses halfway and then their goal line outside the goal untouched, so a wide
+// back-line exit is the *penalized* outcome, not a benign one. A mouth-bound ray
+// has no aimless case: untouched it's a goal; blocked it's a keeper/defender
+// touch (rebound, or a corner for us off the keeper). 2026-07-02 match data:
+// 11 aimless resets in ~55min from wide-cone hoofs, while every kick aimed
+// inside the mouth either scored or drew a keeper touch.
+/// Bonus for a ray whose exit falls inside an *open* goal-mouth window
+/// (keeper-shadow aware) — prefer the ray that can actually score.
 pub const HOOF_GOAL_W: f64 = 3000.0;
 /// Bonus for a ray passing near one of our players in the opponent half (the
 /// permanent outlet / supporters), decaying to zero over [`HOOF_MATE_RADIUS`] of
-/// perpendicular distance — the long ball to the target man.
+/// perpendicular distance. With the mouth cone this is a within-mouth tiebreak
+/// (a mate near the goal-bound ray helps rebound recovery), no longer a wide
+/// target-man ball.
 pub const HOOF_MATE_W: f64 = 2000.0;
 pub const HOOF_MATE_RADIUS: f64 = 1200.0;
 /// Maximum penalty for opponents sitting on the ray (they intercept en route).
-/// Kept mild: an interception at midfield costs possession, but a deflection near
-/// their goal is a cheap gamble (out off them = our free kick).
+/// Kept mild: every ray is goal-bound now, so an en-route touch is rule-safe
+/// (defuses aimless) and a deflection near their goal is a cheap gamble.
 pub const HOOF_OPEN_PENALTY: f64 = 1500.0;
 /// Corridor width (mm) for the ray-openness term.
 pub const HOOF_RAY_CORRIDOR: f64 = 600.0;
 /// Weight on the centre-bias tiebreak (mm of |exit y| off the touchline): all
 /// rays exit at the same depth, so ties break toward the dangerous central zone.
 pub const HOOF_CENTER_W: f64 = 0.3;
-/// Inset (mm) from the back-line corners bounding the candidate cone, so numeric
-/// error at the extreme rays can't put the exit on a touchline.
-pub const HOOF_CONE_INSET: f64 = 200.0;
+/// Inset (mm) from the goal posts bounding the candidate cone — execution margin
+/// so a yaw error doesn't turn a near-post aim into a wide (aimless) miss. Real
+/// long kicks land ~100–150mm off the intended line at full field range; today's
+/// near-post aimless misses were exactly this band (534–1100mm past the post).
+pub const HOOF_MOUTH_INSET: f64 = 150.0;
 /// A loose ball within this distance of a touchline or goal line is treated as a
 /// boundary "rescue": the capture heading is biased to dribble the ball back
 /// *inward* (into the field) instead of along/over the line. Set comfortably
@@ -501,8 +506,44 @@ pub const OUTLET_Y_FRAC: f64 = 0.55;
 /// discounted Mark (≤4, deliberate: forward presence over man-marking) so that
 /// body holds high instead of collapsing all the way home.
 pub const IMP_OUTLET: f64 = 5.0;
+// ── Wall reflex strike ────────────────────────────────────────────────────────
+// A ball rolled/kicked into our wall used to elect an *outside* capturer that
+// stern-chased the ball into the wall corridor — crowding it, splitting the wall
+// (via contest suppression) or stalling the game. Instead, the wall robot the
+// ball is arriving at performs a one-touch reflex strike straight forward
+// through the free ball (`Strike { acquire_first: false }` — never holds it),
+// then slots back into its wall position. While it strikes, its shadow slot is
+// held by its own body (see SHADOW_HOLD_*) so no backfill body is pulled across
+// the field, and the open capture role is suppressed so nobody chases the ball
+// into the wall.
+/// Master switch for the wall reflex strike. `false` restores the old behaviour
+/// (open capture election for every loose ball) exactly.
+pub const WALL_STRIKE_ENABLED: bool = true;
+/// Minimum ball speed (mm/s) to arm a wall strike — below this the ball is not
+/// an incoming delivery and normal capture handles it.
+pub const WALL_STRIKE_MIN_SPEED: f64 = 500.0;
+/// Hysteresis exit: once engaged, a ball still moving above this keeps the
+/// approach-geometry validity checks active; at/below it the ball has (nearly)
+/// died and the striker finishes the poke-clear if the ball rests within reach.
+pub const WALL_STRIKE_EXIT_SPEED: f64 = 300.0;
+/// Max perpendicular distance (mm) from a wall robot to the ball's line of
+/// travel for that robot to be the striker — it only ever steps, never chases.
+pub const WALL_STRIKE_REACH: f64 = 700.0;
+/// Max seconds until the ball's closest approach for a strike to arm; beyond
+/// this the ball is too far out and interception/capture logic applies.
+pub const WALL_STRIKE_MAX_TTC: f64 = 1.5;
+/// Slot-hold: a reserved plan robot (e.g. the wall striker working at its own
+/// post, or a carrier standing in the wall) fades the importance of a Shadow
+/// slot it is physically covering — `imp *= smoothstep(NEAR, FAR, dist)` — so
+/// the matcher never pulls a backfill body across the field for a slot that has
+/// a body in it, and the slot fades back in continuously if the body leaves.
+pub const SHADOW_HOLD_NEAR: f64 = 300.0;
+pub const SHADOW_HOLD_FAR: f64 = 900.0;
 /// Coverage accounting: radius around a plan robot's ball contest within which
 /// formation roles are de-prioritised (soft suppression, avoids clustering).
+/// Shadow roles are exempt — the wall must never step aside because a scrum
+/// arrived at it (its post is most valuable exactly then); Shadow staffing is
+/// instead moderated by the body-proximity slot-hold above.
 pub const SUPPRESS_RADIUS: f64 = 500.0;
 /// Max importance penalty applied at the centre of a suppression zone. Set above
 /// the shadow/mark bases so a redundant role on the contested ball decisively
@@ -625,11 +666,14 @@ pub const CLEAR_BALL_MARGIN: f64 = 50.0;
 /// goal. The side/goal-line edges are unconstrained so the keeper can reach a
 /// ball in the box corners.
 pub const CLEAR_EXIT_MARGIN: f64 = 20.0;
-/// Minimum |y| of the clear target, so the keeper never kicks straight up the
-/// middle in front of our own goal.
-pub const CLEAR_TARGET_MIN_Y: f64 = 1500.0;
-/// Downfield x of the clear target (toward the opponent half).
-pub const CLEAR_TARGET_X: f64 = 0.0;
+/// |y| of the clear aim point ON THE OPPONENT GOAL LINE, taken on the ball's
+/// flank side. Clears are full-power strikes that roll the length of the field,
+/// so under the Div-B aimless-kick rule they must be goal-bound like the hoof:
+/// a wing clear through midfield that rolls out wide of their goal hands the
+/// opponent a free kick back at OUR kick position (2 of today's 11 aimless
+/// resets were keeper clears). Inside the mouth (goal half-width 500) but off
+/// centre, so an untouched clear scores or forces the keeper to play it.
+pub const CLEAR_AIM_Y: f64 = 250.0;
 
 // ── Planner: in-field clamping ───────────────────────────────────────────────
 /// Margin (mm) by which a kick-ahead pass/cross lead target is kept inside the

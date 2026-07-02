@@ -88,6 +88,14 @@ tunables! {
     /// or two. Mirrors the pass coordinator's `SETUP_BALL_LOST_GRACE`.
     #[tunable(unit = "s", min = 0.0, max = 1.0, step = 0.05)]
     BALL_LOST_GRACE: f64 = 0.2;
+    /// Possession-loss debounce when the ball is still NEAR (inside
+    /// [`LOST_BALL_DISTANCE`]): a ball resting just in front of the dribbler
+    /// (~110–220 mm centre-to-centre) is invisible to the breakbeam yet not "far",
+    /// so without this the act stages held forever with no ball (the 2026-07-02
+    /// GreenTea freeze). Long enough to ride out dribbler-contact flicker, short
+    /// enough that a bounced-off ball is re-acquired promptly.
+    #[tunable(unit = "s", min = 0.1, max = 2.0, step = 0.05)]
+    NEAR_LOST_GRACE: f64 = 0.5;
     /// Approach timeout: while still traversing toward the ball (not yet committed to
     /// the final capture drive), fail this long after entering the acquire stage so a
     /// robot that can't reach the ball surfaces a failure and the caller re-decides.
@@ -723,11 +731,20 @@ impl ExecutableSkill for HandleBallSkill {
         let ball_vel_norm = ball.velocity.norm();
 
         // Debounced silent re-acquire if the ball is lost during an act stage.
+        // Distance-dependent grace: a far blow-out re-acquires fast; a ball still
+        // near (just off the dribbler, breakbeam dark) gets a longer debounce so
+        // contact flicker doesn't abort — but it MUST eventually re-acquire, or a
+        // ball resting 110–220 mm ahead deadlocks a zero-translation Hold.
         if matches!(self.stage, Stage::Aim | Stage::Carry | Stage::Hold) {
             let far = (player_pos - ball_pos).norm() > LOST_BALL_DISTANCE();
-            if !has_ball && far {
+            if !has_ball {
                 let lost = *self.lost_since.get_or_insert(now);
-                if now - lost > BALL_LOST_GRACE() {
+                let grace = if far {
+                    BALL_LOST_GRACE()
+                } else {
+                    NEAR_LOST_GRACE()
+                };
+                if now - lost > grace {
                     self.reacquire(now);
                 }
             } else {
@@ -945,6 +962,53 @@ mod tests {
             }
             p => panic!("expected Continue, got {p:?}"),
         }
+    }
+
+    #[test]
+    fn hold_with_ball_lost_nearby_reacquires_after_grace() {
+        // Regression (2026-07-02 GreenTea freeze): a ball resting ~135 mm ahead is
+        // invisible to the breakbeam yet inside LOST_BALL_DISTANCE, so the old
+        // `!has_ball && far` gate never fired and the zero-translation Hold
+        // deadlocked. A near loss must re-acquire after NEAR_LOST_GRACE; a brief
+        // (sub-grace) dropout must ride through and stay in Hold.
+        let mut s = skill(BallAction::Hold {
+            heading: Angle::from_radians(0.0),
+        });
+        let pos = Vector2::new(500.0, 0.0);
+        let tc = team_ctx();
+        // Tick 1: breakbeam latched → acquire routes into Hold.
+        let held = held_player(pos);
+        let w0 = world_at(&held, pos, 0.0);
+        assert!(matches!(
+            s.tick(ctx(&w0, &tc, &held)),
+            SkillProgress::Continue(_)
+        ));
+        assert!(matches!(s.stage, Stage::Hold));
+        // Ball pops off the dribbler and settles 135 mm away, breakbeam dark.
+        // The first no-ball tick (t=0.1) stamps the loss clock.
+        let lost = player(0, pos, 0.0);
+        let near_ball = pos + Vector2::new(135.0, 0.0);
+        let t_lost = 0.1;
+        let w1 = world_at(&lost, near_ball, t_lost);
+        assert!(matches!(
+            s.tick(ctx(&w1, &tc, &lost)),
+            SkillProgress::Continue(_)
+        ));
+        assert!(matches!(s.stage, Stage::Hold));
+        // Within the grace window: still Hold (flicker tolerance).
+        let w2 = world_at(&lost, near_ball, t_lost + NEAR_LOST_GRACE() * 0.5);
+        assert!(matches!(
+            s.tick(ctx(&w2, &tc, &lost)),
+            SkillProgress::Continue(_)
+        ));
+        assert!(matches!(s.stage, Stage::Hold));
+        // Past the grace window: the skill must silently re-acquire.
+        let w3 = world_at(&lost, near_ball, t_lost + NEAR_LOST_GRACE() + 0.05);
+        assert!(matches!(
+            s.tick(ctx(&w3, &tc, &lost)),
+            SkillProgress::Continue(_)
+        ));
+        assert!(matches!(s.stage, Stage::Acquire));
     }
 
     #[test]

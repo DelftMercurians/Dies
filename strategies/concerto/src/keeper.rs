@@ -431,13 +431,15 @@ fn keeper_inside_front(world: &World, pos: Vector2, margin: f64) -> bool {
     pos.x <= area.max.x - margin
 }
 
-/// Clearing target: upfield (toward the opponent half) and pushed toward the
-/// touchline on the ball's side, never straight up the middle in front of goal.
+/// Clearing target: the opponent goal mouth on the ball's flank side. A clear is
+/// a full-power strike that rolls the length of the field, so under the Div-B
+/// aimless-kick rule it must be goal-bound like the hoof — a wing clear that
+/// crosses halfway and rolls out wide of their goal hands the opponent a free
+/// kick back at OUR kick position. Inside the mouth an untouched clear scores or
+/// forces their keeper to play it.
 fn clear_target(world: &World, ball: Vector2) -> Vector2 {
     let side = if ball.y >= 0.0 { 1.0 } else { -1.0 };
-    let max_y = (world.field_width() / 2.0 - 200.0).max(config::CLEAR_TARGET_MIN_Y);
-    let y = side * config::CLEAR_TARGET_MIN_Y.min(max_y);
-    Vector2::new(config::CLEAR_TARGET_X, y)
+    Vector2::new(world.opp_goal_center().x, side * config::CLEAR_AIM_Y)
 }
 
 /// Heading from `from` toward `to`.
@@ -757,15 +759,21 @@ mod tests {
     }
 
     #[test]
-    fn clear_target_is_off_centre_and_upfield_on_ball_side() {
+    fn clear_target_is_goal_bound_on_ball_side() {
+        // The clear must aim inside the opponent goal mouth (off-centre on the
+        // ball's flank), so a full-length roll-out can't be a Div-B aimless kick.
         let w = world_with_ball(Vector2::new(-4000.0, 300.0));
         let target = clear_target(&w, Vector2::new(-4000.0, 300.0));
         assert!(
-            target.y >= config::CLEAR_TARGET_MIN_Y,
-            "off centre: {:?}",
-            target
+            (target.x - w.opp_goal_center().x).abs() < 1e-6,
+            "goal-bound: {target:?}"
+        );
+        assert!(
+            (target.y - config::CLEAR_AIM_Y).abs() < 1e-6
+                && target.y.abs() < w.goal_width() / 2.0,
+            "inside the mouth on the ball side: {target:?}"
         );
         let neg = clear_target(&w, Vector2::new(-4000.0, -300.0));
-        assert!(neg.y <= -config::CLEAR_TARGET_MIN_Y, "mirror: {:?}", neg);
+        assert!((neg.y + config::CLEAR_AIM_Y).abs() < 1e-6, "mirror: {neg:?}");
     }
 }

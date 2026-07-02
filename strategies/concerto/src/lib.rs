@@ -57,6 +57,15 @@ pub struct ConcertoStrategy {
     gained_ball_t: Option<f64>,
     /// Goalkeeper Guard/Clear state machine.
     keeper: keeper::KeeperState,
+    /// Wall robot currently executing a reflex strike on an incoming ball (see
+    /// `config::WALL_STRIKE_ENABLED`). While set, it is a reserved plan slot
+    /// (its own body holds its wall slot via the Shadow slot-hold) and the open
+    /// capture role is suppressed so nobody chases the ball into the wall.
+    wall_striker: Option<PlayerId>,
+    /// Robots serving Shadow roles last tick (from Formation's commands) — the
+    /// wall-striker candidate pool. One tick stale by construction, which is fine
+    /// at frame rate.
+    last_wall_ids: Vec<PlayerId>,
 }
 
 impl ConcertoStrategy {
@@ -73,6 +82,8 @@ impl ConcertoStrategy {
             dribble_origin: None,
             gained_ball_t: None,
             keeper: keeper::KeeperState::new(),
+            wall_striker: None,
+            last_wall_ids: Vec::new(),
         }
     }
 }
@@ -323,9 +334,68 @@ impl Strategy for ConcertoStrategy {
             }
         }
 
+        // ── Wall reflex strike: a ball rolled/kicked into our wall is met by the
+        //    wall robot it is arriving at — a one-touch strike straight forward
+        //    through the free ball, never held — instead of an outside capturer
+        //    stern-chasing the ball into the wall corridor. Exit first (episode
+        //    resolved / geometry lapsed / another mode owns the driver), then
+        //    arm on a fresh incoming ball. ──────────────────────────────────────
+        if let Some(sid) = self.wall_striker {
+            if !pursuit {
+                // Offense or a stoppage owns the driver now (it was replanned or
+                // cleared above); just drop the strike designation.
+                self.wall_striker = None;
+            } else if matches!(
+                self.driver.status(),
+                WaypointStatus::Succeeded | WaypointStatus::Failed(_)
+            ) || !wall_strike_valid(&world, sid)
+            {
+                // A Failed whiff clears here; if the ball is still incoming the
+                // entry below re-arms next tick (always re-engage, never rotate).
+                self.wall_striker = None;
+                self.driver.clear();
+            }
+        }
+        if config::WALL_STRIKE_ENABLED
+            && pursuit
+            && game_state == GameState::Run
+            && self.wall_striker.is_none()
+        {
+            if let Some(sid) =
+                elect_wall_striker(&world, &self.last_wall_ids, self.double_touch_robot)
+            {
+                // Straight-forward reflex clear: kick through the incoming ball
+                // toward the opponent backline at the striker's own lateral lane.
+                let sy = world.own_player(sid).map(|p| p.position.y).unwrap_or(0.0);
+                let target = Vector2::new(world.field_length() / 2.0, sy);
+                self.planner.clear_plan();
+                self.driver.set_waypoint(
+                    planner::Waypoint::Handle {
+                        action: BallAction::Strike {
+                            target,
+                            acquire_first: false,
+                        },
+                        rescue: false,
+                    },
+                    sid,
+                );
+                self.wall_striker = Some(sid);
+            }
+        }
+        if let Some(sid) = self.wall_striker {
+            // A plan slot: Formation must not position it, and its own body holds
+            // its wall slot (Shadow slot-hold) so no backfill is pulled in.
+            reserved.push(sid);
+            debug::string("wall_striker", &sid.as_u32().to_string());
+        } else {
+            debug::string("wall_striker", "none");
+        }
+
         // ── Pursuit: hand Formation a capture role so its matching elects the
-        //    ball-winner (weighed against defensive duty). ───────────────────────
-        let capture = pursuit.then(|| {
+        //    ball-winner (weighed against defensive duty). While a wall strike is
+        //    active the open capture is suppressed — the striker owns the ball and
+        //    nobody else may chase it into the wall. ───────────────────────────────
+        let capture = (pursuit && self.wall_striker.is_none()).then(|| {
             let ball = world.ball_position().unwrap_or_default();
             let pos = world
                 .predict_ball_position(config::CAPTURE_LEAD_TAU)
@@ -364,8 +434,11 @@ impl Strategy for ConcertoStrategy {
             self.restart_kicker = world.freekick_kicker().or(fout.capturer);
         }
 
-        // ── Pursuit: build the capture waypoint for Formation's chosen capturer ──
-        if pursuit {
+        // ── Pursuit: build the capture waypoint for Formation's chosen capturer.
+        //    Skipped while a wall strike runs — the striker's waypoint was set
+        //    directly above and must not be torn down by the capture replan
+        //    (`fout.capturer` is None then, which would read as a mismatch). ──────
+        if pursuit && self.wall_striker.is_none() {
             let needs_replan = self.planner.current_plan().is_none()
                 || matches!(
                     self.driver.status(),
@@ -396,8 +469,11 @@ impl Strategy for ConcertoStrategy {
                     None => {}
                 }
             }
-            // On a Failed status the next tick re-derives a fresh capture plan for
-            // the same most-eligible robot; no per-robot failure memory.
+        }
+        // Drive the active pursuit robot — the elected capturer or the wall
+        // striker. On a Failed status the next tick re-derives a fresh plan for
+        // the same most-eligible robot; no per-robot failure memory.
+        if pursuit {
             self.driver.update(&world, ctx);
         }
 
@@ -415,6 +491,16 @@ impl Strategy for ConcertoStrategy {
                 }
             }
         }
+
+        // Wall-striker candidate pool for next tick: the robots serving Shadow
+        // roles now. (The active striker is reserved and absent from commands —
+        // irrelevant, since election only runs when no striker is active.)
+        self.last_wall_ids = fout
+            .commands
+            .iter()
+            .filter(|c| c.role == "shadow")
+            .map(|c| c.id)
+            .collect();
 
         // ── Apply Formation positioning (non-capturing field robots) ─────
         for cmd in &fout.commands {
@@ -632,5 +718,188 @@ fn our_kicker_role(game_state: GameState, us_operating: bool) -> Option<&'static
             Some("penalty_kicker")
         }
         _ => None,
+    }
+}
+
+/// Elect the wall robot to reflex-strike an incoming ball: the ball must be
+/// free-rolling toward our side above [`config::WALL_STRIKE_MIN_SPEED`], and the
+/// striker is the wall robot nearest the ball's line of travel — reachable with
+/// a step ([`config::WALL_STRIKE_REACH`]), arriving within
+/// [`config::WALL_STRIKE_MAX_TTC`]. The wall robot in the path is the low-risk
+/// choice by construction: it barely moves, stays on the ball line (the line
+/// that matters), and its emptied slot is held by its own body.
+fn elect_wall_striker(
+    world: &World,
+    wall_ids: &[PlayerId],
+    barred: Option<PlayerId>,
+) -> Option<PlayerId> {
+    let ball = world.ball_position()?;
+    let vel = world.ball_velocity()?;
+    // Incoming: fast enough to be a delivery, and travelling toward our side.
+    if vel.norm() < config::WALL_STRIKE_MIN_SPEED || vel.x >= 0.0 {
+        return None;
+    }
+    let mut best: Option<(PlayerId, f64)> = None;
+    for id in wall_ids {
+        if Some(*id) == barred {
+            continue;
+        }
+        let Some(p) = world.own_player(*id) else {
+            continue;
+        };
+        let Some((t, miss)) = geometry::ball_closest_approach(ball, vel, p.position) else {
+            continue;
+        };
+        if t <= 0.0 || t > config::WALL_STRIKE_MAX_TTC || miss > config::WALL_STRIKE_REACH {
+            continue;
+        }
+        if best.map(|(_, m)| miss < m).unwrap_or(true) {
+            best = Some((*id, miss));
+        }
+    }
+    best.map(|(id, _)| id)
+}
+
+/// Whether an armed wall strike is still worth finishing. Looser than the entry
+/// gate (hysteresis): while the ball still rolls, its approach must remain
+/// plausible for this striker; once it has (nearly) died, the striker finishes
+/// the poke-clear iff the ball rests within a couple of steps — never leaving a
+/// stopped ball sitting in front of our goal for an opponent to run onto.
+fn wall_strike_valid(world: &World, striker: PlayerId) -> bool {
+    let (Some(ball), Some(vel), Some(p)) = (
+        world.ball_position(),
+        world.ball_velocity(),
+        world.own_player(striker),
+    ) else {
+        return false;
+    };
+    if vel.norm() > config::WALL_STRIKE_EXIT_SPEED {
+        // Still rolling: kicked/deflected away (receding or wide) ends the
+        // episode; margins are grown so normal approach jitter doesn't flicker.
+        let Some((t, miss)) = geometry::ball_closest_approach(ball, vel, p.position) else {
+            return false;
+        };
+        vel.x < 0.0
+            && t > -0.15
+            && t < config::WALL_STRIKE_MAX_TTC * 1.5
+            && miss < config::WALL_STRIKE_REACH * 1.4
+    } else {
+        // Ball has died nearby: finish striking it clear.
+        (ball - p.position).norm() < config::WALL_STRIKE_REACH * 2.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dies_strategy_protocol::{BallState, WorldSnapshot};
+
+    fn world_with_ball(
+        own: Vec<PlayerState>,
+        ball_pos: Vector2,
+        ball_vel: Vector2,
+    ) -> World {
+        World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: ball_pos,
+                velocity: ball_vel,
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: vec![],
+            game_state: GameState::Run,
+            us_operating: true,
+            pre_stage: false,
+            our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
+            possession: Possession::Loose,
+            possession_stale: false,
+            ball_contest: None,
+        })
+    }
+
+    fn player(id: u32, x: f64, y: f64) -> PlayerState {
+        PlayerState::new(
+            PlayerId::new(id),
+            Vector2::new(x, y),
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        )
+    }
+
+    #[test]
+    fn wall_striker_is_the_robot_in_the_ball_path() {
+        // Wall at x=-3000; ball rolling straight at the +y wing (id 3).
+        let own = vec![
+            player(1, -4300.0, 0.0), // keeper
+            player(2, -3000.0, 0.0),
+            player(3, -3000.0, 400.0),
+            player(4, -3000.0, -400.0),
+        ];
+        let wall = vec![PlayerId::new(2), PlayerId::new(3), PlayerId::new(4)];
+        let w = world_with_ball(own, Vector2::new(-1000.0, 400.0), Vector2::new(-1800.0, 0.0));
+        assert_eq!(elect_wall_striker(&w, &wall, None), Some(PlayerId::new(3)));
+    }
+
+    #[test]
+    fn no_striker_for_slow_wide_or_outgoing_balls() {
+        let own = vec![
+            player(1, -4300.0, 0.0),
+            player(2, -3000.0, 0.0),
+            player(3, -3000.0, 400.0),
+        ];
+        let wall = vec![PlayerId::new(2), PlayerId::new(3)];
+        // Too slow.
+        let w = world_with_ball(
+            own.clone(),
+            Vector2::new(-1000.0, 0.0),
+            Vector2::new(-300.0, 0.0),
+        );
+        assert_eq!(elect_wall_striker(&w, &wall, None), None);
+        // Moving away from our side.
+        let w = world_with_ball(
+            own.clone(),
+            Vector2::new(-1000.0, 0.0),
+            Vector2::new(1500.0, 0.0),
+        );
+        assert_eq!(elect_wall_striker(&w, &wall, None), None);
+        // Fast but passing far wide of every wall robot.
+        let w = world_with_ball(
+            own.clone(),
+            Vector2::new(-1000.0, 2500.0),
+            Vector2::new(-1800.0, 0.0),
+        );
+        assert_eq!(elect_wall_striker(&w, &wall, None), None);
+        // Too far out: closest approach beyond the TTC gate.
+        let w = world_with_ball(own, Vector2::new(2000.0, 0.0), Vector2::new(-600.0, 0.0));
+        assert_eq!(elect_wall_striker(&w, &wall, None), None);
+    }
+
+    #[test]
+    fn strike_stays_valid_for_a_ball_dying_within_reach() {
+        // The rejected-MVP failure: a roller that dies in front of the wall must
+        // still be poked clear by the armed striker, not left for an opponent.
+        let own = vec![player(1, -4300.0, 0.0), player(2, -3000.0, 0.0)];
+        let sid = PlayerId::new(2);
+        // Nearly stopped 600mm in front of the striker → finish the clear.
+        let w = world_with_ball(
+            own.clone(),
+            Vector2::new(-2400.0, 0.0),
+            Vector2::new(-50.0, 0.0),
+        );
+        assert!(wall_strike_valid(&w, sid));
+        // Stopped far away → episode ends, normal capture resumes.
+        let w = world_with_ball(
+            own.clone(),
+            Vector2::new(-500.0, 0.0),
+            Vector2::new(-50.0, 0.0),
+        );
+        assert!(!wall_strike_valid(&w, sid));
+        // Kicked clear (receding fast) → episode ends.
+        let w = world_with_ball(own, Vector2::new(-2400.0, 0.0), Vector2::new(3000.0, 0.0));
+        assert!(!wall_strike_valid(&w, sid));
     }
 }
