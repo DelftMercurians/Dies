@@ -30,6 +30,18 @@ use planner::{PlanInputs, Planner};
 /// attacking axis so the kicker sits poised inside the center circle to pounce.
 const PREP_KICKER_STANDOFF: f64 = 300.0;
 
+/// Own-half clamp (robot-center x, mm) for non-kicker staging targets while a
+/// kickoff is being prepared. Deeper than the executor's `comply()` clamp
+/// (-190mm) so that clamp is a no-op once the real `PrepareKickoff` arrives —
+/// we're already fully staged during the `pre_stage` window, where `comply()`
+/// still keys off the real Stop state and enforces nothing about the halfway line.
+const KICKOFF_STAGE_X: f64 = -300.0;
+
+/// Extra standoff (mm) beyond the center-circle radius for kickoff staging
+/// targets. `comply()` pushes non-kickers out to radius + 500 in the real
+/// PrepareKickoff/Kickoff states; stage slightly deeper so that's a no-op too.
+const KICKOFF_CIRCLE_MARGIN: f64 = 600.0;
+
 /// The Concerto strategy.
 pub struct ConcertoStrategy {
     /// Previous frame's possession, for detecting changes (the metric itself is
@@ -503,9 +515,32 @@ impl Strategy for ConcertoStrategy {
             .collect();
 
         // ── Apply Formation positioning (non-capturing field robots) ─────
+        // Kickoff staging: while a kickoff is being prepared — including the
+        // predicted `pre_stage` window where the GC still shows Stop — every
+        // non-kicker stages on our half, clear of the center circle, so nobody
+        // scrambles back when the real PrepareKickoff clamps arrive. The kicker
+        // is never in these commands (reserved in prep, capturer when live).
+        let kickoff_staging =
+            matches!(game_state, GameState::PrepareKickoff | GameState::Kickoff);
+        let circle_keepout = world
+            .field()
+            .map(|f| f.center_circle_radius)
+            .unwrap_or(500.0)
+            + KICKOFF_CIRCLE_MARGIN;
         for cmd in &fout.commands {
             if let Some(p) = ctx.player(cmd.id) {
-                p.go_to(cmd.target).facing(cmd.face);
+                let mut target = cmd.target;
+                if kickoff_staging {
+                    target.x = target.x.min(KICKOFF_STAGE_X);
+                    if target.norm() < circle_keepout {
+                        // Slide out of the center circle along -x; with x already
+                        // ≤ KICKOFF_STAGE_X this stays on our half.
+                        target.x = -(circle_keepout * circle_keepout - target.y * target.y)
+                            .max(0.0)
+                            .sqrt();
+                    }
+                }
+                p.go_to(target).facing(cmd.face);
                 p.set_role(cmd.role);
             }
         }
