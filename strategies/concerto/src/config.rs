@@ -64,9 +64,11 @@ pub const BALANCE_STANDOFF: f64 = 3500.0;
 /// Importance of the rest-defense Balance role while attacking. Set above the
 /// forward block (IMP_SUPPORT_ATTACK = 5.0, IMP_STRIKER = 5.5) so it wins exactly
 /// one body — displacing the *pivot* (IMP_PIVOT = 3.0, the least-critical forward
-/// outlet), not a support — but below the box anchor (8.0 × 0.8 = 6.4) and Mark,
-/// so it never outranks the genuine last line. Only emitted when `attacking`.
-pub const IMP_BALANCE: f64 = 6.0;
+/// outlet), not a support — but below the box anchor (8.0 × 0.8 = 6.4), so it
+/// never outranks the genuine last line. Sits above the discounted Mark (≤4),
+/// which is intended: rest-defense shape beats man-marking in the current
+/// tuning. Only emitted when `attacking`.
+pub const IMP_BALANCE: f64 = 5.0;
 /// A recycle outlet must be at least this far from the carrier (a real switch of
 /// play, not a tap) and its lane this open, to be worth laying the ball back to.
 pub const RECYCLE_MIN_DIST: f64 = 1200.0;
@@ -434,11 +436,17 @@ pub const REBOUND_CRASH_Y: f64 = 220.0;
 pub const SHADOW_RELIEF_THREAT: f64 = 0.4;
 /// Importance ladder (points; converted to seconds via SEC_PER_IMPORTANCE).
 /// Lever 1: raised 8.0→10.0 to give the threat-scaled wing wall enough headroom
-/// to outbid Mark (≤6) for the nearest bodies when the goal is threatened, so the
+/// to outbid Mark for the nearest bodies when the goal is threatened, so the
 /// posts get covered on a counter. Also lifts the anchor floor (×0.8 → 8.0); both
 /// stay below Capture (13), so a genuine ball-winner can still pull them.
-pub const IMP_SHADOW_BASE: f64 = 10.0;
-pub const IMP_MARK_BASE: f64 = 6.0;
+pub const IMP_SHADOW_BASE: f64 = 12.0;
+/// Discounted 6.0→4.0 (current tuning: prefer shadows over man-marking). At 6 a
+/// high-threat open-lane mark could tie a mid-threat wing (10 × 0.75 × 0.8) and
+/// outbid Outlet/SupportAttack (5) for surplus bodies. At 4 the wall always wins,
+/// and marks sit below the forward-presence tier — staffed only by bodies with
+/// nothing better, on genuinely dangerous unmarked opponents (threat·openness
+/// > 0.75 to beat plain Support at 3).
+pub const IMP_MARK_BASE: f64 = 4.0;
 pub const IMP_SUPPORT: f64 = 3.0;
 /// Support importance while attacking (ball in the opponent half, own goal safe).
 /// Above the weak-mark / spread range so surplus bodies win the assignment as
@@ -477,14 +485,15 @@ pub const OUTLET_X: f64 = 2200.0;
 /// Lateral placement of the outlet as a fraction of half-width, on the flank away
 /// from the ball (where a switch/clearance naturally goes).
 pub const OUTLET_Y_FRAC: f64 = 0.55;
-/// Importance of the counter outlet at full threat. Below Mark/Balance (6) and the
+/// Importance of the counter outlet at full threat. Below Balance (6) and the
 /// Shadow wall (10) so it never strips the goal wall — it claims at most the
-/// least-critical surplus body — but above plain Support (3)/Spread so that body
-/// holds high instead of collapsing all the way home.
+/// least-critical surplus body — but above plain Support (3)/Spread and the
+/// discounted Mark (≤4, deliberate: forward presence over man-marking) so that
+/// body holds high instead of collapsing all the way home.
 pub const IMP_OUTLET: f64 = 5.0;
 /// Coverage accounting: radius around a plan robot's ball contest within which
 /// formation roles are de-prioritised (soft suppression, avoids clustering).
-pub const SUPPRESS_RADIUS: f64 = 1400.0;
+pub const SUPPRESS_RADIUS: f64 = 500.0;
 /// Max importance penalty applied at the centre of a suppression zone. Set above
 /// the shadow/mark bases so a redundant role on the contested ball decisively
 /// loses to anything further out (clustering fix).
