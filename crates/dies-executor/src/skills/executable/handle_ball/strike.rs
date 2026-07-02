@@ -71,7 +71,17 @@ impl HandleBallSkill {
 
         let mut input = PlayerControlInput::new();
         input.with_yaw(heading);
-        input.with_dribbling(DRIBBLER_SPEED());
+        // No dribbler while hold-fired: a gated strike loiters at the staging
+        // point ~200 mm from the ball for however long the barrier takes, and a
+        // spinning dribbler there grabs-and-drags the ball on the slightest
+        // brush (in sim the dribbler claims within ~190 mm inside the mouth
+        // cone; observed dragging the ball 500+ mm during a hinted pass Stage).
+        // The ungated drive-through keeps the tuned always-on dribbler.
+        input.with_dribbling(if self.strike_gated {
+            0.0
+        } else {
+            DRIBBLER_SPEED()
+        });
 
         // Schmitt-latched commit (mirrors `drive_acquire`): hold through the release
         // bands (perp *and* along) so a transient nudge — or the ball estimate

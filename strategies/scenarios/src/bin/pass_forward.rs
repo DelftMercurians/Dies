@@ -38,7 +38,15 @@ fn release(passer: PlayerId) -> Step {
         let pos = p.position();
         let has_ball = p.has_ball();
         let dist = (pos - ball).norm();
-        if !has_ball && dist > FREE_DIST * 0.7 && dist < 550.0 {
+        // Only hand over to the pass once the ball has settled — a pass issued
+        // on a still-rolling ball (e.g. right after the previous deflection)
+        // trips its ball-moved abort within a few frames.
+        let ball_settled = ctx
+            .world()
+            .ball_velocity()
+            .map(|v| v.norm() < 150.0)
+            .unwrap_or(false);
+        if !has_ball && ball_settled && dist > FREE_DIST * 0.7 && dist < 550.0 {
             return StepOutcome::Succeeded;
         }
         // Back away from (or walk toward) a point FREE_DIST off the ball, on
