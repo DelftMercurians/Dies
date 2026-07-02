@@ -35,7 +35,11 @@ pub const FORWARD_OK_BAR: f64 = 0.50;
 ///
 /// Because every pass gate scales linearly with it, `0.0` disabling passing falls
 /// out of the arithmetic — no special-casing needed.
-pub const PASS_SUCCESS_BASE: f64 = 1.0;
+///
+/// Div-B conservative mode: 0.0 — passes are the dominant self-inflicted turnover
+/// source against lower-tier opponents, so the carrier always shoots, carries, or
+/// hoofs. Restore 1.0 for peer-level play.
+pub const PASS_SUCCESS_BASE: f64 = 0.0;
 /// How far behind the ball (toward our own half) the recycle pivot sits, on the
 /// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
 /// where an extra central body would invite the defence to collapse the shot zone.
@@ -171,6 +175,24 @@ pub const SHOT_KEEPER_BIAS: f64 = 0.35;
 /// angular gate scales with distance for free: ~0.10 rad is a ~130mm gap at 1.3m
 /// but needs a ~400mm gap at 4m.
 pub const SHOT_MIN_ANGLE: f64 = 0.10;
+// ── Restart kicker direct shot (Div-B) ──────────────────────────────────────
+// The restart kicker (our kickoff / free kick) historically only *released* the
+// ball forward — it never shot, even from a free kick at the opponent box. Against
+// lower-tier keepers a direct restart shot is a high-EV play with a benign failure
+// distribution: a wall deflection out is our free kick, a miss wide is a harmless
+// goal-line restart for them, and only a clean save loses anything. So the gate is
+// deliberately GENEROUS — far below [`SHOT_MIN_ANGLE`]: from the kickoff spot
+// (4500mm) the whole 1m mouth subtends only ~0.21 rad and even a lone centred
+// keeper leaves just ~0.04 rad open, so the normal gate could never fire there.
+// A window survives keeper + one wall bot almost always; only a staged 2+ bot wall
+// closes the mouth completely — exactly the "competent wall" we defer to.
+/// Minimum open-window width (radians) for the restart kicker's direct shot.
+/// ~0.015 rad ≈ a 70mm sliver from the kickoff spot.
+pub const KICKER_SHOT_MIN_ANGLE: f64 = 0.015;
+/// Maximum distance to the opponent goal for the restart shot — a coarse reach
+/// gate so we don't strike at goal from our own half (the ball would arrive dead).
+/// Covers the kickoff spot (4500mm) with margin.
+pub const KICKER_SHOT_RANGE: f64 = 5600.0;
 /// A kick-ahead target teammate must be at least this far forward of the carrier.
 pub const SUPPORTER_FWD_MARGIN: f64 = 400.0;
 /// Corridor width for the carrier→supporter lane-openness check.
@@ -200,25 +222,38 @@ pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
 /// move the opponent out from between us and goal, after which we replan normally.
 pub const ESCAPE_STEP: f64 = 300.0;
 
-// ── Advancement hoof (kick to open space) ─────────────────────────────────────
-// A full-power `Shoot` kick fires at a fixed ~4000 mm/s and the ball rolls
-// ~`KICK_SPEED / ball_damping` ≈ 4000 / 0.8 = 5000 mm before stopping. Aiming an
-// advancement kick "at open space" a short distance ahead therefore overshoots and
-// drives the ball out of bounds — a self-inflicted stoppage that hands the opponent
-// a free kick. We aim instead at the kick's *resting point* so it stays in play.
-/// Estimated distance the ball rolls after a full-power advancement kick.
-pub const HOOF_TRAVEL: f64 = 5000.0;
-/// Margin (mm) inside the field-of-play edge the resting point must stay within.
-/// The sim flags the ball out ~100 mm inside the line; the extra slack absorbs
-/// travel-estimate error so we don't graze the boundary.
-pub const HOOF_BOUNDARY_MARGIN: f64 = 300.0;
-/// Minimum forward (goalward) progress for an advancement hoof to be worth taking
-/// instead of keeping the ball; below this the planner prefers a corrective dribble.
-pub const HOOF_MIN_PROGRESS: f64 = 800.0;
-/// Weight on landing-spot openness (distance to nearest opponent) when scoring hoof
-/// directions, and the distance beyond which extra openness no longer helps.
-pub const HOOF_OPEN_WEIGHT: f64 = 0.5;
-pub const HOOF_OPEN_CAP: f64 = 2000.0;
+// ── Advancement hoof (ray-based, travel-calibration-free) ────────────────────
+// The old hoof aimed at a predicted *resting point* (`ball + dir × HOOF_TRAVEL`)
+// and required it to land in-field. Every term depended on the roll-distance
+// estimate, which encodes kick speed ÷ sim damping and is wrong whenever either
+// is (real kicks ~5000mm/s vs the modelled 4000 → every hoof overshot by ~25%),
+// and from the exact kickoff spot NO direction satisfied both bounds (in-x needs
+// ≥33° off-axis, in-y needs ≤33°) so the scorer returned None. The replacement
+// scores *directions* instead: candidates are restricted to the cone from the
+// ball to the two opponent back-line corners, so however far the ball actually
+// rolls the outcome is benign — undershoot settles in their half, overshoot
+// crosses THEIR goal line (their deep free kick, with our forward pressing). The
+// only way a hoof reaches a touchline is a deflection. Roll distance never enters.
+/// Bonus for a ray whose back-line exit falls inside an open goal-mouth window
+/// (keeper-shadow aware) — beyond shot range, the goal is simply the best hoof.
+pub const HOOF_GOAL_W: f64 = 3000.0;
+/// Bonus for a ray passing near one of our players in the opponent half (the
+/// permanent outlet / supporters), decaying to zero over [`HOOF_MATE_RADIUS`] of
+/// perpendicular distance — the long ball to the target man.
+pub const HOOF_MATE_W: f64 = 2000.0;
+pub const HOOF_MATE_RADIUS: f64 = 1200.0;
+/// Maximum penalty for opponents sitting on the ray (they intercept en route).
+/// Kept mild: an interception at midfield costs possession, but a deflection near
+/// their goal is a cheap gamble (out off them = our free kick).
+pub const HOOF_OPEN_PENALTY: f64 = 1500.0;
+/// Corridor width (mm) for the ray-openness term.
+pub const HOOF_RAY_CORRIDOR: f64 = 600.0;
+/// Weight on the centre-bias tiebreak (mm of |exit y| off the touchline): all
+/// rays exit at the same depth, so ties break toward the dangerous central zone.
+pub const HOOF_CENTER_W: f64 = 0.3;
+/// Inset (mm) from the back-line corners bounding the candidate cone, so numeric
+/// error at the extreme rays can't put the exit on a touchline.
+pub const HOOF_CONE_INSET: f64 = 200.0;
 /// A loose ball within this distance of a touchline or goal line is treated as a
 /// boundary "rescue": the capture heading is biased to dribble the ball back
 /// *inward* (into the field) instead of along/over the line. Set comfortably
@@ -422,10 +457,23 @@ pub const IMP_SPREAD: f64 = 0.5;
 // tanked buildup possession). Suppressed on set-piece defense (full wall, leg-2).
 pub const OUTLET_THREAT_LO: f64 = 0.30;
 pub const OUTLET_THREAT_HI: f64 = 0.60;
+/// Floor on the outlet's threat gate (Div-B): `max(smoothstep(LO, HI, threat),
+/// floor)`, so at 1.0 the outlet is a PERMANENTLY deployed forward — the target
+/// man every hoof is biased toward and the standing pressure on their buildup.
+/// 0.0 restores the pure threat-gated behaviour. Note the floor must be applied
+/// via `max`, not by lowering `OUTLET_THREAT_LO` — a negative LO only shifts the
+/// smoothstep (LO = -1 yields gate ≈ 0.68 at zero threat, not 1). Ladder check:
+/// at full importance (5.0) the outlet only outbids the *fading* outer wall wings
+/// at low threat, and is the last defensive-tier role staffed at high threat.
+pub const OUTLET_FLOOR: f64 = 1.0;
+/// Field-robot count below which the floor is NOT applied (the threat-gated
+/// behaviour remains): a short-handed team can't pin 1 of 3 defenders forward.
+pub const OUTLET_MIN_BOTS: usize = 4;
 /// Field-absolute x of the counter outlet (mm, team-relative; +x = opponent
-/// half). Just into the opponent half so a clear/switch has an advanced target and
-/// the body is a genuine counter springboard rather than another midfielder.
-pub const OUTLET_X: f64 = 800.0;
+/// half). Deep enough into the opponent half to press their buildup and chase
+/// hoofs landing in their third (was 800 — a clearance target, not a presser —
+/// when the outlet existed only under threat).
+pub const OUTLET_X: f64 = 2200.0;
 /// Lateral placement of the outlet as a fraction of half-width, on the flank away
 /// from the ball (where a switch/clearance naturally goes).
 pub const OUTLET_Y_FRAC: f64 = 0.55;
@@ -596,8 +644,10 @@ pub struct StanceConfig {
     /// is emitted. Below this the rest-defense body is freed forward instead.
     /// Default 5.0 → only 5- and 6-robot teams keep a dedicated rest defender.
     pub balance_min_bots: f64,
-    /// Multiplier on forward-role importances (support, striker, pivot, outlet).
-    /// >1 commits more bodies forward at every count; 1.0 = neutral. Default 1.0.
+    /// Multiplier on forward-role importances (support, striker, pivot — NOT the
+    /// counter outlet, which stays a deliberate fixture). >1 commits more bodies
+    /// forward at every count; 1.0 = neutral. Below ~0.5 the forward block sinks
+    /// to spread-tier importance and surplus robots loiter at midfield.
     pub aggression: f64,
     /// Override for [`SEC_PER_IMPORTANCE`] — seconds of robot travel one
     /// importance point is worth. Higher → importance outweighs travel, so robots
@@ -622,15 +672,17 @@ impl Default for StanceConfig {
         // countered. (3v3 stays bunker-hard — the original defensive concerto
         // edges it there, but that extreme is rare.)
         StanceConfig {
-            // Thin the wing wall (wings = field_n - 3 - 1, so 0 at ≤4 field
-            // robots, 1 at 5) — frees bodies forward at higher counts.
-            forward_reserve: 3.0,
+            // Div-B conservative: max out the wing wall (wings = field_n - 2 - 1,
+            // capped at 2 → anchor + 2 wings at 5 field robots). Peer-level
+            // default was 3.0 (anchor + 1 wing at full strength).
+            forward_reserve: 2.0,
             // Keep the dedicated rest defender at every count (gate effectively
             // off): the single biggest fix against being countered short-handed.
             balance_min_bots: 2.0,
-            // Slightly soften the forward push so committed bodies don't
-            // over-extend into turnovers.
-            aggression: 0.9,
+            // Div-B conservative: soften the forward push further (peer-level
+            // default was 0.9) — fewer bodies committed, the permanent outlet
+            // (un-scaled by this) carries the forward presence instead.
+            aggression: 0.7,
             sec_per_importance: SEC_PER_IMPORTANCE,
             recalc_cooldown: RECALC_COOLDOWN,
             recalc_bg_period: RECALC_BG_PERIOD,

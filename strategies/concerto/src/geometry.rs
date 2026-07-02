@@ -68,48 +68,6 @@ pub fn boundary_rescue_heading(
     Some(Angle::from_radians(dir.y.atan2(dir.x)))
 }
 
-/// Check whether the corridor from `ball_pos` to `goal_center` is free of opponents.
-///
-/// The corridor is a rectangle of the given `corridor_width` (perpendicular to the
-/// ball→goal line). An opponent blocks the shot when its projection onto the segment
-/// falls in [0, 1] **and** its perpendicular distance is less than `corridor_width / 2`.
-pub fn is_clear_shot(
-    ball_pos: Vector2,
-    goal_center: Vector2,
-    opponents: &[PlayerState],
-    corridor_width: f64,
-) -> bool {
-    let dir = goal_center - ball_pos;
-    let len_sq = dir.x * dir.x + dir.y * dir.y;
-
-    // Degenerate case: ball is on top of the goal.
-    if len_sq < 1e-6 {
-        return true;
-    }
-
-    let half_w = corridor_width / 2.0;
-
-    for opp in opponents {
-        let to_opp = opp.position - ball_pos;
-
-        // Projection parameter along the segment.
-        let t = (to_opp.x * dir.x + to_opp.y * dir.y) / len_sq;
-
-        if !(0.0..=1.0).contains(&t) {
-            continue;
-        }
-
-        // Perpendicular distance from the line.
-        let perp_dist = (to_opp.x * dir.y - to_opp.y * dir.x).abs() / len_sq.sqrt();
-
-        if perp_dist < half_w {
-            return false;
-        }
-    }
-
-    true
-}
-
 /// An aim point in the opponent goal mouth plus the angular width of the open
 /// window it sits in (the shot's aiming tolerance, as seen from the ball).
 #[derive(Debug, Clone, Copy)]
@@ -122,22 +80,14 @@ pub struct ShotAim {
     pub angle: f64,
 }
 
-/// Find the widest *open* window in the opponent goal mouth as seen from `ball`,
-/// and aim at its midpoint — the open-goal model that replaces shooting only at
-/// the goal centre.
-///
-/// Every opponent between the ball and the goal line is projected as a circular
-/// shadow onto the goal line (via similar triangles from the ball) and subtracted
-/// from the mouth. The aim window must clear the posts and every shadow by the ball
-/// radius. The keeper is special-cased: it gets an inflated shadow (it dives/slides
-/// to cover during the ball's flight, blocking far more than its static footprint)
-/// and the scoring biases the aim toward the corner *furthest* from it, so when
-/// both corners are open we shoot where the keeper must travel furthest.
-///
-/// Returns the chosen aim point and its angular width, or `None` if no gap in the
-/// mouth is open at all (fully crowded goal).
+/// Project every opponent between `ball` and the goal line as a circular shadow
+/// onto the goal line (similar triangles from the ball) and return the free
+/// y-gaps left within the mouth, plus the keeper's projected y. Shared by
+/// [`best_shot`] (window picking) and [`hoof_ray_target`] (goal-term for hoof
+/// rays). `None` when there is no shot geometry at all (ball at/behind the goal
+/// line, or the mouth narrower than the ball).
 #[allow(clippy::too_many_arguments)]
-pub fn best_shot(
+fn goal_free_gaps(
     ball: Vector2,
     goal_x: f64,
     goal_width: f64,
@@ -146,8 +96,7 @@ pub fn best_shot(
     robot_radius: f64,
     keeper_radius: f64,
     ball_radius: f64,
-    keeper_bias: f64,
-) -> Option<ShotAim> {
+) -> Option<(Vec<(f64, f64)>, Option<f64>)> {
     let dx = goal_x - ball.x;
     if dx <= 1e-3 {
         return None; // ball at or behind the goal line — no shot geometry
@@ -199,6 +148,46 @@ pub fn best_shot(
     if cursor < hi {
         free.push((cursor, hi));
     }
+    Some((free, keeper_y))
+}
+
+/// Find the widest *open* window in the opponent goal mouth as seen from `ball`,
+/// and aim at its midpoint — the open-goal model that replaces shooting only at
+/// the goal centre.
+///
+/// Every opponent between the ball and the goal line is projected as a circular
+/// shadow onto the goal line (via similar triangles from the ball) and subtracted
+/// from the mouth. The aim window must clear the posts and every shadow by the ball
+/// radius. The keeper is special-cased: it gets an inflated shadow (it dives/slides
+/// to cover during the ball's flight, blocking far more than its static footprint)
+/// and the scoring biases the aim toward the corner *furthest* from it, so when
+/// both corners are open we shoot where the keeper must travel furthest.
+///
+/// Returns the chosen aim point and its angular width, or `None` if no gap in the
+/// mouth is open at all (fully crowded goal).
+#[allow(clippy::too_many_arguments)]
+pub fn best_shot(
+    ball: Vector2,
+    goal_x: f64,
+    goal_width: f64,
+    opponents: &[PlayerState],
+    keeper_id: Option<PlayerId>,
+    robot_radius: f64,
+    keeper_radius: f64,
+    ball_radius: f64,
+    keeper_bias: f64,
+) -> Option<ShotAim> {
+    let dx = goal_x - ball.x;
+    let (free, keeper_y) = goal_free_gaps(
+        ball,
+        goal_x,
+        goal_width,
+        opponents,
+        keeper_id,
+        robot_radius,
+        keeper_radius,
+        ball_radius,
+    )?;
 
     // Pick the window with the best score: open width plus a bias for distance from
     // the keeper's projected position. Aim at its midpoint.
@@ -313,125 +302,117 @@ pub fn best_finishing_pocket(
     best.map(|(p, _)| p).unwrap_or(base)
 }
 
-/// Find the best area in the opponent half to pass the ball to.
+/// Pick an advancement-hoof direction by scoring *rays*, not landing points.
 ///
-/// Samples a grid of candidate positions in the attacking half (x > 0) and scores
-/// each one by how far it is from the nearest opponent plus a bonus for having a
-/// clear passing lane from `ball_pos`.
+/// The predecessor (`safe_kick_target`) aimed at a predicted resting point
+/// (`ball + dir × travel`) and required it to land in-field — so every term
+/// depended on a roll-distance estimate that is wrong whenever kick speed or
+/// surface friction differs from the model (and always differs on a real
+/// carpet). This scorer needs no travel estimate: candidates are restricted to
+/// the cone from the ball to the two opponent back-line corners, so wherever
+/// the ball actually stops the outcome is benign — undershoot settles in their
+/// half, overshoot crosses THEIR goal line (a deep free kick for them, with our
+/// forward already pressing). Only a deflection can reach a touchline.
 ///
-/// Returns `None` if every candidate scores below the minimum threshold (500 mm).
+/// Rays are scored goal > our forward > safety > depth:
+/// - exiting through an *open* goal-mouth window ([`goal_free_gaps`], keeper
+///   shadow inflated) — beyond shot range the goal is simply the best hoof;
+/// - passing near one of `mates` (our players in the opponent half — the
+///   permanent outlet / supporters), the long ball to the target man;
+/// - a mild penalty for opponents sitting on the ray (they intercept en route);
+/// - a small centre-bias tiebreak (all rays exit at the same depth).
 ///
-/// Reserved for the passing milestone (planner's no-clear-shot branch).
-#[allow(dead_code)]
-pub fn best_pass_area(
-    ball_pos: Vector2,
-    opponents: &[PlayerState],
-    field_half_length: f64,
-    field_half_width: f64,
-) -> Option<Vector2> {
-    let xs = [field_half_length * 0.25, field_half_length * 0.6];
-    let ys = [
-        -field_half_width * 0.4,
-        -field_half_width * 0.15,
-        0.0,
-        field_half_width * 0.15,
-        field_half_width * 0.4,
-    ];
-
-    const MIN_SCORE: f64 = 500.0;
-    const CLEAR_LANE_BONUS: f64 = 300.0;
-    const LANE_CORRIDOR: f64 = 200.0;
-
-    let mut best: Option<(Vector2, f64)> = None;
-
-    for &x in &xs {
-        for &y in &ys {
-            let candidate = Vector2::new(x, y);
-
-            // Minimum distance to any opponent.
-            let min_opp_dist = opponents
-                .iter()
-                .map(|o| (o.position - candidate).norm())
-                .fold(f64::INFINITY, f64::min);
-
-            // Clear-lane bonus: simplified corridor check between ball and candidate.
-            let lane_bonus = if is_clear_shot(ball_pos, candidate, opponents, LANE_CORRIDOR) {
-                CLEAR_LANE_BONUS
-            } else {
-                0.0
-            };
-
-            let score = min_opp_dist + 0.5 * lane_bonus;
-
-            if score > MIN_SCORE && (best.is_none() || score > best.unwrap().1) {
-                best = Some((candidate, score));
-            }
-        }
-    }
-
-    best.map(|(pos, _)| pos)
-}
-
-/// Aim a full-power advancement kick so the ball comes to rest INSIDE the field.
-///
-/// A struck ball rolls a roughly fixed distance (`travel` ≈ KICK_SPEED / ball
-/// damping) before stopping, regardless of where the kicker "aimed" — so naively
-/// hoofing toward an open-space point a short way ahead overshoots and sends the
-/// ball out of bounds (a stoppage that hands the opponent a free kick). Instead of
-/// choosing a *point*, this chooses a kick *direction*: it sweeps a forward cone
-/// around the ball→goal line and keeps only directions whose resting point
-/// (`ball + travel·dir`) stays within the field-of-play margin. Among those it
-/// favours forward progress and a landing spot clear of opponents. When a straight
-/// hoof would clear the field, an angled one toward a corner keeps the ball in play.
-///
-/// Returns the resting point to aim at (the driver kicks along `ball → point`), or
-/// `None` if no forward direction keeps the ball in — the caller should then keep
-/// the ball (dribble) rather than boot it out.
+/// Returns the ray's back-line exit point to aim at (the driver only uses it
+/// for heading — where the ball stops is deliberately not modelled), or `None`
+/// when the cone is degenerate (ball essentially on the opponent back line —
+/// the strike-zone branch owns that region).
 #[allow(clippy::too_many_arguments)]
-pub fn safe_kick_target(
+pub fn hoof_ray_target(
     ball: Vector2,
     opponents: &[PlayerState],
-    opp_goal: Vector2,
-    half_len: f64,
+    mates: &[Vector2],
+    opp_goal_x: f64,
+    goal_width: f64,
+    keeper_id: Option<PlayerId>,
+    robot_radius: f64,
+    keeper_radius: f64,
+    ball_radius: f64,
     half_wid: f64,
-    travel: f64,
-    margin: f64,
-    min_progress: f64,
-    open_weight: f64,
-    open_cap: f64,
+    goal_w: f64,
+    mate_w: f64,
+    mate_radius: f64,
+    open_penalty: f64,
+    ray_corridor: f64,
+    center_w: f64,
+    cone_inset: f64,
 ) -> Option<Vector2> {
-    let to_goal = opp_goal - ball;
-    let (base, goal_dir) = if to_goal.norm() > 1e-6 {
-        (to_goal.y.atan2(to_goal.x), to_goal / to_goal.norm())
-    } else {
-        (0.0, Vector2::new(1.0, 0.0))
-    };
-    let x_lim = half_len - margin;
-    let y_lim = half_wid - margin;
-
-    let mut best: Option<(Vector2, f64)> = None;
-    // Sweep ±80° around the goal direction in 10° steps.
-    for i in -8..=8 {
-        let theta = base + (i as f64) * 10.0_f64.to_radians();
-        let dir = Vector2::new(theta.cos(), theta.sin());
-        let landing = ball + dir * travel;
-        if landing.x.abs() > x_lim || landing.y.abs() > y_lim {
-            continue; // a full-power kick this way rolls out of bounds
-        }
-        let progress = goal_dir.dot(&(landing - ball));
-        if progress < min_progress {
-            continue; // too little forward gain to justify releasing the ball
-        }
-        let min_opp = opponents
-            .iter()
-            .map(|o| (o.position - landing).norm())
-            .fold(f64::INFINITY, f64::min);
-        let score = progress + open_weight * min_opp.min(open_cap);
-        if best.map_or(true, |(_, b)| score > b) {
-            best = Some((landing, score));
-        }
+    let depth = opp_goal_x - ball.x;
+    if depth <= cone_inset {
+        return None; // on/behind their back line — no forward cone left
     }
-    best.map(|(p, _)| p)
+    // Cone from the ball to the (inset) opponent back-line corners. Every ray in
+    // it exits the field through x = opp_goal_x with |y| ≤ half_wid − inset.
+    let y_lim = half_wid - cone_inset;
+    let a_lo = (-y_lim - ball.y).atan2(depth);
+    let a_hi = (y_lim - ball.y).atan2(depth);
+
+    // Open goal-mouth gaps, computed once (keeper shadow inflated as for a shot).
+    let gaps = goal_free_gaps(
+        ball,
+        opp_goal_x,
+        goal_width,
+        opponents,
+        keeper_id,
+        robot_radius,
+        keeper_radius,
+        ball_radius,
+    )
+    .map(|(free, _)| free)
+    .unwrap_or_default();
+
+    let score_exit = |exit_y: f64| -> f64 {
+        let exit = Vector2::new(opp_goal_x, exit_y);
+        let dir = (exit - ball).normalize();
+
+        let in_mouth = gaps
+            .iter()
+            .any(|&(g_lo, g_hi)| exit_y > g_lo && exit_y < g_hi);
+        let goal_term = if in_mouth { goal_w } else { 0.0 };
+
+        // Long ball to the target man: nearest-to-ray forward teammate, by
+        // perpendicular distance, provided it projects forward along the ray.
+        let mate_term = mates
+            .iter()
+            .filter(|m| (*m - ball).dot(&dir) > 0.0)
+            .map(|m| {
+                let to_m = m - ball;
+                let perp = (to_m.x * dir.y - to_m.y * dir.x).abs();
+                mate_w * (1.0 - smoothstep(0.0, mate_radius, perp))
+            })
+            .fold(0.0, f64::max);
+
+        let open = lane_openness(ball, exit, opponents, ray_corridor);
+        goal_term + mate_term - open_penalty * (1.0 - open) + center_w * (half_wid - exit_y.abs())
+    };
+
+    // Candidates: a uniform angular sweep of the cone, PLUS the midpoint of every
+    // open goal-mouth window. The windows can be slivers far narrower than the
+    // sweep spacing (a keeper leaves ~170mm inside each post), so they must be
+    // explicit candidates — and the midpoint is the right aim anyway (the same
+    // choice `best_shot` makes).
+    let steps = ((a_hi - a_lo) / 5.0_f64.to_radians()).ceil().max(1.0) as usize;
+    let sweep = (0..=steps).map(|i| {
+        let theta = a_lo + (a_hi - a_lo) * (i as f64) / (steps as f64);
+        ball.y + theta.tan() * depth
+    });
+    // Window midpoints lie within the mouth, well inside the (inset) cone.
+    let windows = gaps.iter().map(|&(g_lo, g_hi)| 0.5 * (g_lo + g_hi));
+
+    sweep
+        .chain(windows)
+        .map(|y| (y, score_exit(y)))
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(y, _)| Vector2::new(opp_goal_x, y))
 }
 
 /// Pick an open, forward support/outlet position on one flank.
@@ -711,7 +692,7 @@ const LANE_CONTEST_RADIUS: f64 = 250.0;
 /// Continuous openness in [0, 1] of the lane from `from` to `to` w.r.t. opponents.
 ///
 /// 1 if no opponent is near the segment, decaying toward 0 as the nearest in-corridor
-/// opponent approaches the line. The smooth analogue of [`is_clear_shot`].
+/// opponent approaches the line.
 pub fn lane_openness(from: Vector2, to: Vector2, opponents: &[PlayerState], corridor: f64) -> f64 {
     let dir = to - from;
     let len = dir.norm();
@@ -1288,55 +1269,96 @@ mod tests {
         );
     }
 
-    #[test]
-    fn safe_kick_target_keeps_the_ball_in_field() {
-        let opp_goal = Vector2::new(4500.0, 0.0);
-        let half_len = 4500.0;
-        let half_wid = 3000.0;
-        let margin = 300.0;
-        let in_field = |p: Vector2| {
-            p.x.abs() <= half_len - margin + 1.0 && p.y.abs() <= half_wid - margin + 1.0
-        };
-
-        // Deep in our own half there is room ahead: a long forward hoof stays in
-        // play and advances the ball.
-        let from_back = Vector2::new(-2000.0, 0.0);
-        let t = safe_kick_target(
-            from_back,
-            &[],
-            opp_goal,
-            half_len,
-            half_wid,
-            5000.0,
-            margin,
-            800.0,
-            0.5,
-            2000.0,
+    // Shared hoof_ray_target invocation with the config-default weights.
+    fn hoof(ball: Vector2, opps: &[PlayerState], mates: &[Vector2]) -> Option<Vector2> {
+        hoof_ray_target(
+            ball, opps, mates, 4500.0, 1000.0, None, 110.0, 280.0, 21.5, 3000.0, 3000.0, 2000.0,
+            1200.0, 1500.0, 600.0, 0.3, 200.0,
         )
-        .expect("a forward hoof should be available from deep");
-        assert!(in_field(t), "resting point must stay in field, got {t:?}");
-        assert!(t.x > from_back.x, "hoof should advance the ball, got {t:?}");
+    }
 
-        // In the attacking half a full-power kick (~5 m roll) cannot stay in play,
-        // so the helper declines (None) and the planner keeps the ball instead of
-        // booting it out of bounds.
-        let from_front = Vector2::new(2000.0, 0.0);
+    /// A wall of four opponents whose projected shadows (from the origin) close
+    /// the whole goal mouth — no open window survives.
+    fn mouth_wall() -> Vec<PlayerState> {
+        [-360.0, -120.0, 120.0, 360.0]
+            .iter()
+            .enumerate()
+            .map(|(i, &y)| opp(20 + i as u32, 4000.0, y))
+            .collect()
+    }
+
+    #[test]
+    fn hoof_ray_from_kickoff_spot_exists_and_exits_their_back_line() {
+        // Regression: the old landing-point scorer had NO legal direction from the
+        // exact center spot (in-x needed ≥33° off-axis, in-y needed ≤33°).
+        let t = hoof(Vector2::new(0.0, 0.0), &[], &[]).expect("kickoff hoof must exist");
         assert!(
-            safe_kick_target(
-                from_front,
-                &[],
-                opp_goal,
-                half_len,
-                half_wid,
-                5000.0,
-                margin,
-                800.0,
-                0.5,
-                2000.0,
-            )
-            .is_none(),
-            "no full-power hoof should stay in field from the attacking half"
+            (t.x - 4500.0).abs() < 1e-6,
+            "exit must be on their back line"
         );
+        assert!(
+            t.y.abs() <= 2800.0 + 1e-6,
+            "exit must respect the cone inset"
+        );
+        // With an empty field the open mouth is the best exit.
+        assert!(
+            t.y.abs() < 500.0,
+            "open goal should attract the hoof, got {t:?}"
+        );
+    }
+
+    #[test]
+    fn hoof_ray_targets_open_mouth_window_past_a_keeper() {
+        // A centred keeper leaves two slivers just inside the posts; the goal
+        // term should put the exit inside one of them, not at the keeper.
+        let keeper = opp(9, 4400.0, 0.0);
+        let t = hoof_ray_target(
+            Vector2::new(0.0, 0.0),
+            std::slice::from_ref(&keeper),
+            &[],
+            4500.0,
+            1000.0,
+            Some(keeper.id),
+            110.0,
+            280.0,
+            21.5,
+            3000.0,
+            3000.0,
+            2000.0,
+            1200.0,
+            1500.0,
+            600.0,
+            0.3,
+            200.0,
+        )
+        .expect("hoof must exist");
+        assert!(
+            t.y.abs() > 250.0 && t.y.abs() < 500.0,
+            "exit should be in a post sliver, not at the keeper, got {t:?}"
+        );
+    }
+
+    #[test]
+    fn hoof_ray_favors_forward_teammate_when_mouth_is_walled() {
+        let opps = mouth_wall();
+        let mate = Vector2::new(2000.0, 2000.0);
+        let t = hoof(Vector2::new(0.0, 0.0), &opps, std::slice::from_ref(&mate))
+            .expect("hoof must exist");
+        assert!(
+            t.y > 1000.0,
+            "ray should bend toward the forward target man, got {t:?}"
+        );
+    }
+
+    #[test]
+    fn hoof_ray_avoids_intercepted_lanes() {
+        // Mouth walled, no target man, and extra blockers on the +y side: the
+        // openness penalty should push the exit to the clean -y side.
+        let mut opps = mouth_wall();
+        opps.push(opp(30, 2000.0, 800.0));
+        opps.push(opp(31, 3000.0, 1400.0));
+        let t = hoof(Vector2::new(0.0, 0.0), &opps, &[]).expect("hoof must exist");
+        assert!(t.y < 0.0, "blocked +y lanes should lose, got {t:?}");
     }
 
     fn opp(id: u32, x: f64, y: f64) -> PlayerState {

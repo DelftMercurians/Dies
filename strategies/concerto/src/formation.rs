@@ -705,8 +705,10 @@ impl Formation {
         // outlet the carrier lays the ball back to when nothing is on forward (the
         // planner's recycle branch). Placed deep (never in the box) so it does
         // not invite the defence to collapse the shooting zone the way an advanced
-        // central body does. Only while attacking (ball advanced, our goal safe).
-        if attacking {
+        // central body does. Only while attacking (ball advanced, our goal safe),
+        // and only when passing is enabled at all — with PASS_SUCCESS_BASE = 0 no
+        // recycle can ever be played to it, so the body is freed instead.
+        if attacking && config::PASS_SUCCESS_BASE > 0.0 {
             let y_mag = ball.y.abs().clamp(config::PIVOT_Y_MIN, config::PIVOT_Y_MAX);
             let py = if ball.y >= 0.0 { y_mag } else { -y_mag };
             let px = (ball.x - config::PIVOT_SETBACK).clamp(-half_len + 400.0, half_len - 400.0);
@@ -757,11 +759,23 @@ impl Formation {
         // `af`) and is suppressed on set-piece defense (full wall, leg-2). Folded
         // into the Support kind (a high slot) so it reads as a within-kind body,
         // not a new role kind that would churn the role-assignment metric.
+        // Div-B: the gate is floored so the outlet is a PERMANENTLY deployed
+        // forward (target man for hoofs + standing pressure), not just a counter
+        // valve under threat — except short-handed, where pinning 1 of ≤3
+        // defenders forward costs more than the pressure is worth. The floor
+        // must be a `max` (lowering OUTLET_THREAT_LO instead only shifts the
+        // smoothstep: LO = -1 yields gate ≈ 0.68 at zero threat, not 1).
+        let outlet_floor = if n >= config::OUTLET_MIN_BOTS {
+            config::OUTLET_FLOOR
+        } else {
+            0.0
+        };
         let outlet_gate = geometry::smoothstep(
             config::OUTLET_THREAT_LO,
             config::OUTLET_THREAT_HI,
             ball_threat,
-        );
+        )
+        .max(outlet_floor);
         if !setpiece_defense && outlet_gate > 0.0 {
             let far = if ball.y > 0.0 { -1.0 } else { 1.0 };
             let pos = Vector2::new(
@@ -1090,11 +1104,28 @@ mod tests {
             "runner should bias away from the ball side"
         );
         // Total support bodies = two wide + one central = SUPPORT_ATTACK_COUNT.
+        // (The permanent counter outlet lives in a higher slot of the same kind
+        // and is counted separately below.)
         let supports = roles
             .iter()
-            .filter(|r| r.id.kind == RoleKind::Support)
+            .filter(|r| {
+                r.id.kind == RoleKind::Support && (r.id.slot as usize) <= config::SUPPORT_COUNT
+            })
             .count();
         assert_eq!(supports, config::SUPPORT_ATTACK_COUNT);
+        // Div-B floor: the outlet is deployed at full importance even at zero
+        // threat (we are attacking here), provided the count gate passes (n = 4).
+        let outlet = roles
+            .iter()
+            .find(|r| {
+                r.id.kind == RoleKind::Support && r.id.slot as usize == config::SUPPORT_COUNT + 1
+            })
+            .expect("permanent outlet must be deployed");
+        assert!(
+            (outlet.importance - config::IMP_OUTLET).abs() < 1e-9,
+            "outlet floored to full importance, got {}",
+            outlet.importance
+        );
     }
 
     #[test]

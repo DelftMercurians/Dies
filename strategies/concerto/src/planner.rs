@@ -180,7 +180,7 @@ impl Planner {
                 // special-cased), not the centre. Gated on the window's angular
                 // width (distance-aware) and on being in range. This takes priority
                 // over passing — a real shooting chance is never traded for a pass.
-                let shot = geometry::best_shot(
+                let shot_raw = geometry::best_shot(
                     ball_pos,
                     opp_goal.x,
                     world.goal_width(),
@@ -190,8 +190,8 @@ impl Planner {
                     Self::keeper_shot_radius(world),
                     config::BALL_RADIUS,
                     config::SHOT_KEEPER_BIAS,
-                )
-                .filter(|s| s.angle >= config::SHOT_MIN_ANGLE);
+                );
+                let shot = shot_raw.filter(|s| s.angle >= config::SHOT_MIN_ANGLE);
                 let in_range = (carrier_pos - opp_goal).norm() < config::SHOOT_RANGE;
 
                 // Transient fast-break: just after a turnover, in the attacking
@@ -211,14 +211,28 @@ impl Planner {
                     self.contested_finish(world, ball_pos, opp_goal, carrier_pos)
                         .unwrap_or_else(|| self.contest_escape(world, ball_pos, carrier_pos))
                 } else if is_kicker {
-                    // Restart: always release forward (never dribble — double-touch).
-                    // Kick at a supporter if one is well placed, else open space.
-                    // A `Strike` is a strike-through (reflex kick), never a hold,
-                    // so the kicker can't double-touch while aiming.
-                    let target = self
-                        .best_kickahead_target(world, id, inputs)
-                        .map(|(_, t, _)| t)
-                        .unwrap_or_else(|| self.release_target(carrier_pos, opp_goal, world));
+                    // Restart: the kicker must release (never dribble — double-touch),
+                    // and a `Strike` is a strike-through (reflex kick), never a hold,
+                    // so it can't double-touch while aiming.
+                    //
+                    // Direct shot first, on a deliberately GENEROUS gate (far below
+                    // SHOT_MIN_ANGLE, which could never fire from the kickoff spot):
+                    // the failure distribution of a restart shot is benign — a wall
+                    // deflection out is our free kick, a miss wide a harmless
+                    // goal-line restart for them — so unless the opponent has staged
+                    // a competent wall (keeper + 2 well-placed bots, the only way to
+                    // close the mouth), we shoot. The range gate keeps us from
+                    // striking at goal from our own half, where the ball arrives dead.
+                    let kicker_shot = shot_raw
+                        .filter(|s| s.angle >= config::KICKER_SHOT_MIN_ANGLE)
+                        .filter(|_| (carrier_pos - opp_goal).norm() <= config::KICKER_SHOT_RANGE);
+                    // Else release forward: kick at a supporter if one is well
+                    // placed, else hoof into the back-line cone.
+                    let target = kicker_shot.map(|s| s.target).unwrap_or_else(|| {
+                        self.best_kickahead_target(world, id, inputs)
+                            .map(|(_, t, _)| t)
+                            .unwrap_or_else(|| self.release_target(world, id, inputs))
+                    });
                     Waypoint::Handle {
                         action: BallAction::Strike {
                             target,
@@ -354,7 +368,7 @@ impl Planner {
                                     rescue: false,
                                 }
                             } else {
-                                hoof(self.release_target(carrier_pos, opp_goal, world))
+                                hoof(self.release_target(world, id, inputs))
                             }
                         }
                     }
@@ -596,27 +610,74 @@ impl Planner {
         }
     }
 
-    /// Target for an attacking-restart release kick: the most open forward zone
-    /// (toward a support teammate's area), falling back to the opponent half.
-    fn release_target(&self, from: Vector2, opp_goal: Vector2, world: &World) -> Vector2 {
+    /// Last-resort release target (restart with nothing on, or a carrier at the
+    /// dribble cap with no hoof): the back-line-cone hoof, falling back to a
+    /// goal-biased point when even the cone is degenerate.
+    fn release_target(&self, world: &World, carrier: PlayerId, inputs: &PlanInputs) -> Vector2 {
         let half_len = world.field_length() / 2.0;
         let half_wid = world.field_width() / 2.0;
-        geometry::best_pass_area(from, world.opp_players(), half_len, half_wid).unwrap_or_else(
-            || {
-                // Fallback: a point well into the opponent half, biased toward goal.
-                let dir = opp_goal - from;
-                let n = dir.norm();
-                let step = if n > 1e-6 {
-                    dir / n * (half_len * 0.6)
-                } else {
-                    Vector2::new(half_len * 0.6, 0.0)
-                };
-                let raw = from + step;
-                Vector2::new(
-                    raw.x.clamp(-half_len + 200.0, half_len - 200.0),
-                    raw.y.clamp(-half_wid + 200.0, half_wid - 200.0),
-                )
-            },
+        let opp_goal = world.opp_goal_center();
+        let from = world
+            .own_player(carrier)
+            .map(|p| p.position)
+            .unwrap_or_else(|| world.ball_position().unwrap_or_default());
+        self.hoof_target(world, carrier, inputs).unwrap_or_else(|| {
+            // Fallback: a point well into the opponent half, biased toward goal.
+            let dir = opp_goal - from;
+            let n = dir.norm();
+            let step = if n > 1e-6 {
+                dir / n * (half_len * 0.6)
+            } else {
+                Vector2::new(half_len * 0.6, 0.0)
+            };
+            let raw = from + step;
+            Vector2::new(
+                raw.x.clamp(-half_len + 200.0, half_len - 200.0),
+                raw.y.clamp(-half_wid + 200.0, half_wid - 200.0),
+            )
+        })
+    }
+
+    /// Advancement hoof: score kick *directions* within the cone from the ball to
+    /// the opponent back-line corners (see [`geometry::hoof_ray_target`] — travel-
+    /// calibration-free, biased goal > forward teammate > open lane). Our players
+    /// already in the opponent half (the permanent outlet, supporters) are the
+    /// target-man candidates.
+    fn hoof_target(
+        &self,
+        world: &World,
+        carrier: PlayerId,
+        inputs: &PlanInputs,
+    ) -> Option<Vector2> {
+        let ball = world
+            .ball_position()
+            .or_else(|| world.own_player(carrier).map(|p| p.position))?;
+        let mates: Vec<Vector2> = world
+            .own_players()
+            .iter()
+            .filter(|p| p.id != carrier)
+            .filter(|p| Some(p.id) != inputs.keeper_id)
+            .filter(|p| p.position.x > 0.0)
+            .map(|p| p.position)
+            .collect();
+        geometry::hoof_ray_target(
+            ball,
+            world.opp_players(),
+            &mates,
+            world.opp_goal_center().x,
+            world.goal_width(),
+            Self::opp_keeper(world),
+            config::SHOT_ROBOT_RADIUS,
+            Self::keeper_shot_radius(world),
+            config::BALL_RADIUS,
+            world.field_width() / 2.0,
+            config::HOOF_GOAL_W,
+            config::HOOF_MATE_W,
+            config::HOOF_MATE_RADIUS,
+            config::HOOF_OPEN_PENALTY,
+            config::HOOF_RAY_CORRIDOR,
+            config::HOOF_CENTER_W,
+            config::HOOF_CONE_INSET,
         )
     }
 
@@ -705,28 +766,14 @@ impl Planner {
             }
         }
 
-        // 2. Open forward space toward goal. A full-power advancement kick rolls
-        //    ~HOOF_TRAVEL and would sail out of bounds if aimed naively at an
-        //    open-space point a short way ahead (a stoppage + opponent free kick),
-        //    so aim at the kick's resting point and keep it inside the field.
-        let half_len = world.field_length() / 2.0;
-        let half_wid = world.field_width() / 2.0;
-        let origin = world.ball_position().unwrap_or(carrier_pos);
-        geometry::safe_kick_target(
-            origin,
-            opps,
-            opp_goal,
-            half_len,
-            half_wid,
-            config::HOOF_TRAVEL,
-            config::HOOF_BOUNDARY_MARGIN,
-            config::HOOF_MIN_PROGRESS,
-            config::HOOF_OPEN_WEIGHT,
-            config::HOOF_OPEN_CAP,
-        )
-        // A hoof into open space keeps no possession (quality 0): the eager-recycle
-        // path treats it as a last resort, preferring a safe recycle when one exists.
-        .map(|t| (None, t, 0.0))
+        // 2. Advancement hoof into the back-line cone (goal-window / target-man /
+        //    open-lane biased; see `hoof_target`). Wherever the ball actually
+        //    stops the outcome is benign — undershoot is their half, overshoot is
+        //    their deep goal-line restart — so no roll-distance model is needed.
+        self.hoof_target(world, carrier, inputs)
+            // A hoof into open space keeps no possession (quality 0): the eager-recycle
+            // path treats it as a last resort, preferring a safe recycle when one exists.
+            .map(|t| (None, t, 0.0))
     }
 
     /// A backward/lateral *recycle* outlet — the most open teammate behind
@@ -1164,6 +1211,107 @@ mod tests {
     }
 
     #[test]
+    fn passing_disabled_never_emits_pass() {
+        // Div-B regression: with PASS_SUCCESS_BASE = 0 even a wide-open forward
+        // supporter (the strongest pass scenario — see the ignored
+        // `carrier_with_open_supporter_emits_pass`) must NOT draw a pass. The
+        // carrier advances the ball itself: a hoof into the back-line cone.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1000.0, 0.0), // carrier
+            player(3, 1500.0, 0.0),  // open forward supporter
+        ];
+        let world = world_with(own, vec![], 1);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Pass { .. } => panic!("passing is disabled; got a Pass"),
+            Waypoint::Handle {
+                action: BallAction::Shoot { target },
+                ..
+            } => {
+                assert!(
+                    (target.x - world.field_length() / 2.0).abs() < 1e-6,
+                    "hoof must exit through their back line, got {target:?}"
+                );
+            }
+            other => panic!("expected a forward hoof, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn attacking_restart_kicker_shoots_at_open_mouth() {
+        // Div-B: a restart kicker in range with only a keeper guarding the mouth
+        // strikes directly at an open post sliver — the generous KICKER_SHOT gate,
+        // far below SHOT_MIN_ANGLE (which can never fire from this distance).
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1000.0, 0.0), // kicker with the ball (5500mm from goal)
+        ];
+        let opp = vec![player(9, 4400.0, 0.0)]; // opp keeper on its line
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+        let mut inp = inputs();
+        inp.our_attacking_restart = true;
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Handle {
+                action: BallAction::Strike { target, .. },
+                ..
+            } => {
+                let half_mouth = world.goal_width() / 2.0;
+                assert!(
+                    target.y.abs() < half_mouth && target.y.abs() > 250.0,
+                    "restart strike should aim at a post sliver past the keeper, got {target:?}"
+                );
+            }
+            other => panic!("expected a direct restart Strike, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn attacking_restart_kicker_defers_to_staged_wall() {
+        // Div-B: keeper + two well-placed wall bots close the whole mouth (the
+        // "competent wall"), so the direct-shot gate must NOT fire — the kicker
+        // releases into the back-line cone away from the mouth instead.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1000.0, 0.0), // kicker with the ball
+        ];
+        let opp = vec![
+            player(9, 4400.0, 0.0), // opp keeper (deepest → inferred keeper)
+            player(8, 3800.0, 300.0),
+            player(7, 3800.0, -300.0),
+        ];
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+        let mut inp = inputs();
+        inp.our_attacking_restart = true;
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Handle {
+                action: BallAction::Strike { target, .. },
+                ..
+            } => {
+                assert!(
+                    target.y.abs() > world.goal_width() / 2.0,
+                    "walled mouth: release must aim away from the goal, got {target:?}"
+                );
+            }
+            other => panic!("expected a release Strike, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn open_play_carrier_does_not_emit_release() {
         // Without an attacking restart, the same carrier must NOT strike-through
         // (open play keeps capture-then-aim Shoot / Pass / Carry untouched).
@@ -1188,6 +1336,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "pass machinery is intentionally disabled in Div-B mode (PASS_SUCCESS_BASE = 0); un-ignore when passing is re-enabled"]
     fn carrier_with_open_supporter_emits_pass() {
         // Carrier deep in our half (no shot in range), a clear forward supporter,
         // no opponents in the lane → the planner should commit a coordinated pass.
@@ -1216,6 +1365,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "pass machinery is intentionally disabled in Div-B mode (PASS_SUCCESS_BASE = 0); un-ignore when passing is re-enabled"]
     fn on_ball_presser_does_not_mask_open_supporter() {
         // Regression for the "pass into the void" bug (yellow p3 ~frame 380):
         // an opponent pressed on the carrier sits at the shared origin of every
@@ -1253,6 +1403,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "pass machinery is intentionally disabled in Div-B mode (PASS_SUCCESS_BASE = 0); un-ignore when passing is re-enabled"]
     fn kickahead_lead_is_clamped_inside_the_field() {
         // Carrier in the final third, supporter near the opponent goal line. The
         // raw lead toward goal would push the aim point past the goal line (out of
@@ -1296,6 +1447,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "pass machinery is intentionally disabled in Div-B mode (PASS_SUCCESS_BASE = 0); un-ignore when passing is re-enabled"]
     fn fast_break_commits_forward_instead_of_recycling() {
         // Carrier just past midfield (no shot in range), the only forward teammate
         // has a blocked lane, and a safe recycle outlet sits behind. Normally we lay
@@ -1345,6 +1497,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "pass machinery is intentionally disabled in Div-B mode (PASS_SUCCESS_BASE = 0); un-ignore when passing is re-enabled"]
     fn fast_break_suppressed_without_numerical_edge() {
         // Same fresh turnover, but the opponent has a field robot back goal-side
         // (in addition to its keeper), so we do NOT out-man the defence — the break
@@ -1372,6 +1525,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "pass machinery is intentionally disabled in Div-B mode (PASS_SUCCESS_BASE = 0); un-ignore when passing is re-enabled"]
     fn final_third_carrier_passes_to_wide_level_supporter() {
         // Carrier deep in the opponent third with the direct shot blocked. The only
         // outlet is a wide supporter that is NOT strictly forward (a cross/cutback).

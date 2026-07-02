@@ -57,10 +57,10 @@
     "handle_ball.PICKUP_LATERAL_OFFSET": 0.0,
     "handle_ball.LATERAL_GAIN": 3.0,
     "handle_ball.APPROACH_DISTANCE": 200.0,
-    "handle_ball.MAGNET_ENABLED": 1.0,
+    "handle_ball.MAGNET_ENABLED": 0.0,
     "handle_ball.COMMIT_PERP": 20.0,
-    "handle_ball.GATE_PERP": 35.0,
-    "handle_ball.APPROACH_MIN_SPEED": 200.0,
+    "handle_ball.GATE_PERP": 80.0,
+    "handle_ball.APPROACH_MIN_SPEED": 300.0,
     "handle_ball.COMMIT_DISTANCE": 280.0,
     "handle_ball.AIM_BACKSTOP": 60.0
   },
