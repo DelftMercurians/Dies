@@ -379,9 +379,26 @@ mod tests {
         // the arrive deadband, and the deadband still stops the robot.
         let f = follower();
         let path = [Vector2::new(1000.0, 0.0)];
-        let slow = f.follow(&path, Vector2::new(900.0, 0.0), Vector2::zeros(), 0.0, 0.0, 0.1);
-        assert!((slow.velocity.norm() - STICTION_FLOOR).abs() < 1e-9, "{slow:?}");
-        let stopped = f.follow(&path, Vector2::new(995.0, 0.0), Vector2::zeros(), 0.0, 0.0, 0.1);
+        let slow = f.follow(
+            &path,
+            Vector2::new(900.0, 0.0),
+            Vector2::zeros(),
+            0.0,
+            0.0,
+            0.1,
+        );
+        assert!(
+            (slow.velocity.norm() - STICTION_FLOOR).abs() < 1e-9,
+            "{slow:?}"
+        );
+        let stopped = f.follow(
+            &path,
+            Vector2::new(995.0, 0.0),
+            Vector2::zeros(),
+            0.0,
+            0.0,
+            0.1,
+        );
         assert!(stopped.velocity.norm() < 1e-9, "{stopped:?}");
     }
 

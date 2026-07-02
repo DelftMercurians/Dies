@@ -333,6 +333,14 @@ impl World {
         self.snapshot.freekick_kicker
     }
 
+    /// Our robot barred from touching the ball by the double-touch rule: the
+    /// restart taker, once the ball is in play and released. `None` while the
+    /// taker is still legally taking the kick — use this (not
+    /// [`Self::freekick_kicker`]) to decide who must not go to the ball.
+    pub fn double_touch_barred(&self) -> Option<PlayerId> {
+        self.snapshot.double_touch_barred
+    }
+
     // ========== Timing ==========
 
     /// Get the time since the last frame, in seconds.
@@ -393,6 +401,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: Some(PlayerId::new(1)),
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: dies_strategy_protocol::Possession::Loose,
             possession_stale: false,
             ball_contest: None,

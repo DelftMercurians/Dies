@@ -101,6 +101,11 @@ pub struct CaptureRole {
     /// Robots barred from ball duty (currently just the double-touch robot).
     /// They still take defensive roles — they just can't draw the capture role.
     pub ineligible: Vec<PlayerId>,
+    /// When set, the capture role is reserved for this robot: everyone else is
+    /// barred from it, and the pinned robot bypasses both `ineligible` and the
+    /// reachability gate. Used to hold the restart taker on the ball so a set
+    /// piece kicker can never be reassigned mid-take.
+    pub pinned: Option<PlayerId>,
 }
 
 /// Result of a formation update: positioning for the non-capturing field robots,
@@ -292,6 +297,19 @@ impl Formation {
                                 config::A_MAX,
                             );
                             if role.id.kind == RoleKind::Capture {
+                                // A pinned capture is reserved outright: nobody
+                                // else may draw it, and the pinned robot skips
+                                // the eligibility gates (the restart taker must
+                                // reach the ball even if slow — the GC restart
+                                // timer is the backstop, not a kicker swap).
+                                if let Some(pinned) = capture.and_then(|c| c.pinned) {
+                                    if *id != pinned {
+                                        return f64::INFINITY;
+                                    }
+                                    return t
+                                        - role.importance * self.stance.sec_per_importance
+                                        - config::CAPTURE_COMMIT;
+                                }
                                 let barred =
                                     capture.map(|c| c.ineligible.contains(id)).unwrap_or(true);
                                 if barred || t > config::CAPTURE_TIME_HORIZON {
@@ -903,6 +921,7 @@ fn capture_differs(a: Option<&CaptureRole>, b: Option<&CaptureRole>) -> bool {
             (x.pos - y.pos).norm() > config::PLAN_CTX_MOVE_EPS
                 || x.importance != y.importance
                 || x.ineligible != y.ineligible
+                || x.pinned != y.pinned
         }
         _ => true,
     }
@@ -979,6 +998,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: Some(PlayerId::new(keeper)),
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: Possession::Loose,
             possession_stale: false,
             ball_contest: None,
@@ -1119,6 +1139,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: Some(PlayerId::new(1)),
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: Possession::We(PlayerId::new(2)),
             possession_stale: false,
             ball_contest: None,
@@ -1199,6 +1220,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: Some(PlayerId::new(1)),
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: Possession::We(PlayerId::new(2)),
             possession_stale: false,
             ball_contest: None,
@@ -1271,6 +1293,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: Some(PlayerId::new(1)),
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: Possession::Loose,
             possession_stale: false,
             ball_contest: None,
@@ -1281,6 +1304,7 @@ mod tests {
             pos: Vector2::new(-2800.0, 0.0),
             importance: config::CAPTURE_IMPORTANCE,
             ineligible: Vec::new(),
+            pinned: None,
         };
         let out = f.update(&world, &[], &PlanContext::default(), Some(&capture), 0.0);
 
@@ -1292,6 +1316,58 @@ mod tests {
         );
         // And it must not also be emitted a positioning command.
         assert!(!out.commands.iter().any(|c| c.id == capturer));
+    }
+
+    #[test]
+    fn pinned_capture_overrides_election_and_eligibility() {
+        // Our free kick: p3 is the pinned taker. p2 stands right at the ball,
+        // p3 is far beyond the normal reachability gate AND listed ineligible
+        // (the double-touch belt-and-braces case) — the pin must still hold the
+        // capture role on p3 and keep everyone else off it.
+        let own = vec![
+            player(1, -4400.0, 0.0),    // keeper
+            player(2, 2900.0, 100.0),   // right at the ball
+            player(3, -1000.0, -500.0), // pinned taker, far away
+            player(4, -1500.0, 800.0),
+        ];
+        let opp = vec![player(11, -2000.0, 0.0)];
+        let world = World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: Vector2::new(3000.0, 0.0),
+                velocity: Vector2::new(0.0, 0.0),
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: opp,
+            game_state: GameState::FreeKick,
+            us_operating: true,
+            pre_stage: false,
+            our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
+            double_touch_barred: None,
+            possession: Possession::Loose,
+            possession_stale: false,
+            ball_contest: None,
+        });
+
+        let mut f = Formation::new();
+        let capture = CaptureRole {
+            pos: Vector2::new(3000.0, 0.0),
+            importance: config::CAPTURE_IMPORTANCE,
+            ineligible: vec![PlayerId::new(3)],
+            pinned: Some(PlayerId::new(3)),
+        };
+        let out = f.update(&world, &[], &PlanContext::default(), Some(&capture), 0.0);
+
+        assert_eq!(
+            out.capturer,
+            Some(PlayerId::new(3)),
+            "the pinned taker must draw the capture role"
+        );
+        assert!(!out.commands.iter().any(|c| c.id == PlayerId::new(3)));
     }
 
     #[test]
@@ -1362,6 +1438,7 @@ mod tests {
                 pre_stage: false,
                 our_keeper_id: Some(PlayerId::new(1)),
                 freekick_kicker: None,
+                double_touch_barred: None,
                 possession: Possession::We(PlayerId::new(5)),
                 possession_stale: false,
                 ball_contest: None,

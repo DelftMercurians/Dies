@@ -277,13 +277,15 @@ impl PlayerController {
             player_context.debug_remove("handicaps");
         }
 
+        // Keyed off the double-touch *bar* (taker released the ball into play),
+        // not the identity latch — the taker may legally touch while taking.
         player_context.debug_string(
             "can_touch_ball",
             format!(
                 "{}",
                 !matches!(
-                    world.current_game_state.freekick_kicker,
-                    Some(kicker) if kicker == self.id
+                    world.current_game_state.double_touch_barred,
+                    Some(barred) if barred == self.id
                 )
             ),
         );

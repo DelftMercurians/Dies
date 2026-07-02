@@ -664,6 +664,7 @@ impl WorldTracker {
                 None => TeamColor::Blue, // Default fallback
             },
             freekick_kicker: self.game_state_tracker.get_freekick_kicker(),
+            double_touch_barred: self.game_state_tracker.get_double_touch_barred(),
             blue_team_yellow_cards: self.blue_team_yellow_cards,
             yellow_team_yellow_cards: self.yellow_team_yellow_cards,
             blue_team_score: self.blue_team_score,

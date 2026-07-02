@@ -70,8 +70,7 @@ impl HandleBallSkill {
             // The keeper is exempt from *our own* box (it may legally play there);
             // the opponent's box is off-limits to everyone, keeper included.
             if let Some(field) = ctx.world.field_geom.as_ref() {
-                let is_keeper =
-                    ctx.world.current_game_state.our_keeper_id == Some(ctx.player.id);
+                let is_keeper = ctx.world.current_game_state.our_keeper_id == Some(ctx.player.id);
                 let banned = |p, m| {
                     if is_keeper {
                         field.in_opp_defense_area(p, m)

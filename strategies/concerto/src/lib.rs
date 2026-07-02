@@ -44,6 +44,11 @@ pub struct ConcertoStrategy {
     formation: Formation,
     last_game_state: GameState,
     double_touch_robot: Option<PlayerId>,
+    /// The pinned taker of our current set piece. Latched at designation (prep
+    /// or first live election) and held until the restart resolves — the kick
+    /// is released, another robot takes it, or the robot leaves the field — so
+    /// the kicker identity can never flicker mid-take.
+    restart_kicker: Option<PlayerId>,
     /// Ball position when we gained possession (the dribble contact point), for the
     /// excessive-dribbling carry cap. Cleared whenever we don't hold the ball.
     dribble_origin: Option<Vector2>,
@@ -64,6 +69,7 @@ impl ConcertoStrategy {
             formation: Formation::new(),
             last_game_state: GameState::Unknown,
             double_touch_robot: None,
+            restart_kicker: None,
             dribble_origin: None,
             gained_ball_t: None,
             keeper: keeper::KeeperState::new(),
@@ -117,8 +123,11 @@ impl Strategy for ConcertoStrategy {
         let defense_only = ctx.param_bool("defense_only");
 
         // ── Double-touch tracking ───────────────────────────────────────
-        if let Some(kicker) = world.freekick_kicker() {
-            self.double_touch_robot = Some(kicker);
+        // Keyed off the framework's *bar* (the taker released the ball into
+        // play), not the first-touch identity latch — barring on identity would
+        // evict the taker from its own kick the moment it legally touches.
+        if let Some(barred) = world.double_touch_barred() {
+            self.double_touch_robot = Some(barred);
         } else if matches!(
             game_state,
             GameState::Halt | GameState::Stop | GameState::Timeout | GameState::Run
@@ -126,6 +135,36 @@ impl Strategy for ConcertoStrategy {
             // Reset on stoppages, and on Run once the framework clears the kicker
             // (another robot has touched the ball).
             self.double_touch_robot = None;
+        }
+
+        // ── Restart-kicker pin ──────────────────────────────────────────
+        // While our set piece is being taken, the taker's identity is frozen:
+        // latched at designation, released only when the restart resolves.
+        // During `pre_stage` the shown `game_state`/`us_operating` already
+        // reflect the predicted restart, so the window spans prep → live.
+        let take_window = us_operating
+            && matches!(
+                game_state,
+                GameState::PrepareKickoff
+                    | GameState::Kickoff
+                    | GameState::FreeKick
+                    | GameState::PreparePenalty
+                    | GameState::Penalty
+                    | GameState::PenaltyRun
+            );
+        if !take_window {
+            self.restart_kicker = None;
+        } else if let Some(pin) = self.restart_kicker {
+            // Release when: the taker released the ball into play (pin→bar
+            // handoff — the bar then keeps it off the ball), a different own
+            // robot touched first (interference/steal of the take), or the
+            // pinned robot left the field (sidelined/carded → re-latch).
+            let taken = world.double_touch_barred() == Some(pin);
+            let other_took = matches!(world.freekick_kicker(), Some(k) if k != pin);
+            let on_field = world.own_players().iter().any(|p| p.id == pin);
+            if taken || other_took || !on_field {
+                self.restart_kicker = None;
+            }
         }
 
         // ── Game-state transition → clear plan + driver ─────────────────
@@ -298,6 +337,13 @@ impl Strategy for ConcertoStrategy {
                 pos,
                 importance: config::CAPTURE_IMPORTANCE,
                 ineligible,
+                // During our set piece the capture role is reserved for the
+                // pinned taker — matching may not hand the ball to anyone else.
+                pinned: if take_window {
+                    self.restart_kicker
+                } else {
+                    None
+                },
             }
         });
 
@@ -308,6 +354,15 @@ impl Strategy for ConcertoStrategy {
         let fout = self
             .formation
             .update(&world, &reserved, &plan_context, capture.as_ref(), now);
+
+        // First live tick of our restart with no prep pin (direct jump to a
+        // live set piece): latch the taker. Prefer the framework's identity
+        // latch (a robot already mid-take, e.g. after a strategy restart) over
+        // the free election. Never latch once the kick has been released — the
+        // post-kick collector is not a kicker.
+        if take_window && self.restart_kicker.is_none() && world.double_touch_barred().is_none() {
+            self.restart_kicker = world.freekick_kicker().or(fout.capturer);
+        }
 
         // ── Pursuit: build the capture waypoint for Formation's chosen capturer ──
         if pursuit {
@@ -346,12 +401,17 @@ impl Strategy for ConcertoStrategy {
             self.driver.update(&world, ctx);
         }
 
-        // Compliance: name the active robot as the kicker during our restarts so the
-        // executor exempts it and positions everyone else.
+        // Compliance: name the pinned taker as the kicker during our restarts so
+        // the executor exempts it and positions everyone else. Gated on the pin:
+        // once the kick is released the pin drops, so the post-kick collector
+        // never inherits the label (or the executor's keep-out exemptions) while
+        // the GC still reports the restart state.
         if let Some(active_id) = self.driver.active_robot_id() {
-            if let Some(role) = our_kicker_role(game_state, us_operating) {
-                if let Some(p) = ctx.player(active_id) {
-                    p.set_role(role);
+            if self.restart_kicker == Some(active_id) {
+                if let Some(role) = our_kicker_role(game_state, us_operating) {
+                    if let Some(p) = ctx.player(active_id) {
+                        p.set_role(role);
+                    }
                 }
             }
         }
@@ -395,26 +455,38 @@ impl ConcertoStrategy {
         }
     }
 
-    /// Pick the nearest eligible robot to the ball as the set-piece kicker, send it
-    /// to the ball, and name it so the executor exempts it from restart clamping.
+    /// Designate the set-piece kicker, send it to the ball, and name it so the
+    /// executor exempts it from restart clamping. The choice is latched in
+    /// `restart_kicker`: re-picking the nearest robot every frame flickers
+    /// between near-equidistant robots and can disagree with the live election
+    /// at the prep→live transition. Nearest-to-ball only picks the initial pin.
     fn designate_prep_kicker(
-        &self,
+        &mut self,
         world: &World,
         ctx: &mut TeamContext,
         game_state: GameState,
     ) -> Option<PlayerId> {
         let ball_pos = world.ball_position()?;
         let keeper_id = world.our_keeper_id();
-        let kicker = world
-            .own_players()
-            .iter()
-            .filter(|p| Some(p.id) != keeper_id)
-            .min_by(|a, b| {
-                let da = (a.position - ball_pos).norm();
-                let db = (b.position - ball_pos).norm();
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-            })?;
-        let id = kicker.id;
+        let id = match self
+            .restart_kicker
+            .filter(|id| world.own_players().iter().any(|p| p.id == *id))
+        {
+            Some(id) => id,
+            None => {
+                world
+                    .own_players()
+                    .iter()
+                    .filter(|p| Some(p.id) != keeper_id)
+                    .min_by(|a, b| {
+                        let da = (a.position - ball_pos).norm();
+                        let db = (b.position - ball_pos).norm();
+                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                    })?
+                    .id
+            }
+        };
+        self.restart_kicker = Some(id);
         let role = match game_state {
             GameState::PrepareKickoff => "kickoff_kicker",
             GameState::FreeKick => "free_kick_kicker",

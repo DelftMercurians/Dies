@@ -136,6 +136,7 @@ impl CoordinateTransformer {
             pre_stage,
             our_keeper_id: team_data.current_game_state.our_keeper_id,
             freekick_kicker: team_data.current_game_state.freekick_kicker,
+            double_touch_barred: team_data.current_game_state.double_touch_barred,
             possession: self.team_relative_possession(&team_data.possession.state),
             possession_stale: team_data.possession.stale,
             ball_contest: self.team_relative_contest(team_data.possession.contest.as_ref()),

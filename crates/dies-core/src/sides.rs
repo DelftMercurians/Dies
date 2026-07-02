@@ -135,6 +135,11 @@ impl SideAssignment {
                 } else {
                     None
                 },
+                double_touch_barred: world_data
+                    .game_state
+                    .double_touch_barred
+                    .filter(|barred| barred.team_color == color)
+                    .map(|barred| barred.player_id),
                 max_allowed_bots: match color {
                     TeamColor::Blue => world_data.game_state.blue_team_max_allowed_bots,
                     TeamColor::Yellow => world_data.game_state.yellow_team_max_allowed_bots,

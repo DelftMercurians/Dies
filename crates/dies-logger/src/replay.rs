@@ -822,6 +822,7 @@ fn build_world(
         // The columnar `frames` table only carries game_state + operating team;
         // the rest is defaulted (lossy, not rendered in replay).
         freekick_kicker: None,
+        double_touch_barred: None,
         blue_team_max_allowed_bots: 11,
         yellow_team_max_allowed_bots: 11,
         blue_team_yellow_cards: 0,

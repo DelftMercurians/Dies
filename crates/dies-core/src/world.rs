@@ -232,6 +232,10 @@ pub struct GameStateData {
     /// The player who performed the freekick, if it was us (for double touch tracking)
     /// Only Some until another player touches the ball
     pub freekick_kicker: Option<PlayerId>,
+    /// Our robot barred from touching the ball by the double-touch rule (the
+    /// restart taker, once the ball is in play and released). `None` while the
+    /// taker is still legally taking the kick, and when the taker is theirs.
+    pub double_touch_barred: Option<PlayerId>,
     pub max_allowed_bots: u32,
     pub our_keeper_id: Option<PlayerId>,
     /// The restart the GC's `next_command` hint predicts will resume play after
@@ -276,6 +280,11 @@ pub struct RawGameStateData {
     pub operating_team: TeamColor,
     /// The player who performed the freekick (for double touch tracking)
     pub freekick_kicker: Option<TeamPlayerId>,
+    /// The robot barred from touching the ball by the double-touch rule: the
+    /// restart taker, once the ball is in play AND the taker released it.
+    /// Rises later than `freekick_kicker` (which latches at first contact) —
+    /// while the taker is still legally taking the kick this is `None`.
+    pub double_touch_barred: Option<TeamPlayerId>,
     pub blue_team_max_allowed_bots: u32,
     pub yellow_team_max_allowed_bots: u32,
     #[typeshare(serialized_as = "u32")]
@@ -1147,6 +1156,7 @@ pub fn mock_world_data() -> WorldData {
             game_state: GameState::Run,
             operating_team: TeamColor::Blue,
             freekick_kicker: None,
+            double_touch_barred: None,
             blue_team_yellow_cards: 0,
             yellow_team_yellow_cards: 0,
             blue_team_score: 0,
@@ -1252,6 +1262,7 @@ pub fn mock_team_data() -> TeamData {
             us_operating: true,
             yellow_cards: 0,
             freekick_kicker: None,
+            double_touch_barred: None,
             max_allowed_bots: 6,
             our_keeper_id: None,
             predicted_next_game_state: None,

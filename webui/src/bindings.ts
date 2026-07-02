@@ -905,6 +905,12 @@ export interface GameStateData {
 	 * Only Some until another player touches the ball
 	 */
 	freekick_kicker?: PlayerId;
+	/**
+	 * Our robot barred from touching the ball by the double-touch rule (the
+	 * restart taker, once the ball is in play and released). `None` while the
+	 * taker is still legally taking the kick, and when the taker is theirs.
+	 */
+	double_touch_barred?: PlayerId;
 	max_allowed_bots: number;
 	our_keeper_id?: PlayerId;
 	/**
@@ -1271,6 +1277,13 @@ export interface RawGameStateData {
 	operating_team: TeamColor;
 	/** The player who performed the freekick (for double touch tracking) */
 	freekick_kicker?: TeamPlayerId;
+	/**
+	 * The robot barred from touching the ball by the double-touch rule: the
+	 * restart taker, once the ball is in play AND the taker released it.
+	 * Rises later than `freekick_kicker` (which latches at first contact) —
+	 * while the taker is still legally taking the kick this is `None`.
+	 */
+	double_touch_barred?: TeamPlayerId;
 	blue_team_max_allowed_bots: number;
 	yellow_team_max_allowed_bots: number;
 	blue_team_yellow_cards: number;

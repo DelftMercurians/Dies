@@ -12,6 +12,15 @@ use dies_protos::ssl_gc_referee_message::{
 use crate::BallData;
 
 const FREEKICK_TIMEOUT_SECS: u64 = 10;
+/// The ball is in play once it moved this far from the restart spot (mm) — the
+/// same criterion the GC uses.
+const BALL_IN_PLAY_DIST: f64 = 50.0;
+/// Vision distance at or below which a robot counts as touching the ball (mm).
+const TOUCH_DIST: f64 = PLAYER_RADIUS + BALL_RADIUS + 10.0;
+/// Schmitt release margin above `TOUCH_DIST` for ending the kicker's touch
+/// episode — the gap debounces vision jitter without timers, so a one-frame
+/// bounce mid-dribble doesn't count as a release.
+const KICKER_RELEASE_HYST: f64 = 60.0;
 
 #[derive(Debug, Clone)]
 pub struct GameStateTracker {
@@ -30,7 +39,24 @@ pub struct GameStateTracker {
     operator_is_blue: Option<bool>,
     last_cmd: Option<Command>,
     freekick_kicker: Option<TeamPlayerId>,
-    freekick_start_time: Option<Instant>,
+    /// World-time (`t_received`) when the free kick started. The referee update
+    /// that sets the state has no world clock, so the command only marks
+    /// `freekick_timer_pending` and the next tracking frame stamps this. Kept in
+    /// world time (not `Instant`) so headless/FTR runs stay deterministic.
+    freekick_start_t: Option<f64>,
+    freekick_timer_pending: bool,
+    /// Ball position on the first tracked frame of the restart (free kick /
+    /// kickoff) — the reference for the ball-in-play check.
+    restart_spot: Option<Vector2>,
+    /// Ball has moved ≥ `BALL_IN_PLAY_DIST` from `restart_spot` (one-way latch
+    /// per restart).
+    restart_ball_in_play: bool,
+    /// Kicker↔ball contact state (Schmitt: enters at `TOUCH_DIST`, exits
+    /// `KICKER_RELEASE_HYST` above it) and whether a contact episode has ended
+    /// since the kicker was latched. The double-touch bar requires a release:
+    /// latching at first contact alone would bar the taker mid-take.
+    kicker_in_contact: bool,
+    kicker_released: bool,
     blue_team_keeper_id: Option<PlayerId>,
     yellow_team_keeper_id: Option<PlayerId>,
 
@@ -63,7 +89,12 @@ impl GameStateTracker {
             operator_is_blue: None,
             last_cmd: None,
             freekick_kicker: None,
-            freekick_start_time: None,
+            freekick_start_t: None,
+            freekick_timer_pending: false,
+            restart_spot: None,
+            restart_ball_in_play: false,
+            kicker_in_contact: false,
+            kicker_released: false,
             blue_team_keeper_id: None,
             yellow_team_keeper_id: None,
             stage: None,
@@ -116,6 +147,9 @@ impl GameStateTracker {
             Command::STOP => GameState::Stop,
             Command::NORMAL_START => {
                 if self.game_state == GameState::PrepareKickoff {
+                    // Fresh double-touch tracking for the kickoff taker (no
+                    // tracking timeout — that backstop is free-kick-only).
+                    self.reset_freekick_tracking();
                     GameState::Kickoff
                 } else if self.game_state == GameState::PreparePenalty {
                     GameState::Penalty
@@ -132,8 +166,8 @@ impl GameStateTracker {
             | Command::DIRECT_FREE_BLUE
             | Command::INDIRECT_FREE_BLUE
             | Command::INDIRECT_FREE_YELLOW => {
-                self.freekick_kicker = None;
-                self.freekick_start_time = Some(Instant::now());
+                self.reset_freekick_tracking();
+                self.freekick_timer_pending = true;
                 GameState::FreeKick
             }
             Command::TIMEOUT_YELLOW => GameState::Timeout,
@@ -167,12 +201,12 @@ impl GameStateTracker {
         match self.game_state {
             GameState::Halt | GameState::Stop | GameState::Timeout => {
                 self.operator_is_blue = None;
-                self.freekick_kicker = None;
-                self.freekick_start_time = None;
+                self.reset_freekick_tracking();
             }
             GameState::Run => {
                 self.operator_is_blue = None;
-                // Keep freekick_kicker and freekick_start_time for double touch tracking
+                // Keep the freekick/double-touch tracking state — the bar must
+                // survive the FreeKick→Run transition.
             }
             _ => (),
         }
@@ -313,7 +347,7 @@ impl GameStateTracker {
 
     fn is_robot_touching_ball(&self, player: &PlayerData, ball_pos: Vector2) -> bool {
         let distance = (player.position - ball_pos).norm();
-        distance <= (PLAYER_RADIUS + BALL_RADIUS + 10.0)
+        distance <= TOUCH_DIST
     }
 
     fn find_closest_robot_to_ball(
@@ -353,6 +387,31 @@ impl GameStateTracker {
         self.freekick_kicker
     }
 
+    /// The robot barred from touching the ball by the double-touch rule: the
+    /// restart taker, once the ball is in play (moved ≥50mm from the restart
+    /// spot) AND its touch episode has ended. Deliberately later than
+    /// [`Self::get_freekick_kicker`], which latches identity at first contact —
+    /// barring on identity alone evicts the taker from its own kick.
+    pub fn get_double_touch_barred(&self) -> Option<TeamPlayerId> {
+        if self.restart_ball_in_play && self.kicker_released {
+            self.freekick_kicker
+        } else {
+            None
+        }
+    }
+
+    /// Clear all restart/double-touch tracking (kicker identity, timers,
+    /// restart spot, ball-in-play and contact latches).
+    fn reset_freekick_tracking(&mut self) {
+        self.freekick_kicker = None;
+        self.freekick_start_t = None;
+        self.freekick_timer_pending = false;
+        self.restart_spot = None;
+        self.restart_ball_in_play = false;
+        self.kicker_in_contact = false;
+        self.kicker_released = false;
+    }
+
     pub fn update_freekick_double_touch(
         &mut self,
         world_data: Option<&WorldData>,
@@ -371,11 +430,27 @@ impl GameStateTracker {
         };
 
         let ball_pos = ball_data.position.xy();
+        let now = world_data.t_received;
 
-        if let Some(start_time) = self.freekick_start_time {
-            if start_time.elapsed().as_secs() >= FREEKICK_TIMEOUT_SECS {
-                self.freekick_kicker = None;
-                self.freekick_start_time = None;
+        // Stamp the world-time start of the free kick (the referee update that
+        // set the state has no world clock) and the restart spot on the first
+        // tracked frame of the restart.
+        if self.freekick_timer_pending {
+            self.freekick_timer_pending = false;
+            self.freekick_start_t = Some(now);
+        }
+        if self.restart_spot.is_none() {
+            self.restart_spot = Some(ball_pos);
+        }
+        if let Some(spot) = self.restart_spot {
+            if (ball_pos - spot).norm() >= BALL_IN_PLAY_DIST {
+                self.restart_ball_in_play = true;
+            }
+        }
+
+        if let Some(start_t) = self.freekick_start_t {
+            if now - start_t >= FREEKICK_TIMEOUT_SECS as f64 {
+                self.reset_freekick_tracking();
                 return;
             }
         }
@@ -400,6 +475,8 @@ impl GameStateTracker {
 
                 if is_touching {
                     self.freekick_kicker = Some(robot);
+                    self.kicker_in_contact = true;
+                    self.kicker_released = false;
                 }
             }
         } else if let Some(kicker) = self.freekick_kicker {
@@ -413,8 +490,7 @@ impl GameStateTracker {
                     if touching_robot.team_color != kicker.team_color
                         || touching_robot.player_id != kicker.player_id
                     {
-                        self.freekick_kicker = None;
-                        self.freekick_start_time = None;
+                        self.reset_freekick_tracking();
                         return;
                     }
                 }
@@ -430,10 +506,35 @@ impl GameStateTracker {
                     if touching_robot.team_color != kicker.team_color
                         || touching_robot.player_id != kicker.player_id
                     {
-                        self.freekick_kicker = None;
-                        self.freekick_start_time = None;
+                        self.reset_freekick_tracking();
                         return;
                     }
+                }
+            }
+
+            // Schmitt contact tracking for the kicker's touch episode: contact
+            // begins at TOUCH_DIST, ends only past TOUCH_DIST + hysteresis. A
+            // completed episode ("released") plus ball-in-play raises the
+            // double-touch bar (see `get_double_touch_barred`).
+            let kicker_player = match kicker.team_color {
+                TeamColor::Blue => world_data
+                    .blue_team
+                    .iter()
+                    .find(|p| p.id == kicker.player_id),
+                TeamColor::Yellow => world_data
+                    .yellow_team
+                    .iter()
+                    .find(|p| p.id == kicker.player_id),
+            };
+            if let Some(p) = kicker_player {
+                let dist = (p.position - ball_pos).norm();
+                if dist <= TOUCH_DIST {
+                    self.kicker_in_contact = true;
+                } else if dist > TOUCH_DIST + KICKER_RELEASE_HYST {
+                    if self.kicker_in_contact {
+                        self.kicker_released = true;
+                    }
+                    self.kicker_in_contact = false;
                 }
             }
         }
@@ -534,10 +635,155 @@ mod tests {
         msg
     }
 
+    /// World with our blue robot 0 and yellow robot 1 at the given positions.
+    fn world_at(blue_pos: Vector2, yellow_pos: Vector2, t: f64) -> dies_core::WorldData {
+        let mut w = dies_core::mock_world_data();
+        w.t_received = t;
+        w.blue_team[0].position = blue_pos;
+        w.yellow_team[0].position = yellow_pos;
+        w
+    }
+
+    fn ball_at(pos: Vector2) -> BallData {
+        BallData {
+            timestamp: 0.0,
+            position: Vector3::new(pos.x, pos.y, 0.0),
+            raw_position: vec![],
+            velocity: Vector3::zeros(),
+            detected: true,
+        }
+    }
+
+    const FAR: Vector2 = Vector2::new(-4000.0, -3000.0);
+
+    /// Start a blue free kick and run one tracking frame with the taker not yet
+    /// at the ball; returns the tracker with the restart spot stamped at `spot`.
+    fn free_kick_at(spot: Vector2) -> GameStateTracker {
+        let mut tracker = GameStateTracker::new();
+        tracker.update(&referee_msg(Command::STOP));
+        tracker.update(&referee_msg(Command::DIRECT_FREE_BLUE));
+        assert_eq!(tracker.get(), GameState::FreeKick);
+        let w = world_at(spot + Vector2::new(500.0, 0.0), FAR, 0.0);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+        assert_eq!(tracker.get_freekick_kicker(), None);
+        tracker
+    }
+
     #[test]
     fn test_new_game_state_tracker() {
         let tracker = GameStateTracker::new();
         assert_eq!(tracker.get(), GameState::Halt);
+    }
+
+    #[test]
+    fn test_double_touch_bar_full_lifecycle() {
+        let spot = Vector2::new(1000.0, 500.0);
+        let mut tracker = free_kick_at(spot);
+        let kicker = TeamPlayerId {
+            team_color: TeamColor::Blue,
+            player_id: PlayerId::new(0),
+        };
+
+        // Taker reaches the ball: identity latches, bar stays down — barring at
+        // first contact would evict the taker from its own kick.
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 0.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+        assert_eq!(tracker.get_freekick_kicker(), Some(kicker));
+        assert_eq!(tracker.get_double_touch_barred(), None);
+
+        // Dribble-into-play: ball moved >50mm but still in contact → no bar.
+        let ball = spot + Vector2::new(100.0, 0.0);
+        let w = world_at(ball + Vector2::new(100.0, 0.0), FAR, 1.0);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(ball)));
+        assert_eq!(tracker.get_double_touch_barred(), None);
+
+        // Inside the hysteresis band (released < 60mm past touch) → still no bar.
+        let w = world_at(ball + Vector2::new(TOUCH_DIST + 30.0, 0.0), FAR, 1.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(ball)));
+        assert_eq!(tracker.get_double_touch_barred(), None);
+
+        // Ball kicked clear of the hysteresis ring → episode over → bar rises.
+        let ball = spot + Vector2::new(800.0, 0.0);
+        let w = world_at(spot + Vector2::new(200.0, 0.0), FAR, 2.0);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(ball)));
+        assert_eq!(tracker.get_double_touch_barred(), Some(kicker));
+
+        // Another robot touches → tracking clears entirely.
+        let w = world_at(FAR, ball + Vector2::new(50.0, 0.0), 2.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(ball)));
+        assert_eq!(tracker.get_freekick_kicker(), None);
+        assert_eq!(tracker.get_double_touch_barred(), None);
+    }
+
+    #[test]
+    fn test_double_touch_bar_requires_ball_in_play() {
+        // Taker touches, then backs off without the ball having moved 50mm:
+        // released, but the kick wasn't taken → no bar.
+        let spot = Vector2::new(0.0, 0.0);
+        let mut tracker = free_kick_at(spot);
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 0.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+        assert!(tracker.get_freekick_kicker().is_some());
+
+        let w = world_at(spot + Vector2::new(400.0, 0.0), FAR, 1.0);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+        assert_eq!(tracker.get_double_touch_barred(), None);
+    }
+
+    #[test]
+    fn test_double_touch_bar_survives_run_and_clears_on_stop() {
+        let spot = Vector2::new(0.0, 0.0);
+        let mut tracker = free_kick_at(spot);
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 0.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+
+        // Kick released into play → bar up.
+        let ball = spot + Vector2::new(800.0, 0.0);
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 1.0);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(ball)));
+        assert!(tracker.get_double_touch_barred().is_some());
+
+        // FreeKick → Run keeps the bar (the rule outlives the restart state)…
+        tracker.update(&referee_msg(FORCE_START));
+        assert!(tracker.get_double_touch_barred().is_some());
+        // …and Stop clears everything.
+        tracker.update(&referee_msg(Command::STOP));
+        assert_eq!(tracker.get_double_touch_barred(), None);
+        assert_eq!(tracker.get_freekick_kicker(), None);
+    }
+
+    #[test]
+    fn test_kickoff_double_touch_tracked() {
+        let mut tracker = GameStateTracker::new();
+        tracker.update(&referee_msg(Command::PREPARE_KICKOFF_BLUE));
+        tracker.update(&referee_msg(Command::NORMAL_START));
+        assert_eq!(tracker.get(), GameState::Kickoff);
+
+        let spot = Vector2::new(0.0, 0.0);
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 0.0);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+        assert!(tracker.get_freekick_kicker().is_some());
+        assert_eq!(tracker.get_double_touch_barred(), None);
+
+        let ball = spot + Vector2::new(600.0, 0.0);
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 0.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(ball)));
+        assert!(tracker.get_double_touch_barred().is_some());
+    }
+
+    #[test]
+    fn test_freekick_tracking_timeout_uses_world_time() {
+        let spot = Vector2::new(0.0, 0.0);
+        let mut tracker = free_kick_at(spot); // stamps t=0 as the start
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 0.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+        assert!(tracker.get_freekick_kicker().is_some());
+
+        // Past the tracking timeout in *world* time (no wall clock involved).
+        let w = world_at(spot + Vector2::new(100.0, 0.0), FAR, 10.5);
+        tracker.update_freekick_double_touch(Some(&w), Some(&ball_at(spot)));
+        assert_eq!(tracker.get_freekick_kicker(), None);
+        assert_eq!(tracker.get_double_touch_barred(), None);
     }
 
     #[test]

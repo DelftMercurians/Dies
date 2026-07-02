@@ -479,6 +479,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: Some(PlayerId::new(1)),
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: Possession::Loose,
             possession_stale: false,
             ball_contest: None,

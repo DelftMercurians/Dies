@@ -60,6 +60,12 @@ pub struct WorldSnapshot {
     /// Only `Some` until another player touches the ball.
     pub freekick_kicker: Option<PlayerId>,
 
+    /// Our robot barred from touching the ball by the double-touch rule: the
+    /// restart taker, once the ball is in play AND the taker released it. Rises
+    /// later than [`Self::freekick_kicker`] (which latches identity at first
+    /// contact) — `None` while the taker is still legally taking the kick.
+    pub double_touch_barred: Option<PlayerId>,
+
     /// Unified ball-possession metric, team-relative (`We`/`Opp`/`Loose`/`Contested`).
     pub possession: Possession,
 
@@ -310,6 +316,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: Some(PlayerId::new(0)),
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: Possession::We(PlayerId::new(1)),
             possession_stale: false,
             ball_contest: None,

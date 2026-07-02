@@ -256,6 +256,7 @@ mod tests {
             pre_stage: false,
             our_keeper_id: None,
             freekick_kicker: None,
+            double_touch_barred: None,
             possession: dies_strategy_protocol::Possession::Loose,
             possession_stale: false,
             ball_contest: None,

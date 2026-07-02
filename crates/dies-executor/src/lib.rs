@@ -1316,10 +1316,7 @@ impl Executor {
             // the robot exempted here is the one actually playing keeper.
             let keeper_id = dies_core::effective_keeper_id(
                 gc_keeper,
-                roster
-                    .iter()
-                    .filter(|p| p.sideline.is_none())
-                    .map(|p| p.id),
+                roster.iter().filter(|p| p.sideline.is_none()).map(|p| p.id),
             );
             let removed = ctrl.plan_sidelining(roster, max_bots, keeper_id);
             for p in roster.iter_mut() {

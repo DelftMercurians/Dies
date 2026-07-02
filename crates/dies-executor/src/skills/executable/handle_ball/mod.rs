@@ -1001,11 +1001,17 @@ mod tests {
 
         // Frame 1 (t=0): enters the aim stage; blocked lane → no kick commit.
         let w0 = mk(0.0);
-        assert!(matches!(s.tick(ctx(&w0, &tc, &p)), SkillProgress::Continue(_)));
+        assert!(matches!(
+            s.tick(ctx(&w0, &tc, &p)),
+            SkillProgress::Continue(_)
+        ));
         // Frame 2 past the backstop: forced — aligned within the loose gate, so the
         // commit happens despite the covered lane.
         let w1 = mk(AIM_BACKSTOP() + 0.1);
-        assert!(matches!(s.tick(ctx(&w1, &tc, &p)), SkillProgress::Continue(_)));
+        assert!(matches!(
+            s.tick(ctx(&w1, &tc, &p)),
+            SkillProgress::Continue(_)
+        ));
         // Frame 3: the kick stage fires the smart kick through the covered lane.
         let w2 = mk(AIM_BACKSTOP() + 0.2);
         match s.tick(ctx(&w2, &tc, &p)) {

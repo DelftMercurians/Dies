@@ -114,9 +114,7 @@ impl DelayDetector {
                     if let Some(delay) = ev {
                         self.record(t_cmd, delay);
                     }
-                } else if t - t_cmd > MAX_DELAY
-                    || (t - t_cmd > GO_WINDOW && !*armed_go)
-                {
+                } else if t - t_cmd > MAX_DELAY || (t - t_cmd > GO_WINDOW && !*armed_go) {
                     self.state = State::Idle; // stalled / command never went
                 }
             }
@@ -152,7 +150,11 @@ impl DelayDetector {
         // Window anchored to the most recent event: nothing ages out while the
         // robot is idle (no new events), so the last estimate persists.
         let latest = self.events.back().map(|e| e.0).unwrap_or(t_event);
-        while self.events.front().map_or(false, |e| e.0 < latest - WINDOW_S) {
+        while self
+            .events
+            .front()
+            .map_or(false, |e| e.0 < latest - WINDOW_S)
+        {
             self.events.pop_front();
         }
         while self.events.len() > MAX_EVENTS {
