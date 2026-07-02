@@ -148,7 +148,7 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
             },
             gen_command: glue::Radio_GenericCommand {
                 dribbler_speed_i: val.dribble_speed as i16,
-                kick_time_i: (6_000.0 * val.kick_speed as f32) as u16,
+                kick_time_i: kick_time_for_id(val.id),
                 time_to_kick: 0,
                 smart_kick_couter: 0,
                 robot_command: val.robot_cmd.into(),
