@@ -57,6 +57,10 @@ const MAX_REACQUIRE: u32 = 6;
 const N_APPROACH_SAMPLES: usize = 24;
 /// Ego clearance required at a candidate staging point (robot radius + buffer).
 const APPROACH_EGO_RADIUS: f64 = PLAYER_RADIUS + 20.0;
+/// Settle band around the staging point inside which the anti-stiction feed is
+/// off. Must stay below COMMIT_PERP so a robot resting anywhere inside the band
+/// is already within the commit gate (matches the follower's arrive deadband).
+const STAGING_SETTLE_DIST: f64 = 15.0;
 /// Clearance required along the commit corridor (staging point → ball). Slightly
 /// tighter so only a real blocker between us and the ball rejects an approach.
 const APPROACH_COMMIT_RADIUS: f64 = PLAYER_RADIUS;
@@ -95,10 +99,26 @@ tunables! {
     /// latches — the fast bail for a ball pinned/wedged so we can't take it.
     #[tunable(unit = "s", min = 0.5, max = 6.0, step = 0.5)]
     PICKUP_TIMEOUT: f64 = 2.0;
-    /// Aim/shoot timeout once we hold the ball: a permanently blocked lane never fires,
-    /// so give up this long after entering the aim stage.
+    /// Aim hold cap: this long after entering the aim stage the shot is FORCED —
+    /// reposition is abandoned, the orbit ignores `lane_blocked`, and the kick
+    /// commits on the loose [`AIM_FORCED_YAW_DEG`] gate instead of the precise
+    /// one. Failing here instead (the old behaviour) just re-engaged the same
+    /// robot with a fresh clock, so a covered lane produced an endless hold-and-
+    /// spin (observed 9–17 s of continuous dribbler contact — excessive dribbling,
+    /// and a ball long lost IRL). Booting the ball through the covered corridor
+    /// is strictly better than holding it. Sized to leave room for the capture-
+    /// settle window (SETTLE_TIME) that delays the start of the orbit.
     #[tunable(unit = "s", min = 1.0, max = 12.0, step = 0.5)]
-    AIM_BACKSTOP: f64 = 2.0;
+    AIM_BACKSTOP: f64 = 2.5;
+    /// Yaw-error gate for a forced (past-backstop) shot. Loose on purpose: after
+    /// the cap the priority is releasing the ball roughly forward, not precision.
+    #[tunable(unit = "deg", min = 5.0, max = 60.0, step = 5.0)]
+    AIM_FORCED_YAW_DEG: f64 = 20.0;
+    /// Hard failure deadline for the aim stage (multiple of [`AIM_BACKSTOP`]): if
+    /// even the forced shot can't commit by then (ball never seated, alignment
+    /// unreachable), give up so the caller re-decides.
+    #[tunable(unit = "x", min = 1.5, max = 4.0, step = 0.5)]
+    AIM_GIVE_UP_FACTOR: f64 = 2.0;
     /// Carry timeout: fail this long after entering the carry stage if the target is
     /// still not reached (e.g. a blocked path).
     #[tunable(unit = "s", min = 1.0, max = 12.0, step = 0.5)]
@@ -108,6 +128,27 @@ tunables! {
     /// instant "already there".
     #[tunable(unit = "mm", min = 30.0, max = 400.0, step = 10.0)]
     DRIBBLE_ARRIVE_DIST: f64 = 150.0;
+
+    // ── capture settle (post-breakbeam glide) ─────────────────────────────────
+    section "HandleBall settle";
+
+    /// Deceleration cap for the settle window right after capture. Stopping dead
+    /// at contact bounces the ball off the dribbler (the ball still carries the
+    /// commit-drive speed); instead the last command glides down at this rate —
+    /// from a 300 mm/s contact that is ~0.4 s and ~55 mm of drive-through while
+    /// the dribbler seats the ball. The glide direction is the commit axis (the
+    /// controller ramps down its previous command), so ball keep-in/defense
+    /// margins from the commit still cover it.
+    #[tunable(unit = "mm/s²", min = 200.0, max = 4000.0, step = 100.0)]
+    SETTLE_DECEL: f64 = 800.0;
+    /// Length of the settle window after the acquire→act transition.
+    #[tunable(unit = "s", min = 0.0, max = 1.5, step = 0.05)]
+    SETTLE_TIME: f64 = 0.4;
+    /// Yaw-rate cap during the settle window: spinning toward the act heading in
+    /// the same tick as capture rips the ball off the dribbler just like the
+    /// hard stop does. Plumbed to the firmware heading controller (max_yaw_rate).
+    #[tunable(unit = "rad/s", min = 0.2, max = 6.0, step = 0.1)]
+    SETTLE_YAW_RATE: f64 = 1.5;
 
     // ── dribbler ──────────────────────────────────────────────────────────────
     section "HandleBall dribbler";
@@ -160,19 +201,41 @@ tunables! {
     COMMIT_PERP: f64 = 30.0;
     /// Release (hysteresis) band for the commit latch. Once committed we keep
     /// driving while perp stays under this, and only bail if it blows past it. Kept
-    /// ≤ GATE_PERP so forward drive is already throttled to a crawl near the
+    /// ≤ GATE_PERP so the proportional drive is already throttled near the
     /// boundary — the robot slides back onto the axis rather than ramming the ball.
     #[tunable(unit = "mm", min = 30.0, max = 200.0, step = 5.0)]
     COMMIT_PERP_RELEASE: f64 = 70.0;
-    /// Perpendicular gate width for entering the commit drive.
+    /// Along-axis overshoot tolerated while latched: the ball estimate collapses
+    /// into the hull during the final press (vision occlusion puts it at the robot
+    /// centre), so `along` crossing 0 must not drop the latch and disarm the kicker.
+    #[tunable(unit = "mm", min = 0.0, max = 100.0, step = 5.0)]
+    COMMIT_ALONG_OVERSHOOT: f64 = 30.0;
+    /// Along-axis release margin past COMMIT_DISTANCE while latched, so hovering
+    /// right at the commit boundary can't flap the latch (each flap used to count
+    /// a re-acquire and one stuck approach exhausted the whole budget).
+    #[tunable(unit = "mm", min = 0.0, max = 150.0, step = 5.0)]
+    COMMIT_ALONG_RELEASE: f64 = 60.0;
+    /// Perpendicular gate width scaling the *proportional* term of the commit
+    /// drive (the MIN_SPEED floor is not gated — see `commit_velocity`).
     #[tunable(unit = "mm", min = 20.0, max = 200.0, step = 5.0)]
     GATE_PERP: f64 = 80.0;
     /// Proportional gain on the approach drive toward the ball.
     #[tunable(min = 0.5, max = 8.0, step = 0.25)]
     APPROACH_GAIN: f64 = 3.0;
     /// Minimum approach speed so the final drive doesn't stall short of the ball.
+    /// Applied as an ungated floor: it is also the guaranteed ball-contact speed.
+    /// Live data (2026-07-02): contact ≥ ~290 mm/s → one clean breakbeam edge and
+    /// the reflex fires; contact ≤ ~100 mm/s → beam flicker and whiffs.
     #[tunable(unit = "mm/s", min = 50.0, max = 600.0, step = 25.0)]
-    APPROACH_MIN_SPEED: f64 = 200.0;
+    APPROACH_MIN_SPEED: f64 = 300.0;
+    /// Anti-stiction feed toward the staging point while uncommitted: added on
+    /// top of the position controller whenever the robot is more than the settle
+    /// band from staging, so the terminal proportional command can't decay into
+    /// the drivetrain's stiction band and park the robot outside the commit gate
+    /// (observed: sustained 170–260 mm/s commands left the robot stationary;
+    /// breakaway needed ~400 mm/s commanded).
+    #[tunable(unit = "mm/s", min = 0.0, max = 600.0, step = 25.0)]
+    STAGING_MIN_SPEED: f64 = 300.0;
     /// Lateral correction gain that holds the robot on the commit axis.
     #[tunable(min = 0.5, max = 10.0, step = 0.25)]
     LATERAL_GAIN: f64 = 6.0;
@@ -349,6 +412,9 @@ pub struct HandleBallSkill {
     had_ball: bool,
     /// World time a mid-act ball loss began (re-acquire debounce); `None` when held.
     lost_since: Option<f64>,
+    /// End of the capture-settle window (post-breakbeam glide). Set only on the
+    /// acquire→act transition — an act→act swap must not re-trigger the glide.
+    settle_until: Option<f64>,
     /// Ball losses so far this episode (bounds silent re-acquire).
     reacquires: u32,
     // ── capture state (acquire) ──
@@ -356,8 +422,8 @@ pub struct HandleBallSkill {
     commit_pos: Option<Vector2>,
     commit_ball: Option<Vector2>,
     /// Schmitt latch for the commit drive (shared by acquire + strike): set on
-    /// entering the tight corridor, held through the release band, cleared on a
-    /// real bail or re-acquire.
+    /// entering the tight corridor, held through the release bands (perp *and*
+    /// along — see `acquire::latched`), cleared on a real bail or re-acquire.
     commit_latched: bool,
     /// World time the commit latch first engaged this attempt (the final capture
     /// drive began). Drives the tight pickup timeout; `None` while not committed,
@@ -387,6 +453,7 @@ impl HandleBallSkill {
             stage_entered: 0.0,
             had_ball: false,
             lost_since: None,
+            settle_until: None,
             reacquires: 0,
             chosen_dir: None,
             commit_pos: None,
@@ -500,6 +567,7 @@ impl HandleBallSkill {
         self.committed_since = None;
         self.launch = None;
         self.lost_since = None;
+        self.settle_until = None;
         self.reacquires += 1;
     }
 
@@ -671,6 +739,9 @@ impl ExecutableSkill for HandleBallSkill {
         if matches!(self.stage, Stage::Acquire) {
             if has_ball {
                 self.enter_act(now);
+                // Open the capture-settle window: glide down from the commit-drive
+                // speed instead of stopping dead (which bounces the ball off).
+                self.settle_until = Some(now + SETTLE_TIME());
             } else {
                 self.status = SkillStatus::Running;
                 self.emit_common(&ctx, "acquire");
@@ -694,14 +765,32 @@ impl ExecutableSkill for HandleBallSkill {
             Stage::Hold => "hold",
         };
         self.emit_common(&ctx, stage_name);
-        match self.stage {
+        let mut progress = match self.stage {
             Stage::Hold => self.drive_hold(&ctx, self.hold_heading()),
             Stage::Carry => self.drive_carry(&ctx, now),
             Stage::Aim => self.drive_aim(&ctx, ball_pos, player_pos, now),
             Stage::Kicking => self.drive_kick(&ctx, ball_pos, now),
             Stage::Verifying => self.drive_verify(&ctx, ball_pos, ball_vel_norm, now),
             Stage::Acquire => unreachable!("acquire handled above"),
+        };
+        // Capture settle: for a short window after the acquire→act transition,
+        // cap deceleration and yaw rate so the robot glides through the contact
+        // instead of stopping/spinning dead — a hard stop at capture bounces the
+        // ball off the dribbler before it is seated. Applied on top of whatever
+        // the act drive commanded (tightest limit wins).
+        let settling = self.settle_until.is_some_and(|until| now < until)
+            && matches!(self.stage, Stage::Hold | Stage::Carry | Stage::Aim);
+        ctx.team_context
+            .debug_value(dkey(&ctx, "settle"), if settling { 1.0 } else { 0.0 });
+        if settling {
+            if let SkillProgress::Continue(input) = &mut progress {
+                let accel = input.acceleration_limit.unwrap_or(f64::INFINITY);
+                input.with_acceleration_limit(accel.min(SETTLE_DECEL()));
+                let yaw_rate = input.angular_speed_limit.unwrap_or(f64::INFINITY);
+                input.with_angular_speed_limit(yaw_rate.min(SETTLE_YAW_RATE()));
+            }
         }
+        progress
     }
 
     fn status(&self) -> SkillStatus {
@@ -829,6 +918,36 @@ mod tests {
     }
 
     #[test]
+    fn capture_settle_glides_then_releases_the_limits() {
+        let mut s = skill(BallAction::Hold {
+            heading: Angle::from_radians(1.0),
+        });
+        let pos = Vector2::new(500.0, 0.0);
+        let p = held_player(pos);
+        let tc = team_ctx();
+        // First tick captures (acquire → hold) and opens the settle window: the
+        // hold input must carry the gentle decel + yaw-rate caps so the robot
+        // glides through the contact instead of stopping/spinning dead.
+        let w0 = world_at(&p, pos, 0.0);
+        match s.tick(ctx(&w0, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert_eq!(input.acceleration_limit, Some(SETTLE_DECEL()));
+                assert_eq!(input.angular_speed_limit, Some(SETTLE_YAW_RATE()));
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+        // Past the window the hold input is unclamped again.
+        let w1 = world_at(&p, pos, SETTLE_TIME() + 0.1);
+        match s.tick(ctx(&w1, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert_eq!(input.acceleration_limit, None);
+                assert!(input.angular_speed_limit.unwrap_or(f64::INFINITY) > SETTLE_YAW_RATE());
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+    }
+
+    #[test]
     fn shoot_releases_with_smart_kick() {
         let s = skill(BallAction::Shoot {
             target: Vector2::new(1000.0, 0.0),
@@ -857,5 +976,47 @@ mod tests {
             acquire_first: false,
         });
         assert!(s.shot().is_none());
+    }
+
+    #[test]
+    fn blocked_aim_force_fires_past_the_backstop() {
+        // A robot aligned with its shot but with the lane covered used to hold the
+        // ball indefinitely: the aim backstop FAILED the skill, the caller
+        // re-engaged the same robot with a fresh clock, and the hold-and-spin
+        // repeated (observed 9–17 s of continuous dribbler contact). Past the
+        // backstop the shot must instead be forced through the covered lane.
+        let target = Vector2::new(1000.0, 0.0);
+        let mut s = skill(BallAction::Shoot { target });
+        let p = held_player(Vector2::new(0.0, 0.0));
+        // A teammate parked squarely in the shot corridor → lane_blocked.
+        let blocker = player(1, Vector2::new(400.0, 0.0), 0.0);
+        let ball = Vector2::new(100.0, 0.0);
+        let tc = team_ctx();
+
+        let mk = |t: f64| {
+            let mut w = world(vec![p.clone(), blocker.clone()], Some(ball), 0.016);
+            w.t_received = t;
+            w
+        };
+
+        // Frame 1 (t=0): enters the aim stage; blocked lane → no kick commit.
+        let w0 = mk(0.0);
+        assert!(matches!(s.tick(ctx(&w0, &tc, &p)), SkillProgress::Continue(_)));
+        // Frame 2 past the backstop: forced — aligned within the loose gate, so the
+        // commit happens despite the covered lane.
+        let w1 = mk(AIM_BACKSTOP() + 0.1);
+        assert!(matches!(s.tick(ctx(&w1, &tc, &p)), SkillProgress::Continue(_)));
+        // Frame 3: the kick stage fires the smart kick through the covered lane.
+        let w2 = mk(AIM_BACKSTOP() + 0.2);
+        match s.tick(ctx(&w2, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    matches!(input.kicker, KickerControlInput::Kick),
+                    "forced shot must arm the kick, got {:?}",
+                    input.kicker
+                );
+            }
+            other => panic!("expected the forced kick tick, got {other:?}"),
+        }
     }
 }

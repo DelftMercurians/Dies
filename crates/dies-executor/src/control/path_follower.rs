@@ -15,6 +15,13 @@ use dies_core::{ControllerSettings, Vector2};
 
 /// Within this distance of the final goal the follower commands a full stop.
 const ARRIVE_DEADBAND: f64 = 15.0;
+/// Floor on the commanded speed outside the arrive deadband, so the terminal
+/// proportional profile can't decay into the drivetrain's stiction band and
+/// park the robot short of its target. Deliberately tiny — at the default
+/// `approach_kp` (2.0) the profile only drops this low inside the deadband, so
+/// this is a guard for low-gain configurations, not the primary anti-stiction
+/// measure (skills that must arrive precisely add their own floor).
+const STICTION_FLOOR: f64 = 30.0;
 /// Floor on the cornering radius so a near-reversal still keeps a little speed.
 const R_MIN: f64 = 90.0;
 /// Allowed cornering deviation from a path vertex (junction-deviation model) [mm].
@@ -121,7 +128,10 @@ impl PathFollower {
             .or_else(|| (goal - pos).try_normalize(1.0e-6))
             .unwrap_or_else(Vector2::zeros);
 
-        FollowCmd::cruise(dir * self.speed_envelope(foot, seg, path, s_goal, approach_kp))
+        let v = self
+            .speed_envelope(foot, seg, path, s_goal, approach_kp)
+            .max(STICTION_FLOOR);
+        FollowCmd::cruise(dir * v)
     }
 
     /// Straight proportional approach to a point: velocity ∝ distance (capped at
@@ -158,7 +168,7 @@ impl PathFollower {
             };
         }
 
-        FollowCmd::cruise(dir * v_profile)
+        FollowCmd::cruise(dir * v_profile.max(STICTION_FLOOR))
     }
 
     /// Speed cap at the current position: the min of cruise, the proportional
@@ -360,6 +370,19 @@ mod tests {
             "should reverse-thrust: {:?}",
             brake
         );
+    }
+
+    #[test]
+    fn stiction_floor_binds_only_below_it() {
+        // With a low approach gain the terminal proportional profile would decay
+        // into the stiction band; the floor keeps it at STICTION_FLOOR outside
+        // the arrive deadband, and the deadband still stops the robot.
+        let f = follower();
+        let path = [Vector2::new(1000.0, 0.0)];
+        let slow = f.follow(&path, Vector2::new(900.0, 0.0), Vector2::zeros(), 0.0, 0.0, 0.1);
+        assert!((slow.velocity.norm() - STICTION_FLOOR).abs() < 1e-9, "{slow:?}");
+        let stopped = f.follow(&path, Vector2::new(995.0, 0.0), Vector2::zeros(), 0.0, 0.0, 0.1);
+        assert!(stopped.velocity.norm() < 1e-9, "{stopped:?}");
     }
 
     #[test]

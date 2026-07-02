@@ -41,8 +41,15 @@ impl HandleBallSkill {
         let Some((target, _)) = self.shot() else {
             return self.drive_hold(ctx, self.hold_heading());
         };
-        if now - self.stage_entered > AIM_BACKSTOP() {
-            log::warn!("handle_ball: aim timed out");
+        // Past the backstop the shot is FORCED rather than failed: a failure only
+        // re-engages the same robot with a fresh aim clock (an endless hold-and-
+        // spin on a covered lane), while releasing the ball — even through the
+        // covered corridor, even a little off-axis — ends the episode. The hard
+        // fail remains as a final bound for a shot that can't commit at all.
+        let aim_elapsed = now - self.stage_entered;
+        let forced = aim_elapsed > AIM_BACKSTOP();
+        if aim_elapsed > AIM_BACKSTOP() * AIM_GIVE_UP_FACTOR() {
+            log::warn!("handle_ball: aim timed out (forced shot never committed)");
             return self.fail();
         }
 
@@ -58,10 +65,12 @@ impl HandleBallSkill {
         let mut input = PlayerControlInput::new();
         input.with_dribbling(DRIBBLER_SPEED());
 
-        // Carry the ball to the launch point first if it's away from it.
+        // Carry the ball to the launch point first if it's away from it — unless
+        // the shot is forced: repositioning can consume the whole aim budget, and
+        // past the backstop we launch from wherever the ball is.
         let ball_to_launch = (ball_pos - launch).norm();
         tc.debug_value(dkey(ctx, "ball_to_launch"), ball_to_launch);
-        if ball_to_launch > REPOSITION_ARRIVE() {
+        if ball_to_launch > REPOSITION_ARRIVE() && !forced {
             tc.debug_string(dkey(ctx, "aim_phase"), "reposition");
             self.detail = format!("reposition {ball_to_launch:.0}mm");
             let axis = (target - launch)
@@ -84,14 +93,25 @@ impl HandleBallSkill {
         let blocked = lane_blocked(ctx, ball_pos, target_heading);
         let err = target_heading - ctx.player.yaw;
         let err_deg = err.degrees().abs();
-        tc.debug_string(dkey(ctx, "aim_phase"), "orbit");
+        tc.debug_string(
+            dkey(ctx, "aim_phase"),
+            if forced { "orbit_forced" } else { "orbit" },
+        );
         tc.debug_value(dkey(ctx, "yaw_err_deg"), err_deg);
         tc.debug_value(dkey(ctx, "lane_blocked"), if blocked { 1.0 } else { 0.0 });
         self.detail = format!(
-            "orbit err{err_deg:.0}°{}",
-            if blocked { " blocked" } else { "" }
+            "orbit err{err_deg:.0}°{}{}",
+            if blocked { " blocked" } else { "" },
+            if forced { " forced" } else { "" }
         );
-        if err.abs() < YAW_TOLERANCE() && !blocked && ctx.player.has_ball {
+        // Commit gate: precise (tight yaw, clear lane) — or, past the backstop,
+        // forced (loose yaw, lane ignored: boot it through the covered corridor).
+        let committable = if forced {
+            err_deg < AIM_FORCED_YAW_DEG()
+        } else {
+            err.abs() < YAW_TOLERANCE() && !blocked
+        };
+        if committable && ctx.player.has_ball {
             self.stage = Stage::Kicking;
             self.stage_entered = now;
         }
@@ -102,7 +122,10 @@ impl HandleBallSkill {
             .unwrap_or_else(|| Vector2::new(1.0, 0.0));
         let tangent = Vector2::new(-r_hat.y, r_hat.x); // CCW
         let v_rad = -RADIUS_KP() * (r.norm() - BALL_TO_ROBOT_DISTANCE()) * r_hat;
-        let v_tan = if blocked {
+        // A blocked lane normally pauses the orbit (wait for it to clear); a
+        // forced shot keeps turning — alignment is now the only thing between the
+        // ball and its release.
+        let v_tan = if blocked && !forced {
             Vector2::zeros()
         } else {
             let speed = (ORBIT_GAIN() * err.abs()).clamp(MIN_ORBIT_SPEED(), ORBIT_SPEED());

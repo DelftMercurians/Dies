@@ -58,18 +58,18 @@ impl HandleBallSkill {
         tc.debug_value(dkey(ctx, "perp"), perp);
         tc.debug_value(dkey(ctx, "tail_catch"), if axis.moving { 1.0 } else { 0.0 });
 
-        // Schmitt-latched commit with hysteresis: enter on the tight corridor
-        // (`committed`, perp < COMMIT_PERP); hold while still behind the ball and
-        // perp stays under the wider release band. A transient nudge no longer
-        // silently drops to staging; a genuine lateral blow-out past the release
+        // Schmitt-latched commit with hysteresis on BOTH axes: enter on the tight
+        // corridor (`committed`, perp < COMMIT_PERP, strictly behind); hold while
+        // inside the wider release bands (`latched`). A transient nudge — or the
+        // ball estimate collapsing into the hull during the final press — no
+        // longer silently drops to staging; a genuine blow-out past a release
         // band is a *real* bail (`reacquire`, counts toward MAX_REACQUIRE).
-        let behind = along < 0.0 && -along < COMMIT_DISTANCE();
         if committed(along, perp) && !self.commit_latched {
             self.commit_latched = true;
             // Arm the pickup fast-bail from the moment the final drive commits.
             self.committed_since = Some(now);
         }
-        let is_committed = self.commit_latched && behind && perp < COMMIT_PERP_RELEASE();
+        let is_committed = self.commit_latched && latched(along, perp);
         let perp_blowout = self.commit_latched && !is_committed;
         // Hand off the final centimetres to firmware magnet capture once the ToF
         // actually sees the ball (the velocity output is ignored while engaged; the
@@ -159,6 +159,7 @@ impl HandleBallSkill {
             };
             input.with_dribbling(DRIBBLER_SPEED());
             input.with_position(staging);
+            input.add_global_velocity(staging_feed(player_pos, staging));
             input.avoid_ball = true;
             input.avoid_ball_care = APPROACH_CARE();
             self.commit_pos = Some(player_pos);
@@ -354,10 +355,24 @@ pub(super) fn committed(along: f64, perp: f64) -> bool {
     along < 0.0 && -along < COMMIT_DISTANCE() && perp < COMMIT_PERP()
 }
 
+/// Whether an engaged commit latch is held: the release-side Schmitt bands.
+/// Wider than [`committed`] on every axis — perp up to the release band, along
+/// tolerating both overshoot past the ball (the estimate collapses into the
+/// hull during the press) and drift past the commit distance (no flap when
+/// hovering right at the boundary).
+pub(super) fn latched(along: f64, perp: f64) -> bool {
+    along < COMMIT_ALONG_OVERSHOOT()
+        && -along < COMMIT_DISTANCE() + COMMIT_ALONG_RELEASE()
+        && perp < COMMIT_PERP_RELEASE()
+}
+
 /// Global velocity for the commit drive-through. Feeds forward the ball velocity
 /// so the closing speed is *relative* (a moving ball no longer outruns the speed
 /// law and the robot doesn't decelerate to a crawl beside it), drives the
 /// remaining along-axis gap, and centers the ball on the offset contact point.
+/// Only the proportional term is perp-gated; the MIN_SPEED floor always applies,
+/// so the drive can neither stall in the drivetrain's stiction band nor reach
+/// the ball below the speed that seats it on the breakbeam in one clean edge.
 pub(super) fn commit_velocity(
     dir: Vector2,
     along: f64,
@@ -366,8 +381,22 @@ pub(super) fn commit_velocity(
     pt: Vector2,
 ) -> Vector2 {
     let gate = (1.0 - perp_vec.norm() / GATE_PERP()).clamp(0.0, 1.0);
-    let close = (-along) * APPROACH_GAIN() + APPROACH_MIN_SPEED();
-    ball_vel + dir * close * gate - (perp_vec - pt) * LATERAL_GAIN()
+    let close = (-along) * APPROACH_GAIN() * gate + APPROACH_MIN_SPEED();
+    ball_vel + dir * close - (perp_vec - pt) * LATERAL_GAIN()
+}
+
+/// Anti-stiction feed for the staging drive: a constant-speed pull toward the
+/// staging point added on top of the position controller, cut off inside the
+/// settle band. The terminal proportional profile alone settles into the
+/// drivetrain's stiction band and parks the robot outside the commit gate; the
+/// additive feed keeps the total command above breakaway until the robot is
+/// close enough that resting anywhere in the band already satisfies the gate.
+pub(super) fn staging_feed(player_pos: Vector2, staging: Vector2) -> Vector2 {
+    let to = staging - player_pos;
+    match to.try_normalize(STAGING_SETTLE_DIST) {
+        Some(dir) => dir * STAGING_MIN_SPEED(),
+        None => Vector2::zeros(),
+    }
 }
 
 /// Staging point a fixed distance behind `aim_point` along `-dir`, shifted by the
@@ -444,5 +473,44 @@ mod tests {
     fn staging_inside_field_is_unchanged() {
         let p = Vector2::new(1000.0, -500.0);
         assert_eq!(clamp_into_field(p, Some(&field())), p);
+    }
+
+    #[test]
+    fn commit_drive_floor_survives_a_closed_gate() {
+        // At perp == GATE_PERP the proportional term is fully gated, but the
+        // MIN_SPEED floor must still drive the robot forward (the old fully-gated
+        // law stalled here and the ball never seated on the breakbeam).
+        let dir = Vector2::new(1.0, 0.0);
+        let perp_vec = Vector2::new(0.0, GATE_PERP());
+        let v = commit_velocity(dir, -150.0, perp_vec, Vector2::zeros(), Vector2::zeros());
+        assert!((v.dot(&dir) - APPROACH_MIN_SPEED()).abs() < 1e-9, "{v:?}");
+    }
+
+    #[test]
+    fn latch_release_has_hysteresis_on_both_axes() {
+        // Entry stays strict…
+        assert!(committed(-200.0, COMMIT_PERP() - 1.0));
+        assert!(!committed(10.0, 0.0)); // never enter past the ball
+        assert!(!committed(-(COMMIT_DISTANCE() + 1.0), 0.0));
+        // …while an engaged latch tolerates overshoot past the ball (estimate
+        // collapse), drift past the commit distance, and the wider perp band.
+        assert!(latched(COMMIT_ALONG_OVERSHOOT() - 1.0, 0.0));
+        assert!(!latched(COMMIT_ALONG_OVERSHOOT() + 1.0, 0.0));
+        assert!(latched(-(COMMIT_DISTANCE() + COMMIT_ALONG_RELEASE() - 1.0), 0.0));
+        assert!(!latched(-(COMMIT_DISTANCE() + COMMIT_ALONG_RELEASE() + 1.0), 0.0));
+        assert!(latched(-200.0, COMMIT_PERP_RELEASE() - 1.0));
+        assert!(!latched(-200.0, COMMIT_PERP_RELEASE() + 1.0));
+    }
+
+    #[test]
+    fn staging_feed_pulls_until_the_settle_band() {
+        let staging = Vector2::new(1000.0, 0.0);
+        // Outside the settle band: constant-speed pull toward staging.
+        let feed = staging_feed(Vector2::new(900.0, 0.0), staging);
+        assert!((feed - Vector2::new(STAGING_MIN_SPEED(), 0.0)).norm() < 1e-9);
+        // Inside it: off, so the robot can settle (and the band is inside the
+        // commit gate, so resting here is already latch-able).
+        let inside = staging_feed(Vector2::new(1000.0 - STAGING_SETTLE_DIST + 1.0, 0.0), staging);
+        assert_eq!(inside, Vector2::zeros());
     }
 }

@@ -6,7 +6,7 @@
 //! fails (rather than falling back to a hold) so the driver re-stages a clean
 //! approach. Reuses the capture-corridor geometry from [`super::acquire`].
 
-use super::acquire::{commit_velocity, committed, perp_target, stage_point};
+use super::acquire::{commit_velocity, committed, latched, perp_target, stage_point, staging_feed};
 use super::*;
 use crate::control::KickerControlInput;
 
@@ -48,13 +48,14 @@ impl HandleBallSkill {
         input.with_dribbling(DRIBBLER_SPEED());
 
         // Schmitt-latched commit (mirrors `drive_acquire`): hold through the release
-        // band so a transient nudge doesn't disarm the reflex mid-strike. A genuine
-        // blow-out clears the latch and re-stages; REFLEX_TIMEOUT bounds the attempt.
-        let behind = along < 0.0 && -along < COMMIT_DISTANCE();
+        // bands (perp *and* along) so a transient nudge — or the ball estimate
+        // collapsing into the hull at contact — doesn't disarm the reflex
+        // mid-strike. A genuine blow-out clears the latch and re-stages;
+        // REFLEX_TIMEOUT bounds the attempt.
         if committed(along, perp) {
             self.commit_latched = true;
         }
-        let is_committed = self.commit_latched && behind && perp < COMMIT_PERP_RELEASE();
+        let is_committed = self.commit_latched && latched(along, perp);
         // Drive-and-reflex-kick: while committed and the ToF sees the ball, hand the
         // final centimetres to firmware magnet capture with the reflex armed
         // (ARM_REFLEX_KICK_MAGNET) so the strike fires the instant the ball reaches
@@ -116,6 +117,7 @@ impl HandleBallSkill {
             tc.debug_cross_colored(dkey(ctx, "staging"), staging, DebugColor::Red);
             self.detail = "staging".into();
             input.with_position(staging);
+            input.add_global_velocity(staging_feed(player_pos, staging));
             input.avoid_ball = true;
             input.avoid_ball_care = APPROACH_CARE();
         }

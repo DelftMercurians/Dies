@@ -349,7 +349,6 @@ impl PossessionTracker {
             .filter(|(_, dist, bb, _)| *bb && *dist <= cfg.breakbeam_gate_dist)
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((who, _, _, _)) = breakbeam_owner {
-            log::info!("bb {:?}", who);
             return (
                 RawClass::Owned {
                     who: *who,
