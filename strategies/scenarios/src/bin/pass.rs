@@ -54,14 +54,14 @@ fn secure(passer: PlayerId, receiver: PlayerId) -> Step {
 fn main() {
     run_scenario(|| {
         let a = PlayerId::new(4);
-        let b = PlayerId::new(1);
+        let b = PlayerId::new(5);
         Scenario::looping(move || {
             vec![
                 secure(a, b),
-                Step::pass(a, b, None).timeout(20.0),
+                Step::pass(a, b, None).timeout(10.0),
                 Step::wait(0.5),
                 secure(b, a),
-                Step::pass(b, a, None).timeout(20.0),
+                Step::pass(b, a, None).timeout(10.0),
                 Step::wait(0.5),
             ]
         })

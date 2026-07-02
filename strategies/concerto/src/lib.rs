@@ -818,6 +818,7 @@ mod tests {
             possession: Possession::Loose,
             possession_stale: false,
             ball_contest: None,
+            double_touch_barred: None,
         })
     }
 
