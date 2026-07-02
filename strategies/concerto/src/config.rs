@@ -477,6 +477,16 @@ pub const OUTLET_FLOOR: f64 = 1.0;
 /// Field-robot count below which the floor is NOT applied (the threat-gated
 /// behaviour remains): a short-handed team can't pin 1 of 3 defenders forward.
 pub const OUTLET_MIN_BOTS: usize = 4;
+/// Contest gate on the outlet floor: possession latched with an opponent still
+/// on the ball in our own half is not secure, so the permanent-forward floor is
+/// faded out and no body is pinned at [`OUTLET_X`] mid-scrum. The fade is the
+/// product of two smoothsteps: fully contested when the nearest opponent is
+/// within `..._OPP_NEAR` mm of the ball, fully clear beyond `..._OPP_FAR`.
+pub const OUTLET_CONTEST_OPP_NEAR: f64 = 500.0;
+pub const OUTLET_CONTEST_OPP_FAR: f64 = 1000.0;
+/// Ball-x fade for the same gate: the contest discount applies fully with the
+/// ball in our half (x ≤ 0) and washes out by this far into the opponent half.
+pub const OUTLET_CONTEST_BALL_X_FADE: f64 = 1000.0;
 /// Field-absolute x of the counter outlet (mm, team-relative; +x = opponent
 /// half). Deep enough into the opponent half to press their buildup and chase
 /// hoofs landing in their third (was 800 — a clearance target, not a presser —

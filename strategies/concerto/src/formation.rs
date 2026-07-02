@@ -185,8 +185,20 @@ impl Formation {
             .collect();
         assignable.sort_by_key(|id| id.as_u32());
 
+        // Total field robots (keeper excluded), REGARDLESS of plan reservation.
+        // Count-based sizing/gates (wall wings, balance, outlet) must use this,
+        // not `assignable.len()`: in pursuit the capturer stays assignable while
+        // in offense the carrier is a reserved plan slot, so the assignable count
+        // drops by one the tick possession latches `We` — and sizing the wall from
+        // it deleted a wing mid-scrum (the possession-flip wall collapse).
+        let field_n = world
+            .own_players()
+            .iter()
+            .filter(|p| Some(p.id) != keeper_id)
+            .count();
+
         // Generate the role set (positions/importance recomputed every tick).
-        let roles = self.generate_roles(world, plan_ctx, capture, assignable.len());
+        let roles = self.generate_roles(world, plan_ctx, capture, assignable.len(), field_n);
         let role_by_id: HashMap<RoleId, &Role> = roles.iter().map(|r| (r.id, r)).collect();
 
         // ── Decide whether to recompute the assignment (cadence) ────────
@@ -316,12 +328,17 @@ impl Formation {
 
     /// Build the role set for this tick. Generators run in priority order; spread
     /// roles top up to the over-generation target.
+    /// `n` = assignable robots (spread floor: one role per body to place);
+    /// `field_n` = all own field robots incl. plan-reserved ones — the
+    /// possession-invariant count that sizes the wall and count-gates
+    /// balance/outlet, so a possession flip never changes the role set.
     fn generate_roles(
         &mut self,
         world: &World,
         plan_ctx: &PlanContext,
         capture: Option<&CaptureRole>,
         n: usize,
+        field_n: usize,
     ) -> Vec<Role> {
         let mut roles: Vec<Role> = Vec::new();
         let own_goal = world.own_goal_center();
@@ -427,11 +444,13 @@ impl Formation {
         // bodies forward, instead of pinning every robot to a fixed 3-wide wall.
         // Wings are kept in stable index order (not ball-dependent) so the
         // generated shadow slot set is constant within a match → no role churn.
+        // Sized from `field_n` (plan-reserved carrier included), never the
+        // assignable count, so the wall keeps its width across a possession flip.
         // On set-piece defense the full wall is always committed (leg-2).
         let wing_budget = if setpiece_defense {
             config::SHADOW_MAX
         } else {
-            (n as f64 - self.stance.forward_reserve - 1.0)
+            (field_n as f64 - self.stance.forward_reserve - 1.0)
                 .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
         };
         let mut wings_pushed = 0usize;
@@ -735,7 +754,7 @@ impl Formation {
         // pivot it replaces); when defending, the 3-wide wall already lights up.
         // Count gate: a short-handed team (field_n < balance_min_bots) can't spare a
         // dedicated rest defender on top of the anchor, so that body goes forward.
-        if attacking && (n as f64) >= self.stance.balance_min_bots {
+        if attacking && (field_n as f64) >= self.stance.balance_min_bots {
             roles.push(Role {
                 id: RoleId {
                     kind: RoleKind::Balance,
@@ -765,8 +784,28 @@ impl Formation {
         // defenders forward costs more than the pressure is worth. The floor
         // must be a `max` (lowering OUTLET_THREAT_LO instead only shifts the
         // smoothstep: LO = -1 yields gate ≈ 0.68 at zero threat, not 1).
-        let outlet_floor = if n >= config::OUTLET_MIN_BOTS {
-            config::OUTLET_FLOOR
+        //
+        // Contest gate: the floor is faded out while the ball is in our own half
+        // WITH an opponent close to it — "possession" latched mid-scrum is not
+        // secure, and pinning a body at OUTLET_X while the ball is still being
+        // fought over in front of our goal is how the freed defender sprints
+        // upfield at the possession flip. Both factors are smoothsteps (opp→ball
+        // distance, ball x) so the floor fades instead of blinking. The
+        // threat-gated component underneath is untouched: under genuine pressure
+        // the outlet still bids as the counter valve it was designed to be.
+        let outlet_floor = if field_n >= config::OUTLET_MIN_BOTS {
+            let opp_ball_dist = world
+                .opp_players()
+                .iter()
+                .map(|p| (p.position - ball).norm())
+                .fold(f64::INFINITY, f64::min);
+            let contested =
+                (1.0 - geometry::smoothstep(
+                    config::OUTLET_CONTEST_OPP_NEAR,
+                    config::OUTLET_CONTEST_OPP_FAR,
+                    opp_ball_dist,
+                )) * (1.0 - geometry::smoothstep(0.0, config::OUTLET_CONTEST_BALL_X_FADE, ball.x));
+            config::OUTLET_FLOOR * (1.0 - contested)
         } else {
             0.0
         };
@@ -789,7 +828,10 @@ impl Formation {
                 },
                 position: pos,
                 importance: config::IMP_OUTLET * outlet_gate,
-                face: world.opp_goal_center(),
+                face: world
+                    .ball()
+                    .map(|b| b.position.xy())
+                    .unwrap_or(world.opp_goal_center()),
             });
         }
 
@@ -986,7 +1028,7 @@ mod tests {
         let mut f = Formation::new();
 
         let marks = |rs: &[Role]| rs.iter().filter(|r| r.id.kind == RoleKind::Mark).count();
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 3);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 3, 3);
         let engaged = f.generate_roles(
             &world,
             &PlanContext {
@@ -995,6 +1037,7 @@ mod tests {
                 }],
             },
             None,
+            3,
             3,
         );
         assert_eq!(marks(&plain), 2);
@@ -1016,7 +1059,7 @@ mod tests {
         let world = world_with(own, opp, 1);
         let mut f = Formation::new();
 
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
         let supp = f.generate_roles(
             &world,
             &PlanContext {
@@ -1025,6 +1068,7 @@ mod tests {
                 }],
             },
             None,
+            4,
             4,
         );
 
@@ -1080,7 +1124,7 @@ mod tests {
             ball_contest: None,
         });
         let mut f = Formation::new();
-        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
 
         // The box-runner is the central Support slot (slot == SUPPORT_COUNT).
         let runners: Vec<&Role> = roles
@@ -1160,7 +1204,7 @@ mod tests {
             ball_contest: None,
         });
         let mut f = Formation::new();
-        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4);
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
         let runner = roles
             .iter()
             .find(|r| r.id.kind == RoleKind::Support && r.id.slot as usize == config::SUPPORT_COUNT)
@@ -1248,5 +1292,107 @@ mod tests {
         );
         // And it must not also be emitted a positioning command.
         assert!(!out.commands.iter().any(|c| c.id == capturer));
+    }
+
+    #[test]
+    fn wall_width_is_invariant_to_plan_reservation() {
+        // The possession-flip collapse: in pursuit the capturer counts toward the
+        // assignable pool, in offense the carrier is a reserved plan slot — the
+        // assignable count drops by one the tick possession latches `We`. The wall
+        // must be sized from the possession-invariant field count, so the same
+        // physical situation yields the same Shadow role set either way.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -2500.0, 800.0),
+            player(3, -2500.0, -800.0),
+            player(4, -500.0, 0.0),
+            player(5, 200.0, 300.0), // on the ball (capturer or carrier)
+        ];
+        let opp = vec![player(11, 300.0, 0.0)];
+        let world = world_with(own, opp, 1);
+        let mut f = Formation::new();
+
+        let shadows = |rs: &[Role]| {
+            let mut ids: Vec<u16> = rs
+                .iter()
+                .filter(|r| r.id.kind == RoleKind::Shadow)
+                .map(|r| r.id.slot)
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+        // Pursuit: 4 assignable. Offense: carrier reserved → 3. field_n = 4 both.
+        let pursuit = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
+        let offense = f.generate_roles(&world, &PlanContext::default(), None, 3, 4);
+        assert_eq!(
+            shadows(&pursuit),
+            shadows(&offense),
+            "a possession flip must not add or delete wall shadows"
+        );
+    }
+
+    #[test]
+    fn outlet_floor_fades_while_ball_is_contested_in_our_half() {
+        // Ball near midfield in our half → positional threat is below
+        // OUTLET_THREAT_LO, so the outlet exists purely via the Div-B floor.
+        // With an opponent on the ball, "possession" is not secure and the floor
+        // must fade out — no body pinned forward mid-scrum. With the opponent
+        // far away the permanent outlet stands at full importance.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -2500.0, 800.0),
+            player(3, -2500.0, -800.0),
+            player(4, -500.0, 0.0),
+            player(5, -300.0, 100.0),
+        ];
+        let mk_world = |opp: Vec<PlayerState>| {
+            World::new(WorldSnapshot {
+                timestamp: 0.0,
+                dt: 0.016,
+                field_geom: Some(FieldGeometry::default()),
+                ball: Some(BallState {
+                    position: Vector2::new(-50.0, 0.0),
+                    velocity: Vector2::new(0.0, 0.0),
+                    detected: true,
+                }),
+                own_players: own.clone(),
+                opp_players: opp,
+                game_state: GameState::Run,
+                us_operating: true,
+                pre_stage: false,
+                our_keeper_id: Some(PlayerId::new(1)),
+                freekick_kicker: None,
+                possession: Possession::We(PlayerId::new(5)),
+                possession_stale: false,
+                ball_contest: None,
+            })
+        };
+        let outlet_imp = |rs: &[Role]| {
+            rs.iter()
+                .find(|r| {
+                    r.id.kind == RoleKind::Support
+                        && r.id.slot as usize == config::SUPPORT_COUNT + 1
+                })
+                .map(|r| r.importance)
+        };
+        let mut f = Formation::new();
+
+        // Opponent right on the ball we "hold" → floor fully faded, no outlet.
+        let contested = mk_world(vec![player(11, -300.0, 0.0)]);
+        let rs = f.generate_roles(&contested, &PlanContext::default(), None, 4, 4);
+        assert_eq!(
+            outlet_imp(&rs),
+            None,
+            "no permanent forward while the ball is fought over in our half"
+        );
+
+        // Same ball, opponent far away → the Div-B permanent outlet stands.
+        let clear = mk_world(vec![player(11, 3000.0, 2000.0)]);
+        let rs = f.generate_roles(&clear, &PlanContext::default(), None, 4, 4);
+        let imp = outlet_imp(&rs).expect("uncontested possession keeps the outlet");
+        assert!(
+            (imp - config::IMP_OUTLET).abs() < 1e-9,
+            "outlet at full floor importance, got {imp}"
+        );
     }
 }
