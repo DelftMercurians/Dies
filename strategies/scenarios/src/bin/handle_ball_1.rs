@@ -14,7 +14,7 @@ use scenarios::prelude::*;
 
 fn main() {
     run_scenario(|| {
-        let r = PlayerId::new(4);
+        let r = PlayerId::new(1);
         Scenario::looping(move || {
             vec![
                 // Step::skill("goto", r, move |h| {
@@ -35,9 +35,8 @@ fn main() {
                 // Live-swap to Shoot on the same skill instance: aim + kick.
                 Step::skill("shoot at goal", r, move |h| {
                     h.handle_ball(
-                        BallAction::Strike {
+                        BallAction::Shoot {
                             target: Vector2::new(-4500.0, 0.0),
-                            acquire_first: false,
                         },
                         AcquirePosition::Default,
                     );

@@ -130,16 +130,16 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
             let ball = world.ball_position().unwrap_or_else(|| keeper.position());
             let target = clear_target(world, ball);
             let heading = facing_angle(ball, target);
-            if keeper.has_ball() {
-                let _ = keeper.reflex_shoot(target);
-            } else {
-                // Acquire via the unified ball-handling skill (Hold mode); the
-                // reflex_shoot above takes over once the breakbeam trips.
-                let _ = keeper.handle_ball(
-                    BallAction::Hold { heading },
-                    AcquirePosition::Heading(heading),
-                );
-            }
+            let _ = keeper.strike_from_possession(target);
+            // if keeper.has_ball() {
+            // } else {
+            //     // Acquire via the unified ball-handling skill (Hold mode); the
+            //     // reflex_shoot above takes over once the breakbeam trips.
+            //     let _ = keeper.handle_ball(
+            //         BallAction::Hold { heading },
+            //         AcquirePosition::Heading(heading),
+            //     );
+            // }
         }
     }
 }

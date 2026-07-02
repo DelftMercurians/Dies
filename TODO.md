@@ -16,3 +16,22 @@ TESTING
 - pikcup
 - defense
 - yellow card pull
+
+TODO
+
+```
+Step::skill("shoot at goal", r, move |h| {
+                    h.handle_ball(
+                        BallAction::Shoot {
+                            target: Vector2::new(-4500.0, 0.0),
+                        },
+                        AcquirePosition::Fastest,
+                    );
+                })
+```
+
+dribbler turns off mid skill?
+
+keeper
+HandleBallFailed
+hold: acquiring · bail: defense area

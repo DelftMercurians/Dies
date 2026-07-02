@@ -523,19 +523,19 @@ pub const PLAN_CTX_MOVE_EPS: f64 = 300.0;
 // ── Goalkeeper ──────────────────────────────────────────────────────────────
 /// Radius of the keeper's positioning arc, measured from the goal centre. At the
 /// central (square-on) position the keeper sits this far in front of the line.
-pub const KEEPER_ARC_RADIUS: f64 = 400.0;
+pub const KEEPER_ARC_RADIUS: f64 = 450.0;
 /// Maximum angular excursion of the keeper off straight-out (radians). A pure
 /// *sanity* bound now (the lateral mouth clamp is the primary limit): keeps the
 /// keeper a little in front of the line rather than drifting onto it at extreme
 /// angles. Widened from the old 45° — that clamp parked the keeper near goal-centre
 /// and left the near post wide open against oblique (corner) shots. Also bounds the
 /// guard zone's angular span.
-pub const KEEPER_ARC_MAX_ANGLE: f64 = 80.0 * std::f64::consts::PI / 180.0; // 80°
+pub const KEEPER_ARC_MAX_ANGLE: f64 = 90.0 * std::f64::consts::PI / 180.0; // 80°
 /// How far inside each post (mm) the keeper centre may travel laterally — the
 /// "stay in front of your net" clamp (Option B). With `KEEPER_ARC_RADIUS` < half the
 /// goal width this is slack (the arc caps lateral reach first); it becomes the
 /// binding limit if the radius is ever grown past the mouth half-width.
-pub const KEEPER_MOUTH_MARGIN: f64 = 80.0;
+pub const KEEPER_MOUTH_MARGIN: f64 = 0.0;
 /// Modest bias of the guard target toward the *near* post (the post on the ball's
 /// side), scaled by how oblique the ball is. Conceding the far post (a very hard
 /// shot from a tight angle) to better deny the near post, which is the makeable
@@ -605,7 +605,7 @@ pub const CLEAR_BALL_MARGIN: f64 = 50.0;
 /// by this much — that's the one direction where leaving means abandoning the
 /// goal. The side/goal-line edges are unconstrained so the keeper can reach a
 /// ball in the box corners.
-pub const CLEAR_EXIT_MARGIN: f64 = 120.0;
+pub const CLEAR_EXIT_MARGIN: f64 = 20.0;
 /// Minimum |y| of the clear target, so the keeper never kicks straight up the
 /// middle in front of our own goal.
 pub const CLEAR_TARGET_MIN_Y: f64 = 1500.0;
@@ -682,7 +682,7 @@ impl Default for StanceConfig {
             // Div-B conservative: soften the forward push further (peer-level
             // default was 0.9) — fewer bodies committed, the permanent outlet
             // (un-scaled by this) carries the forward presence instead.
-            aggression: 0.7,
+            aggression: 0.5,
             sec_per_importance: SEC_PER_IMPORTANCE,
             recalc_cooldown: RECALC_COOLDOWN,
             recalc_bg_period: RECALC_BG_PERIOD,

@@ -96,8 +96,16 @@ impl HandleBallSkill {
             // foul. Staging (above) keeps `avoid_robots = true` and is deflected
             // out of boxes normally, so only the commit needs this guard.
             if let Some(field) = ctx.world.field_geom.as_ref() {
-                if field.in_defense_area(player_pos, DEFENSE_BAIL_MARGIN())
-                    || field.in_defense_area(ball_pos, BALL_IN_BOX_MARGIN())
+                let is_keeper = ctx.world.current_game_state.our_keeper_id == Some(ctx.player.id);
+                let banned = |p, m| {
+                    if is_keeper {
+                        field.in_opp_defense_area(p, m)
+                    } else {
+                        field.in_defense_area(p, m)
+                    }
+                };
+                if banned(player_pos, DEFENSE_BAIL_MARGIN())
+                    || banned(ball_pos, BALL_IN_BOX_MARGIN())
                 {
                     self.detail = "bail: defense area".into();
                     return self.fail();
@@ -496,8 +504,14 @@ mod tests {
         // collapse), drift past the commit distance, and the wider perp band.
         assert!(latched(COMMIT_ALONG_OVERSHOOT() - 1.0, 0.0));
         assert!(!latched(COMMIT_ALONG_OVERSHOOT() + 1.0, 0.0));
-        assert!(latched(-(COMMIT_DISTANCE() + COMMIT_ALONG_RELEASE() - 1.0), 0.0));
-        assert!(!latched(-(COMMIT_DISTANCE() + COMMIT_ALONG_RELEASE() + 1.0), 0.0));
+        assert!(latched(
+            -(COMMIT_DISTANCE() + COMMIT_ALONG_RELEASE() - 1.0),
+            0.0
+        ));
+        assert!(!latched(
+            -(COMMIT_DISTANCE() + COMMIT_ALONG_RELEASE() + 1.0),
+            0.0
+        ));
         assert!(latched(-200.0, COMMIT_PERP_RELEASE() - 1.0));
         assert!(!latched(-200.0, COMMIT_PERP_RELEASE() + 1.0));
     }
@@ -510,7 +524,10 @@ mod tests {
         assert!((feed - Vector2::new(STAGING_MIN_SPEED(), 0.0)).norm() < 1e-9);
         // Inside it: off, so the robot can settle (and the band is inside the
         // commit gate, so resting here is already latch-able).
-        let inside = staging_feed(Vector2::new(1000.0 - STAGING_SETTLE_DIST + 1.0, 0.0), staging);
+        let inside = staging_feed(
+            Vector2::new(1000.0 - STAGING_SETTLE_DIST + 1.0, 0.0),
+            staging,
+        );
         assert_eq!(inside, Vector2::zeros());
     }
 }
