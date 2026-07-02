@@ -111,10 +111,15 @@ impl TeamController {
     /// ids + `sideline` are used). A radio-lost robot occupies a physical slot we
     /// cannot vacate, so it lowers the effective allowance by one — forcing us to
     /// bench a controllable robot to stay legal — but is never itself a candidate.
+    ///
+    /// `keeper_id` (the GC-designated keeper, with the GC-less fallback) is never
+    /// a removal candidate, regardless of what role string the strategy gave it —
+    /// benching the keeper would leave the goal open and the box unplayable.
     pub fn plan_sidelining(
         &mut self,
         own_detected: &[PlayerData],
         max_allowed_bots: u32,
+        keeper_id: Option<PlayerId>,
     ) -> HashSet<PlayerId> {
         // Prune robots that left the field from the parked set.
         let present: HashSet<PlayerId> = own_detected.iter().map(|p| p.id).collect();
@@ -135,7 +140,7 @@ impl TeamController {
         let mut active: Vec<PlayerId> = controllable
             .iter()
             .copied()
-            .filter(|id| !self.removing_players.contains(id))
+            .filter(|id| !self.removing_players.contains(id) && Some(*id) != keeper_id)
             .collect();
         let already_removing = self.removing_players.len();
         // Size the target against the *full* controllable set, not `active`
@@ -306,7 +311,7 @@ impl TeamController {
             .collect();
         card_removed.sort();
         let first_removal_position = Vector2::new(
-            -800.0 * side_assignment.attacking_direction_sign(team_color), // unflip to world coords
+            800.0 * side_assignment.attacking_direction_sign(team_color), // unflip to world coords
             world_data
                 .field_geom
                 .as_ref()
@@ -693,7 +698,7 @@ mod sidelining_tests {
                 .player_roles
                 .insert(PlayerId::new(i), "waller".to_string());
         }
-        let removed = c.plan_sidelining(&roster(&[0, 1, 2, 3, 4, 5]), 5);
+        let removed = c.plan_sidelining(&roster(&[0, 1, 2, 3, 4, 5]), 5, None);
         assert_eq!(removed.len(), 1);
         assert!(
             removed.contains(&PlayerId::new(5)),
@@ -708,7 +713,7 @@ mod sidelining_tests {
         // The radio-lost robot can't be vacated, so a controllable one is benched.
         let mut r = roster(&[0, 1, 2, 3, 4, 9]);
         r[5].sideline = Some(SidelineReason::RadioLost);
-        let removed = c.plan_sidelining(&r, 5);
+        let removed = c.plan_sidelining(&r, 5, None);
         assert_eq!(removed.len(), 1);
         assert!(
             !removed.contains(&PlayerId::new(9)),
@@ -723,21 +728,43 @@ mod sidelining_tests {
         // must keep the same robot parked, not flip-flop it in and out.
         let mut c = tc();
         let r = roster(&[0, 1, 2, 3, 4, 5]);
-        let first = c.plan_sidelining(&r, 5);
+        let first = c.plan_sidelining(&r, 5, None);
         assert_eq!(first.len(), 1);
         for _ in 0..5 {
-            let again = c.plan_sidelining(&r, 5);
+            let again = c.plan_sidelining(&r, 5, None);
             assert_eq!(again, first, "removed set must be stable across frames");
         }
+    }
+
+    #[test]
+    fn keeper_is_never_benched_regardless_of_role() {
+        let mut c = tc();
+        // Adversarial setup: the keeper (id 0) has the *least* critical role
+        // string, so by role ranking alone it would be benched first. The
+        // explicit keeper exclusion must protect it anyway.
+        c.strategy_input
+            .player_roles
+            .insert(PlayerId::new(0), "spread".to_string());
+        for i in 1..6u32 {
+            c.strategy_input
+                .player_roles
+                .insert(PlayerId::new(i), "waller".to_string());
+        }
+        let removed = c.plan_sidelining(&roster(&[0, 1, 2, 3, 4, 5]), 4, Some(PlayerId::new(0)));
+        assert_eq!(removed.len(), 2);
+        assert!(
+            !removed.contains(&PlayerId::new(0)),
+            "keeper must never be a removal candidate"
+        );
     }
 
     #[test]
     fn releases_when_allowance_restored() {
         let mut c = tc();
         let r = roster(&[0, 1, 2, 3, 4, 5]);
-        assert_eq!(c.plan_sidelining(&r, 4).len(), 2);
+        assert_eq!(c.plan_sidelining(&r, 4, None).len(), 2);
         // Allowance back to full: everyone returns.
-        assert_eq!(c.plan_sidelining(&r, 6).len(), 0);
+        assert_eq!(c.plan_sidelining(&r, 6, None).len(), 0);
     }
 }
 

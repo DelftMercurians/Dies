@@ -205,11 +205,18 @@ impl Strategy for ConcertoStrategy {
         // so we stay in the offense path (the coordinator owns the pass) rather than
         // treating the transient loose ball as something to chase.
         let passing = self.driver.is_passing();
+        // The keeper holding the ball is neither offense nor pursuit: its Guard/Clear
+        // machine owns it (it will strike the ball out itself), the planner must not
+        // build a carrier plan around it, and no field robot should chase a ball our
+        // keeper holds inside the box.
+        let keeper_has_ball =
+            matches!(possession, Possession::We(id) if Some(id) == world.our_keeper_id());
         // Offense — we hold the ball (or a pass is in flight): the Planner owns the
         // active robot(s). Pursuit — a ball we don't hold but may contest: Formation's
         // matching picks the capturer, weighing it against every defensive duty.
-        let offense = can_act && (passing || matches!(possession, Possession::We(_)));
-        let pursuit = can_act && !offense;
+        let offense =
+            can_act && !keeper_has_ball && (passing || matches!(possession, Possession::We(_)));
+        let pursuit = can_act && !offense && !keeper_has_ball;
 
         let inputs = PlanInputs {
             keeper_id: world.our_keeper_id(),

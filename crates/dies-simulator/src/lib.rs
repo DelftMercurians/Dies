@@ -29,6 +29,11 @@ mod utils;
 
 // Simulation constants - these are in mm
 const BALL_RADIUS: f64 = 21.45;
+
+/// Goalkeeper id the sim's referee designates for both teams (broadcast in the
+/// `TeamInfo` messages) — the single source of truth its own penalty-position
+/// check must use too.
+const SIM_GOALKEEPER_ID: u32 = 1;
 /// How far inside the field lines the ball is placed after it leaves the field.
 /// Must be large enough that a robot can fully get behind the ball to take the
 /// free kick (otherwise it would stay pinned against the boundary wall).
@@ -1370,13 +1375,13 @@ impl Simulation {
         let (yellow_max, yellow_cards) = card_team_info(&self.yellow_card_expiries, now);
         let mut blue_team_info = TeamInfo::new();
         blue_team_info.set_max_allowed_bots(blue_max);
-        blue_team_info.set_goalkeeper(1);
+        blue_team_info.set_goalkeeper(SIM_GOALKEEPER_ID);
         blue_team_info.set_score(self.blue_score);
         blue_team_info.yellow_card_times = blue_cards;
         msg.blue = Some(blue_team_info).into();
         let mut yellow_team_info = TeamInfo::new();
         yellow_team_info.set_max_allowed_bots(yellow_max);
-        yellow_team_info.set_goalkeeper(1);
+        yellow_team_info.set_goalkeeper(SIM_GOALKEEPER_ID);
         yellow_team_info.set_score(self.yellow_score);
         yellow_team_info.yellow_card_times = yellow_cards;
         msg.yellow = Some(yellow_team_info).into();
@@ -2273,11 +2278,14 @@ impl Simulation {
                 let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
                 let player_position = rigid_body.position().translation.vector;
 
-                // Check if this is the keeper (for now, assume robot 0 is keeper)
-                if player.team_color == defending_team && player.id.as_u32() == 0 {
+                // The keeper is the robot the sim's own referee designated.
+                if player.team_color == defending_team && player.id.as_u32() == SIM_GOALKEEPER_ID {
                     keeper_found = true;
-                    // Check if keeper is on goal line between goal posts
-                    let goal_line_tolerance = 20.0; // 2cm tolerance
+                    // "On the goal line" = the robot body touches the line: centre
+                    // within one robot radius. The old 2cm tolerance was tighter
+                    // than the rule and than control jitter can hold, deadlocking
+                    // the penalty state.
+                    let goal_line_tolerance = 90.0;
                     let goal_width = self.config.field_geometry.goal_width;
 
                     if (player_position.x - goal_x).abs() < goal_line_tolerance

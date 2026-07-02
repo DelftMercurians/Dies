@@ -139,10 +139,19 @@ impl SideAssignment {
                     TeamColor::Blue => world_data.game_state.blue_team_max_allowed_bots,
                     TeamColor::Yellow => world_data.game_state.yellow_team_max_allowed_bots,
                 },
-                our_keeper_id: match color {
-                    TeamColor::Blue => world_data.game_state.blue_team_keeper_id,
-                    TeamColor::Yellow => world_data.game_state.yellow_team_keeper_id,
-                },
+                // GC designation is ground truth; deterministic fallback (4, then
+                // 0, then lowest) only when no referee has ever told us.
+                our_keeper_id: crate::effective_keeper_id(
+                    match color {
+                        TeamColor::Blue => world_data.game_state.blue_team_keeper_id,
+                        TeamColor::Yellow => world_data.game_state.yellow_team_keeper_id,
+                    },
+                    world_data
+                        .get_team_players(color)
+                        .iter()
+                        .filter(|p| p.sideline.is_none())
+                        .map(|p| p.id),
+                ),
                 // Predicted restart is never `BallReplacement`, so no coordinate
                 // flip is needed. Suppressed when GC is ignored (forced free play).
                 predicted_next_game_state: if ignore_gc {

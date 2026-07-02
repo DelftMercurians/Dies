@@ -1309,9 +1309,19 @@ impl Executor {
             ctrl: Option<&mut TeamController>,
             roster: &mut [PlayerData],
             max_bots: u32,
+            gc_keeper: Option<PlayerId>,
         ) {
             let Some(ctrl) = ctrl else { return };
-            let removed = ctrl.plan_sidelining(roster, max_bots);
+            // Same GC-first / fallback resolution as the TeamData transform, so
+            // the robot exempted here is the one actually playing keeper.
+            let keeper_id = dies_core::effective_keeper_id(
+                gc_keeper,
+                roster
+                    .iter()
+                    .filter(|p| p.sideline.is_none())
+                    .map(|p| p.id),
+            );
+            let removed = ctrl.plan_sidelining(roster, max_bots, keeper_id);
             for p in roster.iter_mut() {
                 if p.sideline.is_none() && removed.contains(&p.id) {
                     p.sideline = Some(SidelineReason::CardRemoved);
@@ -1322,11 +1332,13 @@ impl Executor {
             self.team_controllers.blue_team.as_mut(),
             &mut world_data.blue_team,
             world_data.game_state.blue_team_max_allowed_bots,
+            world_data.game_state.blue_team_keeper_id,
         );
         stamp_card_removed(
             self.team_controllers.yellow_team.as_mut(),
             &mut world_data.yellow_team,
             world_data.game_state.yellow_team_max_allowed_bots,
+            world_data.game_state.yellow_team_keeper_id,
         );
 
         // Stamp the latest open-loop delay estimate onto each own robot for the

@@ -147,6 +147,13 @@ impl Planner {
         let ball_pos = world.ball_position()?;
         let opp_goal = world.opp_goal_center();
 
+        // The keeper is never a plan's active robot: its Guard/Clear machine owns
+        // it exclusively (lib.rs also gates offense/pursuit off when the keeper
+        // holds the ball — this is the backstop for every other replan path).
+        if matches!(*possession, Possession::We(id) if Some(id) == inputs.keeper_id) {
+            return None;
+        }
+
         // Gate: a loose ball essentially on a touchline/goal line is captured as a
         // "rescue inward" — the driver dribbles it back into the field instead of
         // pushing it over the line (which concedes the ball out). Applies to both

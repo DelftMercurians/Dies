@@ -239,6 +239,17 @@ impl PlayerHandle {
         )
     }
 
+    /// Drive through ball with reflex kick armed
+    pub fn strike_through(&mut self, target: Vector2) -> SkillHandle<HandleBallParams> {
+        self.handle_ball(
+            BallAction::Strike {
+                target,
+                acquire_first: false,
+            },
+            AcquirePosition::Fastest,
+        )
+    }
+
     // ========== Discrete Skills ==========
 
     /// Orient toward a target and kick.

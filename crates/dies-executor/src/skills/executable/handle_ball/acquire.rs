@@ -44,6 +44,7 @@ impl HandleBallSkill {
             .map(Angle::from_vector)
             .unwrap_or(axis.heading);
         input.with_yaw(ball_heading);
+        input.with_dribbling(DRIBBLER_SPEED());
 
         // Debug: the chosen approach axis (ball → staging side), the corridor
         // geometry, and whether the velocity-aware tail-catch is engaged.
@@ -165,7 +166,6 @@ impl HandleBallSkill {
             } else {
                 "staging".into()
             };
-            input.with_dribbling(DRIBBLER_SPEED());
             input.with_position(staging);
             input.add_global_velocity(staging_feed(player_pos, staging));
             input.avoid_ball = true;

@@ -95,6 +95,23 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
     keeper.set_role("goalkeeper");
     draw_guard_arc(world);
 
+    // ── Penalty defense (rules §5.3.6) ──────────────────────────────────
+    // Until the penalty kick is taken, the keeper must stand *on the goal line*
+    // between the posts — not on its guard arc. `Penalty` flips to `PenaltyRun`
+    // on ball movement (the kick), so gating on PreparePenalty|Penalty releases
+    // the keeper into Guard (and its shot-line intercept) the moment the shot
+    // is live.
+    if penalty_line_required(world) {
+        state.mode = KeeperMode::Guard; // resume in Guard once the kick is taken
+        let face = world
+            .ball_position()
+            .unwrap_or_else(|| world.opp_goal_center());
+        keeper
+            .go_to_bounded(world.own_goal_center(), keeper_guard_zone(world))
+            .facing(face);
+        return;
+    }
+
     // ── Mode transitions ────────────────────────────────────────────────
     match state.mode {
         KeeperMode::Guard => {
@@ -130,7 +147,7 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
             let ball = world.ball_position().unwrap_or_else(|| keeper.position());
             let target = clear_target(world, ball);
             let heading = facing_angle(ball, target);
-            let _ = keeper.strike_from_possession(target);
+            let _ = keeper.strike_through(target);
             // if keeper.has_ball() {
             // } else {
             //     // Acquire via the unified ball-handling skill (Hold mode); the
@@ -345,6 +362,18 @@ fn clamp_to_mouth(p: Vector2, centre: Vector2, radius: f64, max_angle: f64, y_li
     let lim = max_angle.min(lat_angle);
     let theta = rel.y.atan2(rel.x).clamp(-lim, lim);
     centre + Vector2::new(radius * theta.cos(), radius * theta.sin())
+}
+
+/// Whether the keeper must hold the goal line for a penalty against us: from the
+/// prepare signal until the kick is taken. `GameState::Penalty` transitions to
+/// `PenaltyRun` on ball movement, so these two states are exactly the
+/// before-the-kick window.
+fn penalty_line_required(world: &World) -> bool {
+    !world.us_operating()
+        && matches!(
+            world.game_state(),
+            GameState::PreparePenalty | GameState::Penalty
+        )
 }
 
 /// Whether to enter Clear: ball present, essentially stopped, firmly inside the
@@ -675,6 +704,26 @@ mod tests {
             (guard_target(&fast).y - guard_target(&still).y).abs() < 1.0,
             "up-field cross must not be damped"
         );
+    }
+
+    #[test]
+    fn penalty_defense_holds_the_goal_line() {
+        let mut snap = world_with_ball(Vector2::new(-2500.0, 0.0))
+            .raw_snapshot()
+            .clone();
+        // Opponent penalty, before the kick: keeper must be on the line.
+        snap.us_operating = false;
+        snap.game_state = GameState::PreparePenalty;
+        assert!(penalty_line_required(&World::new(snap.clone())));
+        snap.game_state = GameState::Penalty;
+        assert!(penalty_line_required(&World::new(snap.clone())));
+        // Kick taken (ball moved) → PenaltyRun → normal Guard resumes.
+        snap.game_state = GameState::PenaltyRun;
+        assert!(!penalty_line_required(&World::new(snap.clone())));
+        // Our own penalty: the keeper is free to guard normally.
+        snap.game_state = GameState::PreparePenalty;
+        snap.us_operating = true;
+        assert!(!penalty_line_required(&World::new(snap)));
     }
 
     #[test]

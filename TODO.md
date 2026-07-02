@@ -35,3 +35,10 @@ dribbler turns off mid skill?
 keeper
 HandleBallFailed
 hold: acquiring · bail: defense area
+
+TO TEST ON FIELD
+
+- yellow card assignment
+- keeper assignment
+- orbit pickup
+-

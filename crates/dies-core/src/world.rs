@@ -244,6 +244,29 @@ pub struct GameStateData {
     pub predicted_us_operating: Option<bool>,
 }
 
+/// Effective keeper id for a team. The GC's designation is ground truth and
+/// always wins — the rules only recognize the robot registered with the referee
+/// as the keeper, so we must never second-guess it (even if that robot is off
+/// the field: substituting another robot into the box would itself be a foul).
+/// Only when no GC has told us anything (no referee connected — e.g. field tests
+/// or GC-less sim runs) do we fall back deterministically: id 4 if present, then
+/// 0, then the lowest id on the roster.
+pub fn effective_keeper_id<I: IntoIterator<Item = PlayerId>>(
+    gc_keeper: Option<PlayerId>,
+    roster: I,
+) -> Option<PlayerId> {
+    if gc_keeper.is_some() {
+        return gc_keeper;
+    }
+    let mut ids: Vec<PlayerId> = roster.into_iter().collect();
+    ids.sort_unstable();
+    let preferred = PlayerId::new(4);
+    if ids.contains(&preferred) {
+        return Some(preferred);
+    }
+    ids.first().copied()
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[typeshare]
 pub struct RawGameStateData {
@@ -1377,5 +1400,29 @@ mod tests {
             "expected >=800mm from ball, got {}",
             ball.distance_to(out)
         );
+    }
+
+    #[test]
+    fn effective_keeper_id_gc_wins_else_fallback() {
+        let ids = |v: &[u32]| v.iter().map(|i| PlayerId::new(*i)).collect::<Vec<_>>();
+        // GC designation is ground truth, even if that robot is not on the roster.
+        assert_eq!(
+            effective_keeper_id(Some(PlayerId::new(2)), ids(&[0, 1])),
+            Some(PlayerId::new(2))
+        );
+        // No GC: prefer 4, then 0, then the lowest id present.
+        assert_eq!(
+            effective_keeper_id(None, ids(&[0, 3, 4, 5])),
+            Some(PlayerId::new(4))
+        );
+        assert_eq!(
+            effective_keeper_id(None, ids(&[0, 3, 5])),
+            Some(PlayerId::new(0))
+        );
+        assert_eq!(
+            effective_keeper_id(None, ids(&[5, 3])),
+            Some(PlayerId::new(3))
+        );
+        assert_eq!(effective_keeper_id(None, ids(&[])), None);
     }
 }
