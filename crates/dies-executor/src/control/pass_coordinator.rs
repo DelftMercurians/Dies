@@ -378,7 +378,7 @@ impl PassCoordinator {
                     let ready = (receiver.position - target_point).norm() < RECEIVER_READY_DIST();
                     if ready {
                         self.enter(PassPhase::Release);
-                        log::info!("entering release {}", receiver.position - target_point);
+                        // log::info!("entering release {}", receiver.position - target_point);
                     }
                     let (pi, r) = self.tick_strike(ctx, &passer, ball_pos, target_point, !ready);
                     passer_input = pi;
@@ -431,8 +431,7 @@ impl PassCoordinator {
             receiver_input = ri;
             if let Some(r) = rr {
                 result = Some(self.finish(r));
-            } else if let Some(r) = self.check_flight_terminal(ctx, &receiver, from, target_point)
-            {
+            } else if let Some(r) = self.check_flight_terminal(ctx, &receiver, from, target_point) {
                 result = Some(self.finish(r));
             }
         }
@@ -582,11 +581,11 @@ impl PassCoordinator {
                     // Verified departure — the ball is genuinely on its way.
                     self.flight_origin = ball_pos.or(Some(passer.position));
                     self.enter(PassPhase::Flight);
-                    log::info!("entering flight");
+                    // log::info!("entering flight");
                     (PlayerControlInput::default(), None)
                 }
                 _ => {
-                    log::info!("strike whiffed");
+                    // log::info!("strike whiffed");
                     (
                         // Whiff (reflex never connected) or a strike bail: fail BOTH
                         // robots now — the receiver must not chase toward the passer.
@@ -1281,14 +1280,14 @@ mod tests {
         // into the flight later.
         let hint = Vector2::new(2000.0, 0.0);
         let tc = team_ctx();
-        let mut c =
-            PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), Some(hint), Some(FORWARD));
-        let far_receiver = player(1, Vector2::new(2000.0, 1500.0), 0.0);
-        let w = world_at(
-            vec![player(0, STAGED, 0.0), far_receiver],
-            Some(BALL),
-            0.0,
+        let mut c = PassCoordinator::new(
+            PlayerId::new(0),
+            PlayerId::new(1),
+            Some(hint),
+            Some(FORWARD),
         );
+        let far_receiver = player(1, Vector2::new(2000.0, 1500.0), 0.0);
+        let w = world_at(vec![player(0, STAGED, 0.0), far_receiver], Some(BALL), 0.0);
         let out = c.tick(&ctx(&w, &tc));
         assert_eq!(c.phase(), PassPhase::Stage);
         assert!(
@@ -1304,8 +1303,7 @@ mod tests {
 
     /// Drive a one-timer pass through a real departure into `Flight`.
     fn into_flight_forward(tc: &TeamContext) -> PassCoordinator {
-        let mut c =
-            PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None, Some(FORWARD));
+        let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None, Some(FORWARD));
         let receiver = player(1, RECEIVER_POS, 0.0);
         let w = world_at(
             vec![player(0, STAGED, 0.0), receiver.clone()],
@@ -1346,13 +1344,19 @@ mod tests {
             w
         };
         // Ball arrives at the mouth (arms the was-near edge + the endgame gate).
-        let out = c.tick(&ctx(&mk(Vector2::new(1950.0, 0.0), Vector2::new(2500.0, 0.0), 0.8), &tc));
+        let out = c.tick(&ctx(
+            &mk(Vector2::new(1950.0, 0.0), Vector2::new(2500.0, 0.0), 0.8),
+            &tc,
+        ));
         assert_eq!(out.status, SkillStatus::Running);
         // Reflex fired: ball speeding away past the receiver — this is 1.2×
         // past the intercept along the pass line, which without the endgame
         // gate would have been declared ReceiverMissed. It must be the
         // verified deflection instead.
-        let out = c.tick(&ctx(&mk(Vector2::new(2400.0, 0.0), Vector2::new(2500.0, 0.0), 0.85), &tc));
+        let out = c.tick(&ctx(
+            &mk(Vector2::new(2400.0, 0.0), Vector2::new(2500.0, 0.0), 0.85),
+            &tc,
+        ));
         assert_eq!(out.status, SkillStatus::Succeeded);
         assert!(matches!(
             c.result(),

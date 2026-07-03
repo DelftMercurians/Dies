@@ -457,7 +457,7 @@ pub const IMP_SUPPORT: f64 = 3.0;
 /// Above the weak-mark / spread range so surplus bodies win the assignment as
 /// supporters and push up instead of loitering at midfield.
 pub const IMP_SUPPORT_ATTACK: f64 = 5.0;
-pub const IMP_SPREAD: f64 = 0.5;
+pub const IMP_SPREAD: f64 = 0.0;
 // ── Counter outlet (anti-press swing target) ─────────────────────────────────
 // When under genuine own-goal threat (being pressed) the attack fraction `af`
 // collapses and every supporter retreats, leaving no advanced target to clear or
@@ -738,10 +738,10 @@ impl Default for StanceConfig {
             // Div-B conservative: max out the wing wall (wings = field_n - 2 - 1,
             // capped at 2 → anchor + 2 wings at 5 field robots). Peer-level
             // default was 3.0 (anchor + 1 wing at full strength).
-            forward_reserve: 2.0,
+            forward_reserve: 0.0,
             // Keep the dedicated rest defender at every count (gate effectively
             // off): the single biggest fix against being countered short-handed.
-            balance_min_bots: 2.0,
+            balance_min_bots: 1.0,
             // Div-B conservative: soften the forward push further (peer-level
             // default was 0.9) — fewer bodies committed, the permanent outlet
             // (un-scaled by this) carries the forward presence instead.

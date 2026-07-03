@@ -567,7 +567,7 @@ impl Strategy for ConcertoStrategy {
                 // robot itself approaches.
                 p.go_to(target)
                     .facing(cmd.face)
-                    .hold_ground(cmd.role == "shadow");
+                    .avoid_robots(cmd.role == "shadow");
                 p.set_role(cmd.role);
             }
         }

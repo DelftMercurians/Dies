@@ -316,7 +316,13 @@ fn create_skill_from_command(cmd: &SkillCommand) -> Box<dyn ExecutableSkill> {
             position,
             heading,
             hold_ground,
-        } => Box::new(GoToPosSkill::new(*position, *heading, *hold_ground)),
+            avoid_robots,
+        } => Box::new(GoToPosSkill::new(
+            *position,
+            *heading,
+            *hold_ground,
+            *avoid_robots,
+        )),
         SkillCommand::GoToBounded {
             position,
             heading,

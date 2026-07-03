@@ -48,6 +48,7 @@ pub enum SkillCommand {
         position: Vector2,
         heading: Option<Angle>,
         hold_ground: bool,
+        avoid_robots: bool,
     },
 
     /// Move to a target position with aggressive direct-velocity control,

@@ -28,6 +28,7 @@ pub struct GoToBuilder<'a> {
     position: Vector2,
     heading: Option<Angle>,
     hold_ground: bool,
+    avoid_robots: bool,
 }
 
 impl<'a> GoToBuilder<'a> {
@@ -38,6 +39,7 @@ impl<'a> GoToBuilder<'a> {
             position,
             heading: None,
             hold_ground: false,
+            avoid_robots: true,
         }
     }
 
@@ -68,6 +70,11 @@ impl<'a> GoToBuilder<'a> {
         self.hold_ground = hold;
         self
     }
+
+    pub fn avoid_robots(mut self, avoid_robots: bool) -> Self {
+        self.avoid_robots = avoid_robots;
+        self
+    }
 }
 
 impl Drop for GoToBuilder<'_> {
@@ -76,6 +83,7 @@ impl Drop for GoToBuilder<'_> {
             position: self.position,
             heading: self.heading,
             hold_ground: self.hold_ground,
+            avoid_robots: self.avoid_robots,
         });
     }
 }
@@ -350,6 +358,7 @@ mod tests {
                 position,
                 heading,
                 hold_ground,
+                avoid_robots,
             } => {
                 assert_eq!(position.x, 100.0);
                 assert_eq!(position.y, 200.0);
