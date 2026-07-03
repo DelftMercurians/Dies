@@ -473,9 +473,26 @@ impl Strategy for ConcertoStrategy {
             let pos = world
                 .predict_ball_position(config::CAPTURE_LEAD_TAU)
                 .unwrap_or(ball);
-            // Only the double-touch robot is barred from capturing (rule compliance);
-            // there is no failure-based exclusion — a stuck robot re-engages.
-            let ineligible = self.double_touch_robot.into_iter().collect();
+            // The double-touch robot is barred from capturing (rule compliance),
+            // as is any robot that can't kick or dribble (handicaps) — unless
+            // every field robot is handicapped, in which case a crippled
+            // shepherd still beats an unchased ball. There is no failure-based
+            // exclusion — a stuck robot re-engages.
+            let mut ineligible: Vec<PlayerId> = self.double_touch_robot.into_iter().collect();
+            let keeper_id = world.our_keeper_id();
+            let any_able = world
+                .own_players()
+                .iter()
+                .any(|p| Some(p.id) != keeper_id && !ball_duty_barred(p));
+            if any_able {
+                ineligible.extend(
+                    world
+                        .own_players()
+                        .iter()
+                        .filter(|p| ball_duty_barred(p))
+                        .map(|p| p.id),
+                );
+            }
             formation::CaptureRole {
                 pos,
                 importance: config::CAPTURE_IMPORTANCE,
@@ -521,7 +538,19 @@ impl Strategy for ConcertoStrategy {
         // the free election. Never latch once the kick has been released — the
         // post-kick collector is not a kicker.
         if take_window && self.restart_kicker.is_none() && world.double_touch_barred().is_none() {
-            self.restart_kicker = world.freekick_kicker().or(fout.capturer);
+            // The framework latch can name a handicapped robot (it only tracks
+            // who is nearest/mid-take) — a robot that can't kick must not be
+            // pinned as taker; fall through to the election, which respects
+            // capture ineligibility.
+            self.restart_kicker = world
+                .freekick_kicker()
+                .filter(|id| {
+                    world
+                        .own_player(*id)
+                        .map(|p| !ball_duty_barred(p))
+                        .unwrap_or(true)
+                })
+                .or(fout.capturer);
         }
 
         // ── Pursuit: build the capture waypoint for Formation's chosen capturer.
@@ -678,16 +707,23 @@ impl ConcertoStrategy {
         {
             Some(id) => id,
             None => {
-                world
-                    .own_players()
-                    .iter()
-                    .filter(|p| Some(p.id) != keeper_id)
-                    .min_by(|a, b| {
-                        let da = (a.position - anchor).norm();
-                        let db = (b.position - anchor).norm();
-                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                    })?
-                    .id
+                // Prefer a robot that can actually take the kick; only if every
+                // field robot is handicapped does the nearest get it anyway.
+                let nearest = |allow_barred: bool| {
+                    world
+                        .own_players()
+                        .iter()
+                        .filter(|p| {
+                            Some(p.id) != keeper_id && (allow_barred || !ball_duty_barred(p))
+                        })
+                        .min_by(|a, b| {
+                            let da = (a.position - anchor).norm();
+                            let db = (b.position - anchor).norm();
+                            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|p| p.id)
+                };
+                nearest(false).or_else(|| nearest(true))?
             }
         };
         self.restart_kicker = Some(id);
@@ -879,6 +915,13 @@ fn opp_time_to_ball(world: &World, ball: Vector2) -> f64 {
         .unwrap_or(f64::INFINITY)
 }
 
+/// A robot missing its kicker or dribbler can't do ball duty (capture, set-piece
+/// kicks): it can neither strike nor hold the ball. `NoBreakbeam` doesn't bar
+/// anything — the ToF backup covers ball detection.
+fn ball_duty_barred(p: &PlayerState) -> bool {
+    p.handicaps.contains(&Handicap::NoKicker) || p.handicaps.contains(&Handicap::NoDribbler)
+}
+
 /// Elect a wall robot to step out and hoof a slow/settled apron ball clear. Only
 /// slow balls ([`config::WALL_CLEAR_MAX_SPEED`]) — a faster ball is a shot/
 /// delivery and is blocked by the standing wall, never chased out of formation.
@@ -905,6 +948,11 @@ fn elect_wall_clearer(
         let Some(p) = world.own_player(*id) else {
             continue;
         };
+        // The hoof is a straight kick — a robot without a kicker would just
+        // nudge the ball around the apron (no dribbler needed, though).
+        if p.handicaps.contains(&Handicap::NoKicker) {
+            continue;
+        }
         let ttb = time_to_ball(p.position, p.velocity, ball);
         if best.map(|(_, b)| ttb < b).unwrap_or(true) {
             best = Some((*id, ttb));
@@ -1059,6 +1107,26 @@ mod tests {
             Vector2::new(-40.0, 0.0),
         );
         let got = elect_wall_clearer(&w, &wall_ids(), Some(PlayerId::new(3)));
+        assert!(got.is_some() && got != Some(PlayerId::new(3)));
+    }
+
+    #[test]
+    fn no_kicker_waller_is_not_elected_as_clearer() {
+        // The nearest waller (id 3) has no kicker — it can't hoof, so another
+        // waller takes the clear. A missing dribbler doesn't bar the hoof.
+        let own = vec![
+            player(1, -4300.0, 0.0), // keeper
+            player(2, -2950.0, 0.0),
+            player(3, -2950.0, 400.0).with_handicaps([Handicap::NoKicker].into()),
+            player(4, -2950.0, -400.0).with_handicaps([Handicap::NoDribbler].into()),
+        ];
+        let w = world_with_ball(
+            own,
+            vec![],
+            Vector2::new(-2400.0, 400.0), // nearest to id 3
+            Vector2::new(-40.0, 0.0),
+        );
+        let got = elect_wall_clearer(&w, &wall_ids(), None);
         assert!(got.is_some() && got != Some(PlayerId::new(3)));
     }
 

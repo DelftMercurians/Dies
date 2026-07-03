@@ -39,7 +39,7 @@ pub const FORWARD_OK_BAR: f64 = 0.50;
 /// Div-B conservative mode: 0.0 — passes are the dominant self-inflicted turnover
 /// source against lower-tier opponents, so the carrier always shoots, carries, or
 /// hoofs. Restore 1.0 for peer-level play.
-pub const PASS_SUCCESS_BASE: f64 = 0.0;
+pub const PASS_SUCCESS_BASE: f64 = 0.5;
 /// How far behind the ball (toward our own half) the recycle pivot sits, on the
 /// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
 /// where an extra central body would invite the defence to collapse the shot zone.
