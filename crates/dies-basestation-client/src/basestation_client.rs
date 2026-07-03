@@ -27,6 +27,13 @@ const RECONNECT_INTERVAL: Duration = Duration::from_millis(500);
 /// Sliding window over which per-robot feedback rate is measured.
 const FEEDBACK_RATE_WINDOW: Duration = Duration::from_secs(1);
 
+/// How long a robot must have been offline/unseen before its next online
+/// observation counts as a fresh boot (rather than a transient link blip).
+const BOOT_OFFLINE_THRESHOLD: Duration = Duration::from_secs(5);
+/// After a fresh boot, suppress all commands to the robot for this long so its
+/// firmware can finish initializing before we start streaming setpoints.
+const BOOT_SUPPRESS_DURATION: Duration = Duration::from_secs(1);
+
 #[derive(Default)]
 struct FeedbackRateTracker {
     /// Instant of the last fresh HF sample we observed, per robot index.
@@ -107,6 +114,42 @@ impl WorkStatTracker {
         let max_us = self.hits.iter().map(|(_, w, _)| *w).max().unwrap_or(0);
         let overruns = self.hits.iter().filter(|(_, _, o)| *o).count();
         (max_us, overruns as f32 / self.hits.len() as f32)
+    }
+}
+
+/// Suppresses command transmission to freshly-booted robots. A robot needs a
+/// moment after coming online to finish initializing; streaming setpoints into
+/// that window can disrupt the boot. We watch each robot's online reports and,
+/// when one comes online after being offline/unseen for at least
+/// [`BOOT_OFFLINE_THRESHOLD`], hold off sending to it for
+/// [`BOOT_SUPPRESS_DURATION`].
+#[derive(Default)]
+struct BootGate {
+    /// Last time each robot id was observed online.
+    last_online: HashMap<u8, Instant>,
+    /// Robots in their post-boot suppression window: commands are held off
+    /// until the stored instant.
+    suppress_until: HashMap<u8, Instant>,
+}
+
+impl BootGate {
+    /// Record an online observation for `id`. If the robot was offline/unseen
+    /// for at least [`BOOT_OFFLINE_THRESHOLD`] (or was never seen), treat this
+    /// as a fresh boot and (re)arm the suppression window.
+    fn observe_online(&mut self, id: u8, now: Instant) {
+        let booted = self
+            .last_online
+            .get(&id)
+            .map_or(true, |t| now.duration_since(*t) >= BOOT_OFFLINE_THRESHOLD);
+        if booted {
+            self.suppress_until.insert(id, now + BOOT_SUPPRESS_DURATION);
+        }
+        self.last_online.insert(id, now);
+    }
+
+    /// Whether commands to `id` should be held off (still in its boot window).
+    fn is_suppressed(&self, id: u8, now: Instant) -> bool {
+        self.suppress_until.get(&id).is_some_and(|until| now < *until)
     }
 }
 
@@ -214,6 +257,8 @@ impl BasestationHandle {
             let mut reconnecting = false;
             let mut last_reconnect_attempt: Option<std::time::Instant> = None;
             let mut rate_tracker = FeedbackRateTracker::default();
+            // Holds off commands to robots that just came online (booting).
+            let mut boot_gate = BootGate::default();
             // Latest command per robot + when it arrived (for age-out). Persistent
             // across loops; one robot is polled per loop, round-robin.
             let mut commands_by_robot: HashMap<u8, (Instant, GlueRadioCommand)> =
@@ -280,11 +325,15 @@ impl BasestationHandle {
                     let mut ids: Vec<u8> = commands_by_robot.keys().copied().collect();
                     ids.sort_unstable();
                     let id = ids[rr_cursor % ids.len()];
-                    let _ = match &commands_by_robot[&id].1 {
-                        GlueRadioCommand::Local(c) => bs.serial.send_command(id, *c),
-                        GlueRadioCommand::Global(c) => bs.serial.send_global_command(id, *c),
-                    };
-                    tx_counter.tick(std::time::Instant::now());
+                    // Hold off transmitting to a robot that just booted; still
+                    // advance the cursor so the other robots keep getting polled.
+                    if !boot_gate.is_suppressed(id, send_start) {
+                        let _ = match &commands_by_robot[&id].1 {
+                            GlueRadioCommand::Local(c) => bs.serial.send_command(id, *c),
+                            GlueRadioCommand::Global(c) => bs.serial.send_global_command(id, *c),
+                        };
+                        tx_counter.tick(std::time::Instant::now());
+                    }
                     rr_cursor = rr_cursor.wrapping_add(1);
                 }
 
@@ -364,6 +413,11 @@ impl BasestationHandle {
                                 {
                                     let hf_age = msg.time_since_status_hf_update();
                                     let feedback_hz = rate_tracker.observe(id, hf_age, now);
+                                    // Track online transitions to gate commands
+                                    // to freshly-booted robots.
+                                    if msg.is_online() {
+                                        boot_gate.observe_online(id as u8, now);
+                                    }
                                     let (color, player_id) = id_map
                                         .iter()
                                         .find_map(|(k, v)| {
