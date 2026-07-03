@@ -440,6 +440,23 @@ impl Formation {
                                         - config::CAPTURE_COMMIT;
                                 }
                             }
+                            // Wall-membership stickiness: a robot already serving a
+                            // Shadow slot keeps a redirect discount on *any* Shadow
+                            // slot, so it isn't pulled off the wall to support (and
+                            // back) on cost ties — the shadow↔support ping-pong that
+                            // makes the wall shuffle. Bounded, so a real importance
+                            // drop still releases it. (Order within the wall is fixed
+                            // separately by `order_wall_slots`.)
+                            if role.id.kind == RoleKind::Shadow
+                                && self
+                                    .assignment
+                                    .get(id)
+                                    .is_some_and(|cur| cur.kind == RoleKind::Shadow)
+                            {
+                                return t
+                                    - role.importance * self.stance.sec_per_importance
+                                    - config::WALL_COMMIT;
+                            }
                             t - role.importance * self.stance.sec_per_importance
                         }
                         None => f64::INFINITY,
@@ -509,10 +526,9 @@ impl Formation {
         capture: Option<&CaptureRole>,
         n: usize,
         field_n: usize,
-        // Was used by the retired wall-pair compaction; the rounded-rect wall no
-        // longer needs it (the two offset bands never collapse). Kept in the
-        // signature so existing test call sites compile unchanged.
-        _staffed_shadow_slots: &[u16],
+        // Which Shadow slots are currently staffed (one tick stale). Used to compact
+        // a 2-body wall into an adjacent pair (a layered anchor+wing doesn't defend).
+        staffed_shadow_slots: &[u16],
         keeper_clearing: bool,
     ) -> Vec<Role> {
         let mut roles: Vec<Role> = Vec::new();
@@ -626,6 +642,24 @@ impl Formation {
             let desired_s =
                 geometry::project_to_rect_offset(&pen, config::SHADOW_BOX_OFFSET, ref_pt);
 
+            // Count-aware wall sizing: always the central anchor, plus as many
+            // threat-scaled wings as the field-robot count affords. Sized from
+            // `field_n` so the wall keeps width across a possession flip; the full
+            // wall is committed on set-piece defense.
+            let wing_budget = if setpiece_defense {
+                config::SHADOW_MAX
+            } else {
+                (field_n as f64 - self.stance.forward_reserve - 1.0)
+                    .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
+            };
+            // A 2-body wall (anchor + one wing) defends poorly layered on two depths
+            // — compact it into an adjacent pair on the wing band, straddling the shot
+            // line. Keyed off the (stale) staffed set. `compacted` lists those slots
+            // left→right; a slot in it rides the wing band beside its partner.
+            let mut compacted: Vec<u16> = staffed_shadow_slots.to_vec();
+            compacted.sort_by(|a, b| slot_offset(*a).total_cmp(&slot_offset(*b)));
+            let compact = !setpiece_defense && compacted.len() == 2;
+
             // Rigid translation: slew-limit the shared base_s and pace it by the
             // furthest-behind staffed member so the whole wall moves as one and
             // relative spacing stays pinned. On keeper-clearing (an intentional
@@ -639,7 +673,10 @@ impl Formation {
                             continue;
                         }
                         if let Some(pl) = world.own_player(*id) {
-                            let off = if slot_is_anchor(rid.slot) {
+                            // In a compacted pair the (nominal) anchor rides the wing
+                            // band, so measure it against the wing offset there.
+                            let compact_here = compact && compacted.contains(&rid.slot);
+                            let off = if slot_is_anchor(rid.slot) && !compact_here {
                                 config::ANCHOR_BOX_MARGIN
                             } else {
                                 config::SHADOW_BOX_OFFSET
@@ -661,16 +698,30 @@ impl Formation {
             };
             self.wall_base_s = Some(base_s);
 
-            // Count-aware wall sizing (unchanged): always emit the central anchor,
-            // then only as many threat-scaled wings as the field-robot count affords —
-            // `clamp(field_n - forward_reserve - 1, 0, SHADOW_MAX-1)`. Sized from
-            // `field_n` (carrier included) so the wall keeps its width across a
-            // possession flip. On set-piece defense the full wall is committed.
-            let wing_budget = if setpiece_defense {
-                config::SHADOW_MAX
-            } else {
-                (field_n as f64 - self.stance.forward_reserve - 1.0)
-                    .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
+            // Per-slot target: (offset from box, bounds band, along-curve s). A
+            // compacted slot sits on the wing band at ±spacing/2 around base_s.
+            let slot_target = |slot: u16| -> (f64, MotionBounds, f64) {
+                if compact {
+                    if let Some(rank) = compacted.iter().position(|s| *s == slot) {
+                        let s = base_s
+                            + (rank as f64 - (compacted.len() as f64 - 1.0) / 2.0)
+                                * config::SHADOW_SPACING;
+                        return (config::SHADOW_BOX_OFFSET, wing_band, s);
+                    }
+                }
+                if slot_is_anchor(slot) {
+                    (
+                        config::ANCHOR_BOX_MARGIN,
+                        anchor_band,
+                        base_s + slot_offset(slot),
+                    )
+                } else {
+                    (
+                        config::SHADOW_BOX_OFFSET,
+                        wing_band,
+                        base_s + slot_offset(slot),
+                    )
+                }
             };
 
             let mut wings_pushed = 0usize;
@@ -694,13 +745,8 @@ impl Formation {
                 } else {
                     0.5 + 0.5 * ball_threat
                 };
-                let (offset, band) = if is_anchor {
-                    (config::ANCHOR_BOX_MARGIN, anchor_band)
-                } else {
-                    (config::SHADOW_BOX_OFFSET, wing_band)
-                };
-                let mut position =
-                    geometry::rect_offset_point(&pen, offset, base_s + slot_offset(slot));
+                let (offset, band, s_target) = slot_target(slot);
+                let mut position = geometry::rect_offset_point(&pen, offset, s_target);
                 // Keeper clearing a settled ball out of our box: vacate a keyhole
                 // (the keeper's work disc [`CLEAR_BALL_CLEARANCE`] plus the fixed
                 // ball→opp-goal corridor) and hand motion back to the planner

@@ -778,6 +778,13 @@ pub const CAPTURE_LEAD_TAU: f64 = 0.3;
 /// settles near-ties (who is closest as the lead point jitters), never overrides a
 /// decisively better challenger. Keeps a chase committed to one robot.
 pub const CAPTURE_COMMIT: f64 = 0.4;
+/// Wall-membership stickiness (seconds of redirect time). A robot currently serving
+/// a Shadow slot gets this discount on *any* Shadow slot, so a challenger (typically
+/// a supporter) must be decisively faster to pull it off the wall. This damps the
+/// shadow↔support ping-pong that makes the wall shuffle — the wall-membership analogue
+/// of [`CAPTURE_COMMIT`]. Bounded below the wall importance so a genuine threat drop
+/// (wing importance fading) still releases the body; it only settles near-ties.
+pub const WALL_COMMIT: f64 = 0.5;
 /// Over-generate roles to this multiple of the assignable robot count.
 pub const OVERGEN_FACTOR: f64 = 1.5;
 /// Assignment recalculation cadence.

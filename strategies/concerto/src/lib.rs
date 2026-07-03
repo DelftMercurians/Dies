@@ -95,6 +95,11 @@ pub struct ConcertoStrategy {
     /// wall-clearer candidate pool. One tick stale by construction, which is fine
     /// at frame rate.
     last_wall_ids: Vec<PlayerId>,
+    /// The robot that drew the capture role last tick. Used to *pin* the capturer
+    /// during a defensive scramble in our own third, so the ball-winner doesn't
+    /// churn (capture↔kick↔rescue) and shove the wall around while it fights a ball
+    /// near our box. Barring the double-touch robot (which may not capture).
+    last_capturer: Option<PlayerId>,
     /// In-progress kick-ahead intent (a hoof aimed at a forward runner). Armed
     /// from the plan while we hold the ball, consumed/aborted after the kick.
     kickahead: Option<KickAhead>,
@@ -117,6 +122,7 @@ impl ConcertoStrategy {
             penalty: penalty::PenaltyState::default(),
             wall_clearer: None,
             last_wall_ids: Vec::new(),
+            last_capturer: None,
             kickahead: None,
         }
     }
@@ -541,6 +547,18 @@ impl Strategy for ConcertoStrategy {
                         .map(|p| p.id),
                 );
             }
+            // Defensive scramble: when the ball is deep in our own third (but not in
+            // the box — the keeper owns that), pin the incumbent capturer so it holds
+            // the chase instead of the matcher re-electing every frame. Its role
+            // churn (capture↔kick↔rescue) and physical dive were shoving the wall
+            // around. Barring the double-touch robot (which may not capture) and
+            // deferring to a restart/kick-ahead pin.
+            let ball_in_our_third = ball.x < -world.field_length() / 6.0;
+            let defensive_pin = (ball_in_our_third
+                && self.last_capturer.is_some()
+                && self.last_capturer != self.double_touch_robot)
+                .then_some(self.last_capturer)
+                .flatten();
             formation::CaptureRole {
                 pos,
                 importance: config::CAPTURE_IMPORTANCE,
@@ -552,7 +570,7 @@ impl Strategy for ConcertoStrategy {
                 pinned: if take_window {
                     self.restart_kicker
                 } else {
-                    inputs.kickahead_receiver
+                    inputs.kickahead_receiver.or(defensive_pin)
                 },
             }
         });
@@ -672,6 +690,8 @@ impl Strategy for ConcertoStrategy {
             .filter(|c| c.role == "shadow")
             .map(|c| c.id)
             .collect();
+        // Incumbent capturer for next tick's defensive-scramble pin.
+        self.last_capturer = fout.capturer;
 
         // ── Apply Formation positioning (non-capturing field robots) ─────
         // Kickoff staging: while a kickoff is being prepared — including the
