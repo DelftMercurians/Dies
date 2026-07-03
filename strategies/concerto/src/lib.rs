@@ -989,12 +989,12 @@ fn elect_wall_clearer(
         }
     }
     let (id, waller_ttb) = best?;
-    println!(
-        "elecing wall clearer {} {} {}",
-        waller_ttb,
-        opp_time_to_ball(world, ball),
-        config::WALL_CLEAR_MARGIN
-    );
+    // println!(
+    //     "elecing wall clearer {} {} {}",
+    //     waller_ttb,
+    //     opp_time_to_ball(world, ball),
+    //     config::WALL_CLEAR_MARGIN
+    // );
     // Win the race (harass-aggressive at margin 0) or hold.
     (waller_ttb <= opp_time_to_ball(world, ball) + config::WALL_CLEAR_MARGIN).then_some(id)
 }

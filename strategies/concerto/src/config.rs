@@ -850,14 +850,14 @@ impl Default for StanceConfig {
             // Div-B conservative: max out the wing wall (wings = field_n - 2 - 1,
             // capped at 2 → anchor + 2 wings at 5 field robots). Peer-level
             // default was 3.0 (anchor + 1 wing at full strength).
-            forward_reserve: 0.0,
+            forward_reserve: 2.0,
             // Keep the dedicated rest defender at every count (gate effectively
             // off): the single biggest fix against being countered short-handed.
             balance_min_bots: 1.0,
             // Div-B conservative: soften the forward push further (peer-level
             // default was 0.9) — fewer bodies committed, the permanent outlet
             // (un-scaled by this) carries the forward presence instead.
-            aggression: 0.5,
+            aggression: 0.7,
             sec_per_importance: SEC_PER_IMPORTANCE,
             recalc_cooldown: RECALC_COOLDOWN,
             recalc_bg_period: RECALC_BG_PERIOD,
