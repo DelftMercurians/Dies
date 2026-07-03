@@ -252,8 +252,26 @@ impl Formation {
             .filter(|p| Some(p.id) != keeper_id)
             .count();
 
+        // Shadow slots held by currently-assignable robots as of the last
+        // assignment (stale entries for reserved/departed robots excluded). One
+        // tick stale by construction, like `last_wall_ids` — fine for the wall-
+        // pair compaction, which only nudges a wing's position.
+        let staffed_shadow_slots: Vec<u16> = assignable
+            .iter()
+            .filter_map(|id| self.assignment.get(id))
+            .filter(|rid| rid.kind == RoleKind::Shadow)
+            .map(|rid| rid.slot)
+            .collect();
+
         // Generate the role set (positions/importance recomputed every tick).
-        let mut roles = self.generate_roles(world, plan_ctx, capture, assignable.len(), field_n);
+        let mut roles = self.generate_roles(
+            world,
+            plan_ctx,
+            capture,
+            assignable.len(),
+            field_n,
+            &staffed_shadow_slots,
+        );
         // Slot-hold: a reserved plan robot standing in/near a wall slot IS that
         // slot's coverage (the wall reflex striker working at its own post, or a
         // carrier standing in the line), so its importance fades out instead of
@@ -422,6 +440,7 @@ impl Formation {
         capture: Option<&CaptureRole>,
         n: usize,
         field_n: usize,
+        staffed_shadow_slots: &[u16],
     ) -> Vec<Role> {
         let mut roles: Vec<Role> = Vec::new();
         let own_goal = world.own_goal_center();
@@ -537,6 +556,35 @@ impl Formation {
                 (field_n as f64 - self.stance.forward_reserve - 1.0)
                     .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
             };
+            // Wall-pair compaction: a 2-body wall (anchor + exactly one staffed
+            // wing — whether by wing budget or because matching gave the other
+            // slots away) must be a standard 2-waller, not the layered shape.
+            // The layering (anchor at the box edge, wings 400mm further out with
+            // only a ±170mm lateral offset) leaves the pair nearly stacked on the
+            // shot line, and the 0.8·dist standoff caps collapse them onto the
+            // same radius 170mm apart as the ball closes on the box — commanded
+            // interpenetration. So the staffed wing is snapped onto a second arc
+            // at the *anchor's* standoff: tight beside the anchor, same radius at
+            // every ball distance (the caps now shrink both together). The
+            // unstaffed wing slot keeps its outer-arc position — that's where a
+            // third body rejoins, which lifts the staffed count and releases the
+            // compaction a tick later. Not applied on set-piece defense (no
+            // anchor promotion; the wall is already contiguous).
+            let anchor_slot = shadow_center as u16;
+            let compact_pair = !setpiece_defense
+                && staffed_shadow_slots.len() == 2
+                && staffed_shadow_slots.contains(&anchor_slot);
+            let compact_positions = if compact_pair {
+                geometry::shadow_arc(
+                    ball,
+                    own_goal,
+                    config::SHADOW_MAX,
+                    anchor_standoff,
+                    config::SHADOW_SPACING,
+                )
+            } else {
+                Vec::new()
+            };
             let mut wings_pushed = 0usize;
             for (i, pos) in positions.into_iter().enumerate() {
                 let off_center = (i as f64 - shadow_center).abs();
@@ -559,6 +607,8 @@ impl Formation {
                 };
                 let position = if is_anchor {
                     geometry::goal_ray_point(ball, own_goal, anchor_standoff)
+                } else if compact_pair && staffed_shadow_slots.contains(&(i as u16)) {
+                    compact_positions[i]
                 } else {
                     pos
                 };
@@ -1149,7 +1199,7 @@ mod tests {
         let mut f = Formation::new();
 
         let marks = |rs: &[Role]| rs.iter().filter(|r| r.id.kind == RoleKind::Mark).count();
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 3, 3);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[]);
         let engaged = f.generate_roles(
             &world,
             &PlanContext {
@@ -1160,6 +1210,7 @@ mod tests {
             None,
             3,
             3,
+            &[],
         );
         assert_eq!(marks(&plain), 2);
         assert_eq!(marks(&engaged), 1);
@@ -1180,7 +1231,7 @@ mod tests {
         let world = world_with(own, opp, 1);
         let mut f = Formation::new();
 
-        let on = f.generate_roles(&world, &PlanContext::default(), None, 3, 3);
+        let on = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[]);
         assert!(on.iter().any(|r| r.id.kind == RoleKind::Shadow));
         assert!(on.iter().any(|r| r.id.kind == RoleKind::Mark));
         assert!(on.iter().any(|r| r.id.kind == RoleKind::Support));
@@ -1194,7 +1245,7 @@ mod tests {
             balance: false,
             outlet: false,
         });
-        let off = f.generate_roles(&world, &PlanContext::default(), None, 3, 3);
+        let off = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[]);
         // Only the Spread floor survives — one role per assignable robot, so
         // nobody is left roleless when the whole catalog is switched off.
         assert!(off.iter().all(|r| r.id.kind == RoleKind::Spread));
@@ -1212,7 +1263,7 @@ mod tests {
         let world = world_with(own, opp, 1);
         let mut f = Formation::new();
 
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
         let supp = f.generate_roles(
             &world,
             &PlanContext {
@@ -1223,6 +1274,7 @@ mod tests {
             None,
             4,
             4,
+            &[],
         );
 
         // BallContest only re-weights importance, never the role set.
@@ -1278,7 +1330,7 @@ mod tests {
             ball_contest: None,
         });
         let mut f = Formation::new();
-        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
 
         // The box-runner is the central Support slot (slot == SUPPORT_COUNT).
         let runners: Vec<&Role> = roles
@@ -1359,7 +1411,7 @@ mod tests {
             ball_contest: None,
         });
         let mut f = Formation::new();
-        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
         let runner = roles
             .iter()
             .find(|r| r.id.kind == RoleKind::Support && r.id.slot as usize == config::SUPPORT_COUNT)
@@ -1531,8 +1583,8 @@ mod tests {
             ids
         };
         // Pursuit: 4 assignable. Offense: carrier reserved → 3. field_n = 4 both.
-        let pursuit = f.generate_roles(&world, &PlanContext::default(), None, 4, 4);
-        let offense = f.generate_roles(&world, &PlanContext::default(), None, 3, 4);
+        let pursuit = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
+        let offense = f.generate_roles(&world, &PlanContext::default(), None, 3, 4, &[]);
         assert_eq!(
             shadows(&pursuit),
             shadows(&offense),
@@ -1589,7 +1641,7 @@ mod tests {
 
         // Opponent right on the ball we "hold" → floor fully faded, no outlet.
         let contested = mk_world(vec![player(11, -300.0, 0.0)]);
-        let rs = f.generate_roles(&contested, &PlanContext::default(), None, 4, 4);
+        let rs = f.generate_roles(&contested, &PlanContext::default(), None, 4, 4, &[]);
         assert_eq!(
             outlet_imp(&rs),
             None,
@@ -1598,11 +1650,129 @@ mod tests {
 
         // Same ball, opponent far away → the Div-B permanent outlet stands.
         let clear = mk_world(vec![player(11, 3000.0, 2000.0)]);
-        let rs = f.generate_roles(&clear, &PlanContext::default(), None, 4, 4);
+        let rs = f.generate_roles(&clear, &PlanContext::default(), None, 4, 4, &[]);
         let imp = outlet_imp(&rs).expect("uncontested possession keeps the outlet");
         assert!(
             (imp - config::IMP_OUTLET).abs() < 1e-9,
             "outlet at full floor importance, got {imp}"
         );
+    }
+
+    #[test]
+    fn two_staffed_shadows_compact_into_a_pair_wall() {
+        // Ball at center, goal at (-4500, 0). Anchor standoff = pen depth (1000)
+        // + ANCHOR_BOX_MARGIN (150) = 1150 → anchor at (-3350, 0).
+        let own = vec![player(1, -4000.0, 0.0), player(2, -3200.0, 100.0)];
+        let world = world_with(own, vec![], 1);
+        let mut f = Formation::new();
+
+        let shadow = |rs: &[Role], slot: u16| {
+            rs.iter()
+                .find(|r| r.id.kind == RoleKind::Shadow && r.id.slot == slot)
+                .map(|r| r.position)
+                .unwrap_or_else(|| panic!("shadow slot {slot} missing"))
+        };
+        // Uncompacted (no staffing info): the wing sits on the outer arc —
+        // (-2950, -170) for a centered ball (the wall line is perpendicular to
+        // the shot ray, so the offset is straight -y here).
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[]);
+        let wing = shadow(&plain, 0);
+        assert!(
+            (wing - Vector2::new(-2950.0, -170.0)).norm() < 1e-6,
+            "unstaffed wing stays on the SHADOW_STANDOFF arc, got {wing:?}"
+        );
+
+        // Anchor + exactly one staffed wing → the wing snaps onto the anchor's
+        // wall line, SHADOW_SPACING beside it; the anchor itself is untouched.
+        let compact = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1]);
+        let anchor = shadow(&compact, 1);
+        let wing = shadow(&compact, 0);
+        assert!(
+            (anchor - Vector2::new(-3350.0, 0.0)).norm() < 1e-6,
+            "anchor stays on the ray at the box edge, got {anchor:?}"
+        );
+        assert!(
+            (wing - Vector2::new(-3350.0, -170.0)).norm() < 1e-6,
+            "compacted wing sits SHADOW_SPACING beside the anchor, got {wing:?}"
+        );
+    }
+
+    #[test]
+    fn update_emits_compacted_pair_wall_for_two_defenders() {
+        // Keeper + 2 field robots: wing budget = 1, so the wall is anchor + one
+        // wing. After the first update() establishes the assignment, the second
+        // emits the compacted side-by-side pair.
+        let own = vec![
+            player(1, -4400.0, 0.0), // keeper
+            player(2, -3300.0, 100.0),
+            player(3, -3000.0, -300.0),
+        ];
+        let world = world_with(own, vec![], 1);
+        let mut f = Formation::new();
+        f.update(&world, &[], &PlanContext::default(), None, 0.0);
+        let out = f.update(&world, &[], &PlanContext::default(), None, 0.0);
+
+        let targets: Vec<Vector2> = out
+            .commands
+            .iter()
+            .filter(|c| c.role == "shadow")
+            .map(|c| c.target)
+            .collect();
+        assert_eq!(targets.len(), 2, "both defenders staff the wall");
+        // Centered ball → anchor at (-3350, 0), compacted wing at (-3350, -170):
+        // a tight side-by-side pair on the anchor's wall line.
+        for want in [Vector2::new(-3350.0, 0.0), Vector2::new(-3350.0, -170.0)] {
+            assert!(
+                targets.iter().any(|t| (t - want).norm() < 1e-6),
+                "expected a wall body at {want:?}, got {targets:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn setpiece_defense_skips_pair_compaction() {
+        // Opponent free kick deep in our third: the wall is contiguous at the
+        // (capped) outer standoff with no anchor promotion — staffing info must
+        // not pull a slot onto the anchor arc.
+        let own = vec![player(1, -4000.0, 0.0), player(2, -3200.0, 100.0)];
+        let ball = Vector2::new(-3000.0, 0.0);
+        let world = World::new(WorldSnapshot {
+            timestamp: 0.0,
+            dt: 0.016,
+            field_geom: Some(FieldGeometry::default()),
+            ball: Some(BallState {
+                position: ball,
+                velocity: Vector2::new(0.0, 0.0),
+                detected: true,
+            }),
+            own_players: own,
+            opp_players: vec![],
+            game_state: GameState::FreeKick,
+            us_operating: false,
+            pre_stage: false,
+            our_keeper_id: Some(PlayerId::new(1)),
+            freekick_kicker: None,
+            double_touch_barred: None,
+            possession: Possession::Loose,
+            possession_stale: false,
+            ball_contest: None,
+        });
+        let mut f = Formation::new();
+        let rs = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1]);
+        let expected = geometry::shadow_arc(
+            ball,
+            world.own_goal_center(),
+            config::SHADOW_MAX,
+            config::SHADOW_STANDOFF,
+            config::SHADOW_SPACING,
+        );
+        for r in rs.iter().filter(|r| r.id.kind == RoleKind::Shadow) {
+            let want = expected[r.id.slot as usize];
+            assert!(
+                (r.position - want).norm() < 1e-6,
+                "slot {} must stay in the contiguous set-piece wall",
+                r.id.slot
+            );
+        }
     }
 }

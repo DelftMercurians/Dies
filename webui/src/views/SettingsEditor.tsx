@@ -188,6 +188,92 @@ const fieldConfig: FieldConfig = {
       ),
     },
   },
+  // Proximity thresholds are tuned on breakbeam-labeled REAL logs (2026-07-03,
+  // .analysis/possession_proto.py). Don't re-tune them in sim — the sim dribble
+  // model holds the ball perfectly and will validate any values.
+  possession_config: {
+    dribbler_offset: {
+      min: 80, max: 150, step: 1, unit: "mm",
+      help: "Where the held ball sits ahead of the robot centre, along its yaw (robot radius + ball radius). Hold detection measures ball distance to this point, not to the centre.",
+    },
+    prox_enter_dist: {
+      min: 40, max: 300, step: 5, unit: "mm",
+      help: "An uncontrolled robot gains possession when the ball is within this of its dribbler point (and co-moving). Lower = stricter, fewer false holds; higher = earlier detection.",
+    },
+    prox_stay_dist: {
+      min: 60, max: 400, step: 5, unit: "mm",
+      help: "The current owner retains possession out to this looser band (spatial hysteresis, must be ≥ enter dist). A held ball jitters ~200mm ahead on real vision — don't set this too tight.",
+    },
+    prox_acquire_rel_speed: {
+      min: 100, max: 2000, step: 50, unit: "mm/s",
+      help: "Gaining possession requires the ball to move WITH the robot: relative speed below this. Acquisition-only — never releases the owner (velocity estimates lag during accelerations).",
+    },
+    prox_kick_rel_speed: {
+      min: 500, max: 4000, step: 100, unit: "mm/s",
+      help: "Kick signature: the owner is dropped in one frame (bypassing the release debounce) when the ball leaves the retain band faster than this relative to it.",
+    },
+    breakbeam_gate_dist: {
+      min: 50, max: 500, step: 10, unit: "mm",
+      help: "Breakbeam triggers are ignored unless the ball is (or was last seen) within this of the robot — rejects spurious beam trips with the ball nowhere near.",
+    },
+    acquire_frames: {
+      min: 1, max: 30, step: 1, unit: "frames",
+      help: "Frames a proximity-only gain must persist before committing. Breakbeam gains commit in one frame regardless.",
+    },
+    release_frames: {
+      min: 1, max: 60, step: 1, unit: "frames",
+      help: "Frames a proximity owner must stay outside the retain band before the loss commits (only ball-detected frames count). Deliberately slower than acquiring — a genuine holder's ball constantly jitters out of band.",
+    },
+    ambiguity_margin: {
+      min: 0, max: 200, step: 5, unit: "mm",
+      help: "If the second-closest candidate is within this of the closest, possession reads Contested instead of Owned.",
+    },
+    hold_secs: {
+      min: 0, max: 2, step: 0.05, unit: "s",
+      help: "How long a non-Owned belief coasts through a ball-detection dropout before decaying to Loose.",
+    },
+    owned_coast_secs: {
+      min: 0, max: 30, step: 0.5, unit: "s",
+      help: "How long an Owned belief coasts through a dropout. Much longer than hold_secs: a held ball is occluded by its holder ~55% of the time (bursts up to ~10s), so vision losing the ball is weak evidence against a hold.",
+    },
+    release_suppress_secs: {
+      min: 0, max: 1, step: 0.05, unit: "s",
+      help: "After a commanded kick (efference copy), suppress the kicker's proximity re-acquisition for this long. Breakbeam re-acquisition is never suppressed.",
+    },
+    contest_dist: {
+      min: 100, max: 400, step: 10, unit: "mm",
+      help: "An opposing robot within this of the ball counts as pressing it (contest signal only — looser than the ownership bands).",
+    },
+    contest_speed_max: {
+      min: 0, max: 1000, step: 25, unit: "mm/s",
+      help: "A contest only registers on a ball slower than this (absolute) — a genuine pin is ~stationary.",
+    },
+    contest_enter_frames: {
+      min: 1, max: 30, step: 1, unit: "frames",
+      help: "Frames a contest must persist before it commits (react fast — it's urgent).",
+    },
+    contest_exit_frames: {
+      min: 1, max: 60, step: 1, unit: "frames",
+      help: "Frames an absent contest must persist before it clears (release slow — don't drop on one jittery frame).",
+    },
+    tof_backup_conf_th: {
+      help: "ToF-backup breakbeam substitute: raw detection needs confidence above this (sensor units). PLACEHOLDER — not yet tuned.",
+    },
+    tof_backup_x_th: {
+      help: "ToF-backup: raw detection needs |x| below this (sensor units). PLACEHOLDER — not yet tuned.",
+    },
+    tof_backup_y_th: {
+      help: "ToF-backup: raw detection needs y below this (sensor units). PLACEHOLDER — not yet tuned.",
+    },
+    tof_backup_enter_frames: {
+      min: 1, max: 30, step: 1, unit: "frames",
+      help: "ToF-backup latch: frames the raw condition must hold before it turns ON.",
+    },
+    tof_backup_exit_frames: {
+      min: 1, max: 60, step: 1, unit: "frames",
+      help: "ToF-backup latch: frames the raw condition must fail before it turns OFF.",
+    },
+  },
 };
 
 function SettingsEditor<K extends keyof ExecutorSettings>({

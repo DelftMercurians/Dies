@@ -32,6 +32,7 @@ const DEFAULTS: AvoidanceConfig = {
   replan_target_tol: 150.0,
   planner_enabled: true,
   orca_enabled: true,
+  orca_hold_ground: true,
 };
 
 interface NumberFieldProps {

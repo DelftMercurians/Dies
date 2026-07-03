@@ -560,8 +560,11 @@ impl Strategy for ConcertoStrategy {
                             .sqrt();
                     }
                 }
-                // Shadows (the wall, anchor included) hold their line: they must
-                // not be shoved aside by an attacker driving at the wall.
+                // Shadows (the wall, anchor included) run with ORCA off: wall
+                // members are commanded closer together than a robot width
+                // (SHADOW_SPACING 170 < ~180mm), so avoidance between them would
+                // jitter/push the wall apart — and an attacker driving at the
+                // wall must not deflect it either.
                 p.go_to(target)
                     .facing(cmd.face)
                     .avoid_robots(cmd.role != "shadow");

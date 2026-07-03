@@ -67,37 +67,65 @@ pub struct Possession {
 #[serde(default)]
 #[typeshare]
 pub struct PossessionConfig {
-    /// Ball-to-robot distance at which a robot *gains* possession (near band).
-    pub acquire_dist: f64,
+    // --- Proximity-based hold detection for UNCONTROLLED robots (opponents) ---
+    // The raw condition is "ball at the dribbler mouth, moving with the robot":
+    // distance is measured to the *dribbler point* (robot centre + `dribbler_offset`
+    // along yaw), speed is the ball's velocity *relative* to the robot. Latched
+    // through a two-band spatial + asymmetric time hysteresis. The defaults are
+    // empirically tuned on real-hardware logs (2026-07-03 breakbeam-labeled
+    // prototype, `.analysis/possession_proto.py`) — do NOT re-tune them in sim:
+    // the sim dribble model holds the ball perfectly and validates any thresholds.
+    /// Where the held ball sits ahead of the robot centre, along its yaw
+    /// (robot radius + ball radius).
+    pub dribbler_offset: f64,
+    /// Ball-to-dribbler-point distance at which a robot *gains* possession.
+    pub prox_enter_dist: f64,
     /// Looser distance at which the current owner *retains* possession. Must be
-    /// `>= acquire_dist`; the gap is the hysteresis that prevents oscillation.
-    pub release_dist: f64,
+    /// `>= prox_enter_dist`; the gap is the spatial hysteresis.
+    pub prox_stay_dist: f64,
+    /// Gaining possession also requires the ball's speed *relative to the robot*
+    /// below this (a held ball moves with its holder; velocity-estimate lag makes
+    /// this gate acquisition-only — it never releases the current owner).
+    pub prox_acquire_rel_speed: f64,
+    /// Kick signature: the current owner is dropped *immediately* (bypassing
+    /// `release_frames`) when the ball is outside `prox_stay_dist` moving faster
+    /// than this relative to it. Opponents have no efference copy, so this is the
+    /// only fast path for noticing an opponent's kick.
+    pub prox_kick_rel_speed: f64,
     /// Breakbeam is ignored unless the ball is within this distance of the robot
     /// (rejects spurious sensor triggers with the ball nowhere near).
     pub breakbeam_gate_dist: f64,
     /// Frames a proximity-only possession change must persist before it commits.
     /// Breakbeam-confirmed gains bypass this and commit in one frame.
     pub acquire_frames: u32,
+    /// Frames a proximity owner must stay outside the retain band before the loss
+    /// commits. Asymmetric vs `acquire_frames`: a genuine holder's ball jitters
+    /// out of band constantly (ball pushed ahead, vision noise), so releasing is
+    /// deliberately slower than acquiring. Only frames with the ball detected
+    /// count (occlusion freezes the debounce).
+    pub release_frames: u32,
     /// If the second-closest candidate is within this margin of the closest, the
     /// state is `Contested` instead of `Owned`.
     pub ambiguity_margin: f64,
-    /// A ball faster than this can't be claimed by proximity (breakbeam still can,
-    /// for a robot genuinely carrying it).
-    pub max_ball_speed: f64,
-    /// How long to hold the last stable possession while the ball is undetected
-    /// before decaying to `Loose`. The belief is marked `stale` while holding.
+    /// How long to hold a non-`Owned` belief while the ball is undetected before
+    /// decaying to `Loose`. The belief is marked `stale` while holding.
     pub hold_secs: f64,
+    /// How long to hold an `Owned` belief while the ball is undetected. Much
+    /// longer than `hold_secs`: on real vision the ball is undetected ~55% of the
+    /// time *while held* (the holder occludes it; bursts up to ~10s), so losing
+    /// the ball to vision is weak evidence *for* a hold, not against it.
+    pub owned_coast_secs: f64,
     /// After a commanded kick, suppress the kicker's *proximity* re-acquisition for
     /// this long (breakbeam re-acquisition is never suppressed).
     pub release_suppress_secs: f64,
     /// An *opposing* robot within this distance of the ball counts as pressing it.
-    /// Deliberately looser than `acquire_dist` (a presser sits ~one robot-radius
-    /// out, so it never registers as a proximity owner — which is why contests
-    /// were invisible). Used only by the contest signal, not ownership.
+    /// Deliberately looser than the ownership bands (a presser sits ~one
+    /// robot-radius out, so it never registers as a proximity owner — which is why
+    /// contests were invisible). Used only by the contest signal, not ownership.
     pub contest_dist: f64,
-    /// The ball must be slower than this for a contest to register — a genuine pin
-    /// is ~stationary. Far tighter than `max_ball_speed`; a moving ball means
-    /// someone is already winning, so there's nothing to resolve.
+    /// The ball must be slower than this (absolute) for a contest to register — a
+    /// genuine pin is ~stationary; a moving ball means someone is already winning,
+    /// so there's nothing to resolve.
     pub contest_speed_max: f64,
     /// Frames a contest must persist before it commits (react fast — urgent).
     pub contest_enter_frames: u32,
@@ -127,13 +155,17 @@ pub struct PossessionConfig {
 impl Default for PossessionConfig {
     fn default() -> Self {
         Self {
-            acquire_dist: 120.0,
-            release_dist: 180.0,
+            dribbler_offset: 111.0,
+            prox_enter_dist: 120.0,
+            prox_stay_dist: 150.0,
+            prox_acquire_rel_speed: 600.0,
+            prox_kick_rel_speed: 1500.0,
             breakbeam_gate_dist: 200.0,
             acquire_frames: 4,
+            release_frames: 8,
             ambiguity_margin: 60.0,
-            max_ball_speed: 1000.0,
             hold_secs: 0.25,
+            owned_coast_secs: 15.0,
             release_suppress_secs: 0.2,
             contest_dist: 220.0,
             contest_speed_max: 200.0,

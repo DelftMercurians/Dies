@@ -701,13 +701,31 @@ export interface TeamSpecificSettings {
  * coordinator. Distances in mm, times in seconds, speeds in mm/s.
  */
 export interface PossessionConfig {
-	/** Ball-to-robot distance at which a robot *gains* possession (near band). */
-	acquire_dist: number;
+	/**
+	 * Where the held ball sits ahead of the robot centre, along its yaw
+	 * (robot radius + ball radius).
+	 */
+	dribbler_offset: number;
+	/** Ball-to-dribbler-point distance at which a robot *gains* possession. */
+	prox_enter_dist: number;
 	/**
 	 * Looser distance at which the current owner *retains* possession. Must be
-	 * `>= acquire_dist`; the gap is the hysteresis that prevents oscillation.
+	 * `>= prox_enter_dist`; the gap is the spatial hysteresis.
 	 */
-	release_dist: number;
+	prox_stay_dist: number;
+	/**
+	 * Gaining possession also requires the ball's speed *relative to the robot*
+	 * below this (a held ball moves with its holder; velocity-estimate lag makes
+	 * this gate acquisition-only — it never releases the current owner).
+	 */
+	prox_acquire_rel_speed: number;
+	/**
+	 * Kick signature: the current owner is dropped *immediately* (bypassing
+	 * `release_frames`) when the ball is outside `prox_stay_dist` moving faster
+	 * than this relative to it. Opponents have no efference copy, so this is the
+	 * only fast path for noticing an opponent's kick.
+	 */
+	prox_kick_rel_speed: number;
 	/**
 	 * Breakbeam is ignored unless the ball is within this distance of the robot
 	 * (rejects spurious sensor triggers with the ball nowhere near).
@@ -719,20 +737,30 @@ export interface PossessionConfig {
 	 */
 	acquire_frames: number;
 	/**
+	 * Frames a proximity owner must stay outside the retain band before the loss
+	 * commits. Asymmetric vs `acquire_frames`: a genuine holder's ball jitters
+	 * out of band constantly (ball pushed ahead, vision noise), so releasing is
+	 * deliberately slower than acquiring. Only frames with the ball detected
+	 * count (occlusion freezes the debounce).
+	 */
+	release_frames: number;
+	/**
 	 * If the second-closest candidate is within this margin of the closest, the
 	 * state is `Contested` instead of `Owned`.
 	 */
 	ambiguity_margin: number;
 	/**
-	 * A ball faster than this can't be claimed by proximity (breakbeam still can,
-	 * for a robot genuinely carrying it).
-	 */
-	max_ball_speed: number;
-	/**
-	 * How long to hold the last stable possession while the ball is undetected
-	 * before decaying to `Loose`. The belief is marked `stale` while holding.
+	 * How long to hold a non-`Owned` belief while the ball is undetected before
+	 * decaying to `Loose`. The belief is marked `stale` while holding.
 	 */
 	hold_secs: number;
+	/**
+	 * How long to hold an `Owned` belief while the ball is undetected. Much
+	 * longer than `hold_secs`: on real vision the ball is undetected ~55% of the
+	 * time *while held* (the holder occludes it; bursts up to ~10s), so losing
+	 * the ball to vision is weak evidence *for* a hold, not against it.
+	 */
+	owned_coast_secs: number;
 	/**
 	 * After a commanded kick, suppress the kicker's *proximity* re-acquisition for
 	 * this long (breakbeam re-acquisition is never suppressed).
@@ -740,15 +768,15 @@ export interface PossessionConfig {
 	release_suppress_secs: number;
 	/**
 	 * An *opposing* robot within this distance of the ball counts as pressing it.
-	 * Deliberately looser than `acquire_dist` (a presser sits ~one robot-radius
-	 * out, so it never registers as a proximity owner — which is why contests
-	 * were invisible). Used only by the contest signal, not ownership.
+	 * Deliberately looser than the ownership bands (a presser sits ~one
+	 * robot-radius out, so it never registers as a proximity owner — which is why
+	 * contests were invisible). Used only by the contest signal, not ownership.
 	 */
 	contest_dist: number;
 	/**
-	 * The ball must be slower than this for a contest to register — a genuine pin
-	 * is ~stationary. Far tighter than `max_ball_speed`; a moving ball means
-	 * someone is already winning, so there's nothing to resolve.
+	 * The ball must be slower than this (absolute) for a contest to register — a
+	 * genuine pin is ~stationary; a moving ball means someone is already winning,
+	 * so there's nothing to resolve.
 	 */
 	contest_speed_max: number;
 	/** Frames a contest must persist before it commits (react fast — urgent). */

@@ -48,6 +48,7 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
           <TabsTrigger value="player">Player</TabsTrigger>
           <TabsTrigger value="ball">Ball</TabsTrigger>
           <TabsTrigger value="field_mask">Field Mask</TabsTrigger>
+          <TabsTrigger value="possession">Possession</TabsTrigger>
           <TabsTrigger value="skill">Skill</TabsTrigger>
         </TabsList>
 
@@ -91,6 +92,9 @@ const SettingsPanel: React.FC<IDockviewPanelProps> = () => {
         </TabsContent>
         <TabsContent value="field_mask" className="flex-1 overflow-hidden">
           <SettingsEditor settingsKey="tracker_settings" include={["field_mask"]} />
+        </TabsContent>
+        <TabsContent value="possession" className="flex-1 overflow-hidden">
+          <SettingsEditor settingsKey="possession_config" />
         </TabsContent>
         <TabsContent value="skill" className="flex-1 overflow-hidden">
           <SkillTunablesEditor />
