@@ -756,12 +756,13 @@ impl Formation {
                     // opp_threat·openness, so a far opponent's mark simply loses the
                     // match (staffed only if a robot has nothing better) instead of
                     // blinking in/out at a threshold — one fewer role-set discontinuity.
-                    // Stand off the opponent toward our own goal (goal-side marking),
+                    // Stand off the opponent toward the ball (pass-lane marking): sit
+                    // between the ball and the opponent to deny the pass into them,
                     // and never cross midfield chasing them onto the opponent half.
-                    let to_goal = own_goal - opp.position;
-                    let n_tg = to_goal.norm();
-                    let mut pos = if n_tg > 1e-6 {
-                        opp.position + to_goal / n_tg * config::MARK_STANDOFF
+                    let to_ball = ball - opp.position;
+                    let n_tb = to_ball.norm();
+                    let mut pos = if n_tb > 1e-6 {
+                        opp.position + to_ball / n_tb * config::MARK_STANDOFF
                     } else {
                         opp.position
                     };
@@ -833,7 +834,7 @@ impl Formation {
         // Placed greedily; each supporter excludes spots already claimed by an
         // earlier one (see `taken` below) so two never converge on the same outlet.
         if self.toggles.support {
-            let mut taken: Vec<Vector2> = Vec::with_capacity(support_count);
+            let mut taken: Vec<Vector2> = Vec::with_capacity(support_count + 1);
             for slot in 0..support_count {
                 // 0 → right-flank bias, 1 → left-flank bias, 2 → centre. The sign is only
                 // a soft tie-break now; the `taken` exclusion is what structurally keeps
@@ -868,6 +869,40 @@ impl Formation {
                     id: RoleId {
                         kind: RoleKind::Support,
                         slot: slot as u16,
+                    },
+                    position: pos,
+                    importance: support_imp,
+                    face: world.opp_goal_center(),
+                    bounds: None,
+                });
+            }
+            // Rest defender disabled: push the freed body into offense support
+            // (an extra wide supporter) instead of letting it idle on Spread.
+            if !self.toggles.balance {
+                let slot_key = (config::SUPPORT_COUNT + 2) as u16;
+                let pos = geometry::best_support_pos(
+                    ball,
+                    world.opp_players(),
+                    0.0,
+                    half_len,
+                    half_wid,
+                    config::SUPPORT_LANE_CORRIDOR,
+                    opp_pen_depth,
+                    opp_pen_half_width,
+                    attacking,
+                    config::SUPPORT_FLANK_Y_FRACS,
+                    config::SUPPORT_GOAL_LINE_SETBACK,
+                    &taken,
+                    config::SUPPORT_MIN_SEPARATION,
+                    self.support_prev.get(&slot_key).copied(),
+                    config::SUPPORT_STICKINESS,
+                    config::SUPPORT_STICKY_RADIUS,
+                );
+                self.support_prev.insert(slot_key, pos);
+                roles.push(Role {
+                    id: RoleId {
+                        kind: RoleKind::Support,
+                        slot: slot_key,
                     },
                     position: pos,
                     importance: support_imp,

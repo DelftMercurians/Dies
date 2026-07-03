@@ -562,13 +562,13 @@ impl Strategy for ConcertoStrategy {
         // ── Formation: one cost-aware matching over all field robots (the capturer
         //    is one of the roles in pursuit). ─────────────────────────────────────
         self.formation.set_toggles(formation::RoleToggles {
-            wall: ctx.param_bool("role_wall"),
-            mark: ctx.param_bool("role_mark"),
-            support: ctx.param_bool("role_support"),
-            striker: ctx.param_bool("role_striker"),
-            pivot: ctx.param_bool("role_pivot"),
-            balance: ctx.param_bool("role_balance"),
-            outlet: ctx.param_bool("role_outlet"),
+            wall: config::ROLE_WALL_ENABLED && ctx.param_bool("role_wall"),
+            mark: config::ROLE_MARK_ENABLED && ctx.param_bool("role_mark"),
+            support: config::ROLE_SUPPORT_ENABLED && ctx.param_bool("role_support"),
+            striker: config::ROLE_STRIKER_ENABLED && ctx.param_bool("role_striker"),
+            pivot: config::ROLE_PIVOT_ENABLED && ctx.param_bool("role_pivot"),
+            balance: config::ROLE_BALANCE_ENABLED && ctx.param_bool("role_balance"),
+            outlet: config::ROLE_OUTLET_ENABLED && ctx.param_bool("role_outlet"),
         });
         // One frame stale (keeper::update runs after the formation below) —
         // harmless: the wall takes several frames to part anyway.

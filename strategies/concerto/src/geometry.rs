@@ -968,6 +968,29 @@ pub fn fires_into_close_opponent(
     })
 }
 
+/// Distance from `from` (assumed inside the field rectangle `[-half_len,half_len]
+/// × [-half_wid,half_wid]`) to where the unit ray `dir` crosses the boundary.
+/// `INFINITY` for a degenerate (zero) direction. Used to reject advance headings
+/// that would put the ball out of play almost immediately.
+pub fn ray_exit_distance(from: Vector2, dir: Vector2, half_len: f64, half_wid: f64) -> f64 {
+    let mut t = f64::INFINITY;
+    if dir.x.abs() > 1e-9 {
+        let wall = if dir.x > 0.0 { half_len } else { -half_len };
+        let tx = (wall - from.x) / dir.x;
+        if tx > 0.0 {
+            t = t.min(tx);
+        }
+    }
+    if dir.y.abs() > 1e-9 {
+        let wall = if dir.y > 0.0 { half_wid } else { -half_wid };
+        let ty = (wall - from.y) / dir.y;
+        if ty > 0.0 {
+            t = t.min(ty);
+        }
+    }
+    t
+}
+
 /// Push `p` laterally out of the stadium of half-width `half_width` around the
 /// segment `a→b` (to the side of the axis it is already on; on-axis breaks
 /// toward +normal deterministically). Points already outside are returned

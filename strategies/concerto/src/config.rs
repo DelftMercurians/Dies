@@ -3,6 +3,17 @@
 //! All physical constants live here so behaviour can be tuned in one place.
 //! Distances are in mm, times in seconds, speeds in mm/s, accelerations in mm/s².
 
+// ── Role master switches ─────────────────────────────────────────────────────
+// AND'd with the UI's live per-role toggles (`role_*` params): a role runs only
+// if both this and the UI switch are on.
+pub const ROLE_WALL_ENABLED: bool = true;
+pub const ROLE_MARK_ENABLED: bool = false; // TODO: only for ITA
+pub const ROLE_SUPPORT_ENABLED: bool = true;
+pub const ROLE_STRIKER_ENABLED: bool = true;
+pub const ROLE_PIVOT_ENABLED: bool = true;
+pub const ROLE_BALANCE_ENABLED: bool = false;
+pub const ROLE_OUTLET_ENABLED: bool = true;
+
 // ── Attacking-half recycle pivot ─────────────────────────────────────────────
 // When the carrier has no good *forward* option in the opponent half, it lays the
 // ball back to a deep recycle pivot to keep possession, rather than forcing a
@@ -192,17 +203,51 @@ pub const SHOT_MIN_ANGLE: f64 = 0.10;
 /// Covers the kickoff spot (4500mm) with margin.
 pub const KICKER_SHOT_RANGE: f64 = 5600.0;
 
-// ── Never fire a restart into a close opponent ───────────────────────────────
-// A universal veto on any restart aim (direct shot / kickoff deflection / forward
-// advance) whose ray drives the ball almost immediately into a nearby opponent —
-// worst of all in our own half, where a blocked restart hands them a shot on our
-// goal. Reach and corridor are widened when the ball is in our half.
+// ── Never fire into a close opponent ─────────────────────────────────────────
+// A universal veto on any ball release (restart shot / deflection / advance,
+// open-play hoof, defensive clear) whose ray drives the ball almost immediately
+// INTO a nearby opponent — worst of all in our own half, where a blocked ball
+// hands them a shot on our goal. Reach and corridor widen in our own half.
+//
+// The corridor is COLLISION-sized, not a danger bubble: ~ball radius + robot
+// radius + aim margin. A wider bubble would seal every forward lane whenever a
+// marker sits closer than the bubble (the t=1125 free-kick failure), forcing the
+// very hoof-into-the-marker it was meant to prevent. Clearing an opponent by a
+// comfortable margin is fine; the *openness* scoring in `clean_advance` is what
+// prefers the roomiest lane. This veto only forbids actually hitting a robot.
 /// An opponent within this range of the ball, ahead on the aim ray, vetoes the aim.
 pub const CLOSE_OPP_VETO_DIST: f64 = 1200.0;
-/// Perpendicular half-width (mm) of the veto corridor around the aim ray.
-pub const CLOSE_OPP_VETO_CORRIDOR: f64 = 400.0;
+/// Perpendicular half-width (mm) of the veto corridor — collision-sized
+/// (ball 21 + robot 90 + ~190 aim/tracking margin), NOT a danger bubble.
+pub const CLOSE_OPP_VETO_CORRIDOR: f64 = 300.0;
 /// Multiplier on the veto reach and corridor when the ball is in our own half.
-pub const CLOSE_OPP_VETO_OWN_HALF_MUL: f64 = 1.5;
+pub const CLOSE_OPP_VETO_OWN_HALF_MUL: f64 = 1.3;
+
+// ── Clean advance (restart / hoof fallback) ──────────────────────────────────
+// The universal fallback when there is no clear shot and no clean forward pass:
+// sweep a fan of forward-to-lateral headings (never backward toward our own
+// goal), reject any that fire into a close opponent or leave the field too soon,
+// and take the one down the cleanest lane. Replaces blindly hoofing at the goal
+// mouth — a marker standing in front sits squarely in that narrow cone, so the
+// mouth hoof cannot avoid it; a wide clean-lane sweep steers around it.
+/// Half-angle (rad) of the heading fan, measured off straight up-field (+x).
+/// `FRAC_PI_2` = ±90°, so the extremes are pure-lateral (toward a touchline, at
+/// worst a throw-in) and never point back toward our own goal.
+pub const ADVANCE_FAN_HALF: f64 = std::f64::consts::FRAC_PI_2;
+/// Number of headings swept across the fan.
+pub const ADVANCE_FAN_STEPS: usize = 24;
+/// Aim-point distance (mm) down the chosen heading (heading is what the strike
+/// uses; the exact landing point is not modelled).
+pub const ADVANCE_REACH: f64 = 2500.0;
+/// A heading whose ray leaves the field sooner than this (mm) is rejected — it
+/// would put the ball out almost immediately (e.g. straight at a near touchline).
+pub const ADVANCE_MIN_TRAVEL: f64 = 1200.0;
+/// Corridor (mm) for the lane-openness score of each candidate heading.
+pub const ADVANCE_CORRIDOR: f64 = 500.0;
+/// Forward-progress tiebreak weight: added as `w · dir.x` (dir.x ∈ [0,1]) to the
+/// openness ∈ [0,1]. Kept well below 1 so a genuinely cleaner lane always wins —
+/// "prioritise clean lanes heavily", forward only breaks near-ties.
+pub const ADVANCE_FWD_W: f64 = 0.35;
 
 // ── Kickoff deflection ───────────────────────────────────────────────────────
 // With no clear shot from the kickoff spot (the mouth is never clear from centre),
@@ -319,6 +364,13 @@ pub const BOUNDARY_RESCUE_MARGIN: f64 = 300.0;
 /// into the inward push (0 = straight inward, larger = more goalward). Keeps a
 /// forward component while guaranteeing the dominant pull is away from the line.
 pub const RESCUE_GOAL_BIAS: f64 = 0.6;
+/// When `false`, concerto never emits the dedicated `Steal`/snatch skill against
+/// an opponent holder — it captures the ball with the regular `Handle`/`Hold`
+/// skill instead (drive in and contest at the ball, no peel). Disabled for now
+/// because the snatch peel relies on a rotating heading setpoint that the real
+/// robots don't act on (`w` isn't transmitted), so on hardware it already
+/// degrades to a plain approach. Flip back to `true` to restore snatching.
+pub const SNATCH_ENABLED: bool = false;
 
 // ── Kick-ahead (hoof toward a supporter) ─────────────────────────────────────
 // When an open-play hoof is aimed near a forward teammate, we don't fire-and-

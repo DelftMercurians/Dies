@@ -236,9 +236,16 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
                             .facing(ball);
                     }
                 }
-                // Degenerate geometry (no candidates) — old behavior: goalward.
+                // Degenerate geometry (no clear candidates): clear OFF TO THE SIDE,
+                // never straight up the middle — a blocked central blast from our own
+                // box rebounds toward our goal, while a strongly sideways ray on the
+                // ball's flank exits over the touchline (a throw-in at worst). Fired
+                // forward-and-out (~70° off up-field) toward the nearer touchline.
                 None => {
-                    let _ = keeper.strike_through(world.opp_goal_center());
+                    let sign = if ball.y >= 0.0 { 1.0 } else { -1.0 };
+                    let ang = 70f64.to_radians();
+                    let dir = Vector2::new(ang.cos(), sign * ang.sin());
+                    let _ = keeper.strike_through(ball + dir * 3000.0);
                 }
             }
         }
