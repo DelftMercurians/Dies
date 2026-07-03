@@ -173,6 +173,7 @@ mod tests {
                 position: crate::Vector2::new(100.0, 200.0),
                 heading: None,
                 hold_ground: false,
+                avoid_robots: true,
             }),
         );
         skill_commands.insert(PlayerId::new(2), None);

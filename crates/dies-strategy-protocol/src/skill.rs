@@ -175,11 +175,14 @@ pub enum SkillCommand {
     ///   it only emits the angle as a debug value.
     ///
     /// **Completion** (joint - both robots report the same status):
-    /// - `Succeeded` when the receiver's breakbeam (or vision fallback) confirms
-    ///   possession (`forwarded: false`), or — in one-timer mode — when the
-    ///   deflection is verified (ball arrived at the mouth then departed fast;
-    ///   `forwarded: true`). A one-timer whose reflex duds but where the ball
-    ///   ends up seated on the receiver still succeeds as a catch.
+    /// - `Succeeded` when the receiver holds SECURE possession (sustained fused
+    ///   `has_ball`, not one breakbeam frame; `forwarded: false`), or — in
+    ///   one-timer mode — when the deflection is verified (ball arrived at the
+    ///   mouth then departed fast; `forwarded: true`). A one-timer whose reflex
+    ///   duds but where the ball ends up seated on the receiver still succeeds
+    ///   as a catch. After success the coordinator keeps actively holding the
+    ///   receiver (dribbler on) until this slot's command changes — issue the
+    ///   follow-up command promptly.
     /// - `Failed` with a typed [`PassResult`] reason otherwise (the coordinator
     ///   never leaves a robot stuck; both are released on any terminal outcome)
     Pass {
@@ -187,6 +190,13 @@ pub enum SkillCommand {
         role: PassRole,
         target_hint: Option<Vector2>,
         forward_to: Option<Vector2>,
+        /// Per-pass sequence number: stable across the frames of one pass,
+        /// fresh for every new pass the strategy decides — lets the executor
+        /// tell "still the same pass" from "a new pass between the same pair",
+        /// so commands re-sent after a pass finished (strategy latency) cannot
+        /// resurrect it and wipe its un-consumed result. `0` = no nonce
+        /// (legacy matching, no stale-command suppression).
+        seq: u64,
     },
 
     /// Strip the ball off an opponent that is holding it on its dribbler.

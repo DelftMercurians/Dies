@@ -32,8 +32,24 @@
 //! the ball is an upstream contract violation (ball handling lives entirely in
 //! one `HandleBall` episode) and fails fast, as does a ball that isn't near the
 //! passer to begin with — the pass never chases a loose ball.
+//!
+//! ## Settle: secure the catch, then hand over on command
+//!
+//! A catch is not a Success on the first breakbeam frame. Once the ball reaches
+//! the receiver, the pass enters [`PassPhase::Settle`]: the receiver runs an
+//! embedded `HandleBall{Hold}` (continuous dribbler, capture-settle glide, and
+//! its silent re-acquire doubles as a *radius-bounded* local repossession for a
+//! ball that bounced off the receiver — no strategy round-trip). Success is
+//! published only on **secure** possession (sustained fused `has_ball` for
+//! [`PASS_SECURE_TIME`]), and publishing does NOT retire the coordinator: it
+//! keeps holding the receiver until the strategy's next command for it actually
+//! arrives (handover-on-command), so there is no uncontrolled dribbler-off gap
+//! between the pass and the follow-up `HandleBall`. The one exception to
+//! "never recovery" is thus deliberately scoped: repossession only within
+//! [`SETTLE_CHASE_RADIUS`] of the receiver, only after ball contact, never
+//! against an opponent in possession.
 
-use dies_core::{PlayerData, PlayerId, TeamData, Vector2, BALL_RADIUS, PLAYER_RADIUS};
+use dies_core::{Angle, PlayerData, PlayerId, TeamData, Vector2, BALL_RADIUS, PLAYER_RADIUS};
 use dies_strategy_protocol::{
     AcquirePosition, BallAction, PassBallState, PassFailure, PassResult, SkillStatus,
 };
@@ -95,6 +111,24 @@ tunables! {
     /// Additive base on the flight timeout.
     #[tunable(unit = "s", min = 0.0, max = 2.0, step = 0.1)]
     FLIGHT_TIMEOUT_BASE: f64 = 0.6;
+    /// Sustained fused possession (`has_ball`) required in `Settle` before the
+    /// pass publishes Success — secure possession, not one breakbeam frame.
+    #[tunable(unit = "s", min = 0.0, max = 2.0, step = 0.05)]
+    PASS_SECURE_TIME: f64 = 0.4;
+    /// Local repossession bound in `Settle`: a ball that bounced off the receiver
+    /// is re-engaged only within this radius of it; beyond it the pass fails
+    /// (`ReceiverMissed`) and the strategy re-decides.
+    #[tunable(unit = "mm", min = 300.0, max = 3000.0, step = 50.0)]
+    SETTLE_CHASE_RADIUS: f64 = 1000.0;
+    /// Give-up backstop for the whole `Settle` phase (sized to cover a couple of
+    /// re-acquire attempts by the embedded hold).
+    #[tunable(unit = "s", min = 1.0, max = 8.0, step = 0.5)]
+    SETTLE_TIMEOUT: f64 = 3.0;
+    /// After Success is published the coordinator keeps holding the receiver
+    /// until its command changes (handover-on-command); this backstop releases
+    /// it if the strategy never re-tasks the robot.
+    #[tunable(unit = "s", min = 0.5, max = 5.0, step = 0.5)]
+    HANDOVER_TIMEOUT: f64 = 2.0;
 }
 
 /// Distance (mm) at which an opponent is considered to control the ball.
@@ -113,6 +147,10 @@ pub enum PassPhase {
     Release,
     /// Ball in flight (verified departure); receiver tracks and intercepts.
     Flight,
+    /// Ball at the receiver: seat it (or locally repossess a bounce), publish
+    /// Success on secure possession, then keep holding until the strategy's
+    /// next command releases the receiver (handover-on-command).
+    Settle,
     /// Terminal — see `result`.
     Done,
 }
@@ -123,6 +161,7 @@ impl PassPhase {
             PassPhase::Stage => "Stage",
             PassPhase::Release => "Release",
             PassPhase::Flight => "Flight",
+            PassPhase::Settle => "Settle",
             PassPhase::Done => "Done",
         }
     }
@@ -132,7 +171,8 @@ impl PassPhase {
             PassPhase::Stage => 0.0,
             PassPhase::Release => 1.0,
             PassPhase::Flight => 2.0,
-            PassPhase::Done => 3.0,
+            PassPhase::Settle => 3.0,
+            PassPhase::Done => 4.0,
         }
     }
 }
@@ -196,8 +236,28 @@ pub struct PassCoordinator {
     /// Its standalone no-arrival timeout is suppressed — the coordinator owns
     /// every pass-level clock.
     reflex_receive: ReflexReceiveSkill,
+    /// Receiver sub-skill for `Settle`: an embedded `HandleBall{Hold}` that
+    /// seats a caught ball (continuous dribbler + capture-settle glide) and
+    /// silently re-acquires one that bounced off — the radius-bounded local
+    /// repossession reflex.
+    settle: HandleBallSkill,
 
-    /// Terminal result, set once when `phase == Done`.
+    /// Receiver yaw captured at `Settle` entry — the hold heading (minimal
+    /// rotation while the ball seats).
+    hold_heading: Angle,
+    /// World time (`t_received`, s) `has_ball` turned continuously true during
+    /// `Settle`; drives the secure-possession gate.
+    secure_since: Option<f64>,
+    /// World time Success was published (result set while still holding the
+    /// receiver); drives the handover backstop.
+    published_at: Option<f64>,
+    /// The passer was re-tasked during `Settle` and released back to the
+    /// per-player executor — the receiver handover continues alone.
+    passer_released: bool,
+
+    /// Terminal result. Set once — either on the terminal frame (`phase ==
+    /// Done`) or, for a secure catch, *published* while still in `Settle` (the
+    /// handover); it is final either way.
     result: Option<PassResult>,
 }
 
@@ -236,6 +296,17 @@ impl PassCoordinator {
             ),
             receive: ReceiveSkill::new(Vector2::zeros(), Vector2::zeros(), CAPTURE_LIMIT(), false),
             reflex_receive,
+            settle: HandleBallSkill::new(
+                BallAction::Hold {
+                    heading: Angle::from_radians(0.0),
+                },
+                AcquirePosition::Fastest,
+                true,
+            ),
+            hold_heading: Angle::from_radians(0.0),
+            secure_since: None,
+            published_at: None,
+            passer_released: false,
             result: None,
         }
     }
@@ -256,7 +327,29 @@ impl PassCoordinator {
         self.phase == PassPhase::Done
     }
 
-    /// The terminal result, if the pass has ended.
+    /// Whether the pass is in `Settle` (ball at the receiver, being secured or
+    /// held for handover). The passer's job is over in this phase.
+    pub fn in_settle(&self) -> bool {
+        self.phase == PassPhase::Settle
+    }
+
+    /// Whether the passer has been released back to the per-player executor
+    /// (its command changed during `Settle`); its slot no longer belongs to
+    /// this pass.
+    pub fn passer_released(&self) -> bool {
+        self.passer_released
+    }
+
+    /// Release the passer only — the receiver handover continues alone.
+    /// `Settle`-time robustness path; the joint executor calls this instead of
+    /// cancelling the whole pass when the passer is re-tasked post-flight.
+    pub fn release_passer(&mut self) {
+        self.passer_released = true;
+    }
+
+    /// The terminal (or published) result, if any. Note this can be `Some`
+    /// while `is_done()` is still false: a secure catch publishes Success
+    /// during the `Settle` handover, before the coordinator retires.
     pub fn result(&self) -> Option<PassResult> {
         self.result
     }
@@ -278,11 +371,17 @@ impl PassCoordinator {
         }
     }
 
-    /// Force a clean terminal failure (used by the joint executor for
-    /// `PartnerLeft` / `Cancelled`). Idempotent.
+    /// Force a clean terminal (used by the joint executor for `PartnerLeft` /
+    /// `Cancelled`). Idempotent. A result that was already published (the
+    /// `Settle` handover Success) is final: the coordinator retires but the
+    /// result is NOT overwritten — a command change after a secure catch is the
+    /// normal handover release, not a failure.
     pub fn force_terminate(&mut self, reason: PassFailure, ball_state: PassBallState) {
-        if self.phase != PassPhase::Done {
-            self.phase = PassPhase::Done;
+        if self.phase == PassPhase::Done {
+            return;
+        }
+        self.phase = PassPhase::Done;
+        if self.result.is_none() {
             self.result = Some(PassResult::Failure { reason, ball_state });
         }
     }
@@ -409,7 +508,7 @@ impl PassCoordinator {
                 }
             }
 
-            PassPhase::Flight => {}
+            PassPhase::Flight | PassPhase::Settle => {}
 
             PassPhase::Done => unreachable!("handled above"),
         }
@@ -436,12 +535,25 @@ impl PassCoordinator {
             }
         }
 
+        // Settle runs after Flight so a Flight→Settle transition (catch or
+        // in-radius bounce) drives the receiver's hold on the same frame the
+        // receive skill went terminal — no dribbler-off seam frame. The passer
+        // stays disengaged (default input).
+        if self.phase == PassPhase::Settle && result.is_none() {
+            let (ri, rr) = self.tick_settle(ctx, &receiver, ball_pos);
+            receiver_input = ri;
+            result = rr.map(|r| self.finish(r));
+        }
+
         self.emit_debug(ctx, &passer, &receiver, ball_pos, target_point);
 
-        let status = match (&self.phase, &result) {
-            (_, Some(PassResult::Success { .. })) => SkillStatus::Succeeded,
-            (_, Some(PassResult::Failure { .. })) => SkillStatus::Failed,
-            _ => SkillStatus::Running,
+        // Derived from the *stored* result, not this tick's: a published
+        // handover Success must read Succeeded while the coordinator is still
+        // holding the receiver.
+        let status = match &self.result {
+            Some(PassResult::Success { .. }) => SkillStatus::Succeeded,
+            Some(PassResult::Failure { .. }) => SkillStatus::Failed,
+            None => SkillStatus::Running,
         };
         PassTickOutput {
             passer_input,
@@ -666,6 +778,128 @@ impl PassCoordinator {
         (input, None)
     }
 
+    /// Whether a contacted ball is within the local repossession bound — the
+    /// gate for rerouting a would-be miss/short verdict into `Settle`.
+    fn settle_reachable(&self, ball_pos: Vector2, receiver: &PlayerData) -> bool {
+        self.ball_reached_receiver && (ball_pos - receiver.position).norm() < SETTLE_CHASE_RADIUS()
+    }
+
+    /// Enter `Settle`: freeze the hold heading at the receiver's current yaw
+    /// (minimal rotation while the ball seats) and hand the receiver to the
+    /// embedded `HandleBall{Hold}`.
+    fn enter_settle(&mut self, receiver: &PlayerData) {
+        self.hold_heading = receiver.yaw;
+        self.settle.reconfigure(
+            BallAction::Hold {
+                heading: self.hold_heading,
+            },
+            AcquirePosition::Fastest,
+        );
+        self.enter(PassPhase::Settle);
+    }
+
+    /// Drive the receiver one `Settle` frame: advance the secure-possession
+    /// gate, enforce the (pre-publish) local repossession bounds, and tick the
+    /// embedded hold. Returns the receiver input plus a terminal failure, if
+    /// any — Success is never returned here; it is *published* into
+    /// `self.result` while the coordinator keeps holding (handover-on-command).
+    fn tick_settle(
+        &mut self,
+        ctx: &PassContext<'_>,
+        receiver: &PlayerData,
+        ball_pos: Option<Vector2>,
+    ) -> (PlayerControlInput, Option<PassResult>) {
+        let now = ctx.world.t_received;
+
+        // Secure-possession gate: sustained fused `has_ball`, not one breakbeam
+        // frame. Publishing does NOT finish the pass — the joint executor
+        // releases us when the receiver's command actually changes.
+        if receiver.has_ball {
+            let since = *self.secure_since.get_or_insert(now);
+            if self.result.is_none() && now - since >= PASS_SECURE_TIME() {
+                self.result = Some(PassResult::Success {
+                    receiver: self.receiver,
+                    forwarded: false,
+                });
+                self.published_at = Some(now);
+            }
+        } else {
+            self.secure_since = None;
+        }
+        let published = self.result.is_some();
+
+        // Handover backstop: the strategy normally re-tasks the receiver
+        // (releasing us via the joint executor); if it never does, retire —
+        // the possession-aware idle covers the robot from the next frame.
+        if let Some(at) = self.published_at {
+            if now - at > HANDOVER_TIMEOUT() {
+                self.phase = PassPhase::Done;
+            }
+        }
+
+        // Pre-publish guards: the local repossession is radius-bounded and
+        // never fights an opponent in possession. Post-publish the result is
+        // final; the hold just keeps the ball safe until released.
+        if !published {
+            if let Some(bp) = ball_pos {
+                let opp_has_ball = ctx
+                    .world
+                    .opp_players
+                    .iter()
+                    .any(|o| (o.position - bp).norm() < OPPONENT_POSSESSION_DIST);
+                if opp_has_ball {
+                    return (
+                        PlayerControlInput::default(),
+                        Some(PassResult::Failure {
+                            reason: PassFailure::Intercepted,
+                            ball_state: PassBallState::WithOpponent,
+                        }),
+                    );
+                }
+                if (bp - receiver.position).norm() > SETTLE_CHASE_RADIUS() {
+                    return (
+                        PlayerControlInput::default(),
+                        Some(PassResult::Failure {
+                            reason: PassFailure::ReceiverMissed,
+                            ball_state: PassBallState::Loose { position: bp },
+                        }),
+                    );
+                }
+            }
+            // No instant fail on a missing ball observation: a seated ball is
+            // routinely occluded at the mouth; the timeout rules a real loss.
+            if self.phase_elapsed > SETTLE_TIMEOUT() {
+                return (
+                    PlayerControlInput::default(),
+                    Some(PassResult::Failure {
+                        reason: PassFailure::Timeout,
+                        ball_state: ball_pos
+                            .map(|p| PassBallState::Loose { position: p })
+                            .unwrap_or(PassBallState::Unknown),
+                    }),
+                );
+            }
+        }
+
+        let sctx = self.skill_ctx(ctx, receiver);
+        match self.settle.tick(sctx) {
+            SkillProgress::Continue(input) => (input, None),
+            SkillProgress::Done(_) => {
+                // `Hold` never self-completes, so a `Done` is the skill's own
+                // failure (re-acquire budget / pickup timeout). Pre-publish that
+                // fails the pass; post-publish the result is final — idle until
+                // released (the possession-aware idle keeps the dribbler on).
+                let fail = (!published).then(|| PassResult::Failure {
+                    reason: PassFailure::ReceiverMissed,
+                    ball_state: ball_pos
+                        .map(|p| PassBallState::Loose { position: p })
+                        .unwrap_or(PassBallState::Unknown),
+                });
+                (PlayerControlInput::default(), fail)
+            }
+        }
+    }
+
     /// Evaluate the terminal conditions during `Flight`. Returns `Some` to end.
     fn check_flight_terminal(
         &mut self,
@@ -687,23 +921,32 @@ impl PassCoordinator {
         let ball_pos = ball.position.xy();
         let ball_vel = ball.velocity.xy();
 
-        // Success: the unified possession metric credits the receiver (its
-        // proximity + breakbeam fusion subsumes the old vision fallback). In
-        // one-timer mode this is the dud-catch fallback — the reflex didn't
-        // fire but the ball is seated; still a completed pass.
+        // The catch: the unified possession metric credits the receiver (its
+        // proximity + breakbeam fusion subsumes the old vision fallback). NOT
+        // yet a Success — enter `Settle` to seat the ball; Success is published
+        // only on secure (sustained) possession. In one-timer mode this is the
+        // dud-catch fallback — the reflex didn't fire but the ball is seated.
         if receiver.has_ball {
-            return Some(PassResult::Success {
-                receiver: self.receiver,
-                forwarded: false,
-            });
+            self.enter_settle(receiver);
+            return None;
         }
 
         // One-timer endgame: the ball reached the receiver, so from here the
         // ball's motion is the DEFLECTION, not the pass — a fast off-line ball
         // is the intended redirect, not a miss/steal. Only the verified
-        // deflection (receiver skill), the dud-catch above, or the flight
+        // deflection (receiver skill), a dud-catch settle, or the flight
         // timeout below may end the pass.
         let endgame = self.forward_to.is_some() && self.ball_reached_receiver;
+
+        if endgame
+            && ball_vel.norm() < STOPPED_SHORT_SPEED()
+            && (ball_pos - receiver.position).norm() < SETTLE_CHASE_RADIUS()
+        {
+            // Dud deflection: the ball died at the receiver's feet — repossess
+            // locally instead of waiting out the flight timeout.
+            self.enter_settle(receiver);
+            return None;
+        }
 
         if !endgame {
             // Opponent intercepted?
@@ -721,11 +964,17 @@ impl PassCoordinator {
 
             // Stopped short: slow and not near the receiver (after a brief grace).
             // Joint-terminal, so the receiver stops converging within ~0.3 s of the
-            // ball dying — its ReceiveSkill fetch advance is capped anyway.
+            // ball dying — its ReceiveSkill fetch advance is capped anyway. A ball
+            // that already CONTACTED the receiver and died within the chase radius
+            // is a bounce-off, not a short pass — settle repossesses it locally.
             if self.phase_elapsed > 0.3
                 && ball_vel.norm() < STOPPED_SHORT_SPEED()
                 && (ball_pos - receiver.position).norm() > NEAR_RECEIVER_DIST()
             {
+                if self.settle_reachable(ball_pos, receiver) {
+                    self.enter_settle(receiver);
+                    return None;
+                }
                 return Some(PassResult::Failure {
                     reason: PassFailure::StoppedShort,
                     ball_state: PassBallState::Loose { position: ball_pos },
@@ -733,7 +982,8 @@ impl PassCoordinator {
             }
 
             // Receiver missed: ball overshot the intercept point along the line, or
-            // strayed beyond the capture window.
+            // strayed beyond the capture window. Same bounce-off carve-out: contact
+            // happened and the ball is still within the chase radius → settle.
             let line = target_point - from;
             let len = line.norm();
             if len > 1.0 {
@@ -741,6 +991,10 @@ impl PassCoordinator {
                 let progress = (ball_pos - from).dot(&dir) / len;
                 let perp = (ball_pos - from) - dir * (ball_pos - from).dot(&dir);
                 if progress > OVERSHOOT_FRACTION() || perp.norm() > CAPTURE_LIMIT() {
+                    if self.settle_reachable(ball_pos, receiver) {
+                        self.enter_settle(receiver);
+                        return None;
+                    }
                     return Some(PassResult::Failure {
                         reason: PassFailure::ReceiverMissed,
                         ball_state: PassBallState::Loose { position: ball_pos },
@@ -807,6 +1061,19 @@ impl PassCoordinator {
 
         tc.debug_string(format!("{pair}.gated"), bool_str(gated));
         tc.debug_string(format!("{pair}.receiver_ready"), bool_str(ready));
+        if self.phase == PassPhase::Settle {
+            tc.debug_string(format!("{pair}.published"), bool_str(self.result.is_some()));
+            tc.debug_string(
+                format!("{pair}.passer_released"),
+                bool_str(self.passer_released),
+            );
+            if let Some(since) = self.secure_since {
+                tc.debug_value(
+                    format!("{pair}.secure_ms"),
+                    (ctx.world.t_received - since) * 1000.0,
+                );
+            }
+        }
         tc.debug_value(format!("{pair}.receiver_dist_mm"), receiver_dist);
         tc.debug_value(format!("{pair}.pass_distance_mm"), pass_distance);
         tc.debug_string(
@@ -1222,10 +1489,8 @@ mod tests {
         c
     }
 
-    #[test]
-    fn flight_succeeds_when_receiver_gets_the_ball() {
-        let tc = team_ctx();
-        let mut c = into_flight(&tc);
+    /// World with the receiver holding the ball at its position, at time `t`.
+    fn caught_world(t: f64) -> TeamData {
         let mut receiver = player(1, RECEIVER_POS, 0.0);
         receiver.has_ball = true;
         let mut w = world(
@@ -1233,10 +1498,183 @@ mod tests {
             Some(RECEIVER_POS),
             0.016,
         );
-        w.t_received = 0.8;
-        let out = c.tick(&ctx(&w, &tc));
+        w.t_received = t;
+        w
+    }
+
+    #[test]
+    fn catch_enters_settle_then_publishes_secure_success() {
+        let tc = team_ctx();
+        let mut c = into_flight(&tc);
+
+        // Catch frame: NOT an instant success — enter Settle, keep driving the
+        // receiver (dribbler on via the embedded HandleBall hold).
+        let out = c.tick(&ctx(&caught_world(0.8), &tc));
+        assert_eq!(c.phase(), PassPhase::Settle);
+        assert_eq!(out.status, SkillStatus::Running);
+        assert!(c.result().is_none());
+        assert!(
+            out.receiver_input.dribbling_speed > 0.0,
+            "settle must keep the dribbler engaged on the catch frame"
+        );
+
+        // Sustained possession past PASS_SECURE_TIME → Success published, but
+        // the coordinator is NOT done: it keeps holding the receiver until the
+        // strategy's next command releases it (handover-on-command).
+        let out = c.tick(&ctx(&caught_world(0.8 + PASS_SECURE_TIME() + 0.05), &tc));
         assert_eq!(out.status, SkillStatus::Succeeded);
+        assert!(matches!(
+            c.result(),
+            Some(PassResult::Success {
+                forwarded: false,
+                ..
+            })
+        ));
+        assert!(!c.is_done(), "published success must not retire the pass");
+        assert!(
+            out.receiver_input.dribbling_speed > 0.0,
+            "handover hold must keep the dribbler engaged"
+        );
+    }
+
+    #[test]
+    fn secure_timer_resets_on_possession_flicker() {
+        let tc = team_ctx();
+        let mut c = into_flight(&tc);
+        c.tick(&ctx(&caught_world(0.8), &tc));
+        assert_eq!(c.phase(), PassPhase::Settle);
+
+        // Possession drops mid-secure (ball still at the mouth, within radius).
+        let mut w = caught_world(0.8 + PASS_SECURE_TIME() * 0.8);
+        w.own_players[1].has_ball = false;
+        c.tick(&ctx(&w, &tc));
+
+        // Regained: the secure clock must restart — this frame is not enough.
+        let out = c.tick(&ctx(&caught_world(0.8 + PASS_SECURE_TIME() + 0.05), &tc));
+        assert_eq!(out.status, SkillStatus::Running);
+        assert!(c.result().is_none());
+    }
+
+    #[test]
+    fn handover_releases_gracefully_keeping_success() {
+        // A command change after publish goes through force_terminate (the
+        // joint executor's cancel path) — it must retire the coordinator
+        // WITHOUT overwriting the published Success.
+        let tc = team_ctx();
+        let mut c = into_flight(&tc);
+        c.tick(&ctx(&caught_world(0.8), &tc));
+        c.tick(&ctx(&caught_world(0.8 + PASS_SECURE_TIME() + 0.05), &tc));
         assert!(matches!(c.result(), Some(PassResult::Success { .. })));
+
+        c.force_terminate(PassFailure::PartnerLeft, PassBallState::Unknown);
+        assert!(c.is_done());
+        assert!(
+            matches!(c.result(), Some(PassResult::Success { .. })),
+            "release must not overwrite the published Success"
+        );
+    }
+
+    #[test]
+    fn handover_backstop_retires_if_never_retasked() {
+        let tc = team_ctx();
+        let mut c = into_flight(&tc);
+        c.tick(&ctx(&caught_world(0.8), &tc));
+        let publish_t = 0.8 + PASS_SECURE_TIME() + 0.05;
+        c.tick(&ctx(&caught_world(publish_t), &tc));
+        assert!(!c.is_done());
+
+        c.tick(&ctx(
+            &caught_world(publish_t + HANDOVER_TIMEOUT() + 0.1),
+            &tc,
+        ));
+        assert!(c.is_done(), "handover backstop must retire the coordinator");
+        assert!(matches!(c.result(), Some(PassResult::Success { .. })));
+    }
+
+    #[test]
+    fn bounce_within_radius_settles_instead_of_missing() {
+        let tc = team_ctx();
+        let mut c = into_flight(&tc);
+        let receiver = player(1, RECEIVER_POS, 0.0);
+        let mk = |ball: Vector2, vel: Vector2, t: f64, dt: f64| {
+            let mut w = world(
+                vec![player(0, STAGED, 0.0), receiver.clone()],
+                Some(ball),
+                dt,
+            );
+            w.t_received = t;
+            if let Some(b) = w.ball.as_mut() {
+                b.velocity = Vector3::new(vel.x, vel.y, 0.0);
+            }
+            w
+        };
+        // Ball reaches the mouth (arms the contact latch)...
+        c.tick(&ctx(
+            &mk(
+                RECEIVER_POS + Vector2::new(-150.0, 0.0),
+                Vector2::new(2500.0, 0.0),
+                0.2,
+                0.2,
+            ),
+            &tc,
+        ));
+        assert_eq!(c.phase(), PassPhase::Flight);
+        // ...then bounces off the side and dies 400 mm away: the would-be
+        // StoppedShort verdict reroutes into Settle (contact + within radius).
+        let out = c.tick(&ctx(
+            &mk(
+                RECEIVER_POS + Vector2::new(0.0, 400.0),
+                Vector2::zeros(),
+                0.4,
+                0.2,
+            ),
+            &tc,
+        ));
+        assert_eq!(c.phase(), PassPhase::Settle);
+        assert_eq!(out.status, SkillStatus::Running);
+        assert!(c.result().is_none());
+
+        // The dead ball drifts (is knocked) beyond the chase radius before we
+        // ever secured it → the radius bound fails the pass.
+        let out = c.tick(&ctx(
+            &mk(
+                RECEIVER_POS + Vector2::new(0.0, SETTLE_CHASE_RADIUS() + 200.0),
+                Vector2::zeros(),
+                0.6,
+                0.2,
+            ),
+            &tc,
+        ));
+        assert_eq!(out.status, SkillStatus::Failed);
+        assert!(matches!(
+            c.result(),
+            Some(PassResult::Failure {
+                reason: PassFailure::ReceiverMissed,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn settle_times_out_without_secure_possession() {
+        let tc = team_ctx();
+        let mut c = into_flight(&tc);
+        // Catch that never secures: has_ball on the entry frame only.
+        c.tick(&ctx(&caught_world(0.8), &tc));
+        assert_eq!(c.phase(), PassPhase::Settle);
+        // Ball rests just ahead (within radius), possession never confirms.
+        let mut w = caught_world(0.8 + SETTLE_TIMEOUT() + 0.1);
+        w.dt = SETTLE_TIMEOUT() + 0.1;
+        w.own_players[1].has_ball = false;
+        let out = c.tick(&ctx(&w, &tc));
+        assert_eq!(out.status, SkillStatus::Failed);
+        assert!(matches!(
+            c.result(),
+            Some(PassResult::Failure {
+                reason: PassFailure::Timeout,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -1368,20 +1806,16 @@ mod tests {
     }
 
     #[test]
-    fn one_timer_dud_catch_succeeds_unforwarded() {
+    fn one_timer_dud_catch_settles_then_succeeds_unforwarded() {
         // The reflex duds but the ball seats on the receiver's dribbler: still a
-        // completed pass, reported as a catch (forwarded: false).
+        // completed pass — via the same Settle/secure path as a catch pass,
+        // reported as a catch (forwarded: false).
         let tc = team_ctx();
         let mut c = into_flight_forward(&tc);
-        let mut receiver = player(1, RECEIVER_POS, 0.0);
-        receiver.has_ball = true;
-        let mut w = world(
-            vec![player(0, STAGED, 0.0), receiver],
-            Some(RECEIVER_POS),
-            0.016,
-        );
-        w.t_received = 0.8;
-        let out = c.tick(&ctx(&w, &tc));
+        let out = c.tick(&ctx(&caught_world(0.8), &tc));
+        assert_eq!(c.phase(), PassPhase::Settle);
+        assert_eq!(out.status, SkillStatus::Running);
+        let out = c.tick(&ctx(&caught_world(0.8 + PASS_SECURE_TIME() + 0.05), &tc));
         assert_eq!(out.status, SkillStatus::Succeeded);
         assert!(matches!(
             c.result(),

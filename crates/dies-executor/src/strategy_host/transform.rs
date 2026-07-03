@@ -373,6 +373,7 @@ mod tests {
             position: Vector2::new(1000.0, 500.0),
             heading: Some(Angle::from_radians(0.0)),
             hold_ground: false,
+            avoid_robots: true,
         };
 
         let transformed = transformer.transform_skill_command(&cmd);

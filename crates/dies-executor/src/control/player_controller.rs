@@ -2,6 +2,7 @@ use dies_core::{
     Angle, ControllerSettings, DebugColor, ExecutorSettings, PlayerCmd, PlayerCmdUntransformer,
     PlayerData, PlayerGlobalMoveCmd, PlayerId, RobotCmd, TeamData, Vector2, PLAYER_RADIUS,
 };
+use dies_tunables_macro::tunables;
 
 use super::{
     avoidance::{DynamicAgent, OrcaAgent, OrcaSolver, StaticObstacle},
@@ -11,6 +12,39 @@ use super::{
     yaw_control::YawController,
     Velocity,
 };
+
+tunables! {
+    section "PlayerController";
+
+    /// Dribbler decay time constant (s). A command that raises the dribbler
+    /// applies instantly; a drop decays exponentially toward the new target
+    /// with this tau instead of cutting — so a one-frame zero command at a
+    /// skill seam (teardown, handover, a Stop between episodes) costs a
+    /// *fraction* of the spin instead of the ball, and a deliberate stop
+    /// releases a held ball gracefully rather than popping it off.
+    /// Exponential (not linear) so the protection is scale-free: it works the
+    /// same whether the tuned dribbler speed is 0.6 or 0.15. A 75 ms gap
+    /// costs ~1−e^(−0.075/tau) of the level (~20% at 0.3 s); a real stop is
+    /// ~95% released after 3·tau. `0` disables (drops apply instantly).
+    #[tunable(unit = "s", min = 0.0, max = 2.0, step = 0.05)]
+    DRIBBLER_DECAY_TAU: f64 = 0.3;
+}
+
+/// Rate-limit a dribbler-speed drop: raises are instant, drops decay
+/// exponentially toward `target` with time constant `tau` (speeds normalized
+/// 0..1). Snaps to the target once within 1% of full scale so the asymptote
+/// terminates.
+fn ramp_dribble(current: f64, target: f64, tau: f64, dt: f64) -> f64 {
+    if target >= current || tau <= 0.0 {
+        return target;
+    }
+    let next = target + (current - target) * (-dt.max(0.0) / tau).exp();
+    if next - target < 0.01 {
+        target
+    } else {
+        next
+    }
+}
 
 const MISSING_FRAMES_THRESHOLD: usize = 50;
 const MAX_DRIBBLE_SPEED: f64 = 1000.0;
@@ -544,8 +578,13 @@ impl PlayerController {
             self.w = angular_velocity;
         }
 
-        // Set dribbling speed
-        self.dribble_speed = input.dribbling_speed;
+        // Dribbler: raises apply instantly, drops decay (see DRIBBLER_DECAY_TAU).
+        self.dribble_speed = ramp_dribble(
+            self.dribble_speed,
+            input.dribbling_speed,
+            DRIBBLER_DECAY_TAU(),
+            dt,
+        );
 
         // Magnet is a held mode (level signal), recomputed each frame; composed
         // with the kicker state when the wire command is built.
@@ -597,3 +636,28 @@ fn cap_vec(v: Vector2, cap: f64) -> Vector2 {
 // `keeper_with_bounds_is_not_frozen_at_the_post` regression test were deleted with
 // it; successor coverage lives in `avoidance::obstacle`/`orca` and
 // `dies_core::geom` (`in_defense_area`) tests.
+
+#[cfg(test)]
+mod tests {
+    use super::ramp_dribble;
+
+    #[test]
+    fn dribble_raises_instantly_and_drops_ramped() {
+        // Raise: instant.
+        assert_eq!(ramp_dribble(0.0, 0.6, 0.3, 0.016), 0.6);
+        // One-frame zero command (skill seam): a ~5% proportional decay, not a
+        // cut — and scale-free, so a low tuned speed keeps the same fraction.
+        let after = ramp_dribble(0.6, 0.0, 0.3, 0.016);
+        assert!((after / 0.6 - (-0.016f64 / 0.3).exp()).abs() < 1e-9);
+        let after_low = ramp_dribble(0.15, 0.0, 0.3, 0.016);
+        assert!((after_low / 0.15 - (-0.016f64 / 0.3).exp()).abs() < 1e-9);
+        // Sustained zero command terminates at zero (epsilon snap).
+        let mut v = 0.6;
+        for _ in 0..200 {
+            v = ramp_dribble(v, 0.0, 0.3, 0.016);
+        }
+        assert_eq!(v, 0.0);
+        // Disabled ramp: drops apply instantly.
+        assert_eq!(ramp_dribble(0.6, 0.0, 0.0, 0.016), 0.0);
+    }
+}

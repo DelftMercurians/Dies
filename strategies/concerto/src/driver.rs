@@ -5,6 +5,8 @@
 //! so the orchestrator can replan. The reason is informational (debug/logging);
 //! any failure simply triggers a fresh replan for the same most-eligible robot.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use dies_strategy_api::prelude::*;
 use dies_strategy_api::{PassFailure, PassResult, World};
 
@@ -61,7 +63,16 @@ pub struct Driver {
     handle_reset_done: bool,
     /// Next active robot hint (set by a completed pass; consumed by orchestrator).
     new_active: Option<PlayerId>,
+    /// Sequence number of the current `Pass` waypoint (stable across its frames,
+    /// fresh per pass decision) — lets the executor tell a stale re-send of a
+    /// finished pass from a new pass between the same pair.
+    pass_seq: u64,
 }
+
+/// Global per-process pass counter. A plain counter (not time-based) so
+/// faster-than-real self-play stays deterministic. Starts at 1: seq 0 is the
+/// protocol's "no nonce" sentinel.
+static NEXT_PASS_SEQ: AtomicU64 = AtomicU64::new(1);
 
 impl Default for Driver {
     fn default() -> Self {
@@ -79,6 +90,7 @@ impl Driver {
             engage_ball_pos: None,
             handle_reset_done: false,
             new_active: None,
+            pass_seq: 0,
         }
     }
 
@@ -157,6 +169,11 @@ impl Driver {
             Waypoint::Handle { .. } => Phase::Handle,
             Waypoint::Pass { .. } => Phase::PassExec,
         };
+        if matches!(waypoint, Waypoint::Pass { .. }) {
+            // Every Pass waypoint is a fresh pass decision — even an immediate
+            // same-pair retry gets a new seq.
+            self.pass_seq = NEXT_PASS_SEQ.fetch_add(1, Ordering::Relaxed);
+        }
         self.waypoint = Some(waypoint);
         self.active_robot = Some(active_robot);
         self.last_status = WaypointStatus::Ongoing;
@@ -188,15 +205,17 @@ impl Driver {
         // ── Pass: delegate to the joint coordinator ─────────────────────────
         // A pass is a degenerate waypoint: keep it alive (idempotent) and watch
         // the typed result. The framework's PassCoordinator owns both robots and
-        // every phase (Secure→Setup→Commit→Flight→Settle). We deliberately skip
-        // the ball-moved guard below — during a pass the ball is *meant* to move.
+        // every phase (Stage→Release→Flight→Settle). We deliberately skip the
+        // ball-moved guard below — during a pass the ball is *meant* to move.
         if let Waypoint::Pass {
             passer,
             receiver,
             target_area,
         } = waypoint
         {
-            ctx.pass(passer, receiver).target_hint(target_area);
+            ctx.pass(passer, receiver)
+                .target_hint(target_area)
+                .seq(self.pass_seq);
             if let Some(p) = ctx.player(passer) {
                 p.set_role("passing");
             }

@@ -163,6 +163,7 @@ impl TeamContext {
             receiver,
             target_hint: None,
             forward_to: None,
+            seq: 0,
         }
     }
 
@@ -182,6 +183,7 @@ impl TeamContext {
         receiver: PlayerId,
         target_hint: Option<Vector2>,
         forward_to: Option<Vector2>,
+        seq: u64,
     ) {
         if let Some(h) = self.players.get_mut(&passer) {
             h.set_pending_command(SkillCommand::Pass {
@@ -189,6 +191,7 @@ impl TeamContext {
                 role: PassRole::Passer,
                 target_hint,
                 forward_to,
+                seq,
             });
         }
         if let Some(h) = self.players.get_mut(&receiver) {
@@ -197,6 +200,7 @@ impl TeamContext {
                 role: PassRole::Receiver,
                 target_hint,
                 forward_to,
+                seq,
             });
         }
     }
@@ -247,6 +251,7 @@ pub struct PassBuilder<'a> {
     receiver: PlayerId,
     target_hint: Option<Vector2>,
     forward_to: Option<Vector2>,
+    seq: u64,
 }
 
 impl PassBuilder<'_> {
@@ -270,12 +275,27 @@ impl PassBuilder<'_> {
         self.forward_to = Some(target);
         self
     }
+
+    /// Attach a per-pass sequence number: keep it stable while re-issuing the
+    /// same pass every frame and bump it for each NEW pass decision. Lets the
+    /// executor distinguish a stale re-send of a finished pass (suppressed —
+    /// its result is preserved) from a genuinely new pass between the same
+    /// pair. `0` (the default) disables the suppression.
+    pub fn seq(mut self, seq: u64) -> Self {
+        self.seq = seq;
+        self
+    }
 }
 
 impl Drop for PassBuilder<'_> {
     fn drop(&mut self) {
-        self.ctx
-            .commit_pass(self.passer, self.receiver, self.target_hint, self.forward_to);
+        self.ctx.commit_pass(
+            self.passer,
+            self.receiver,
+            self.target_hint,
+            self.forward_to,
+            self.seq,
+        );
     }
 }
 

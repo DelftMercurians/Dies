@@ -45,8 +45,13 @@ pub struct JointOutput {
 enum SlotReq {
     /// Continue whatever is running.
     Continue,
-    /// A pass with the given partner and role.
-    Pass { partner: PlayerId, role: PassRole },
+    /// A pass with the given partner, role, and per-pass sequence number
+    /// (`0` = no nonce; see [`SkillCommand::Pass`]).
+    Pass {
+        partner: PlayerId,
+        role: PassRole,
+        seq: u64,
+    },
     /// Stop immediately.
     Stop,
     /// Some other (single-robot) skill — leaves any joint coordination.
@@ -56,13 +61,22 @@ enum SlotReq {
 fn classify(cmd: Option<&Option<SkillCommand>>) -> SlotReq {
     match cmd {
         None | Some(None) => SlotReq::Continue,
-        Some(Some(SkillCommand::Pass { partner, role, .. })) => SlotReq::Pass {
+        Some(Some(SkillCommand::Pass {
+            partner, role, seq, ..
+        })) => SlotReq::Pass {
             partner: *partner,
             role: *role,
+            seq: *seq,
         },
         Some(Some(SkillCommand::Stop)) => SlotReq::Stop,
         Some(Some(_)) => SlotReq::Other,
     }
+}
+
+/// Whether two per-pass sequence numbers refer to the same pass. `0` is the
+/// "no nonce" sentinel and matches anything (legacy behavior).
+fn seq_matches(a: u64, b: u64) -> bool {
+    a == 0 || b == 0 || a == b
 }
 
 fn opposite(role: PassRole) -> PassRole {
@@ -72,13 +86,25 @@ fn opposite(role: PassRole) -> PassRole {
     }
 }
 
+/// A live coordinator plus the per-pass sequence number it was created from
+/// (`0` = created from nonce-less commands).
+struct Slot {
+    seq: u64,
+    coord: PassCoordinator,
+}
+
 /// Manages all active pass coordinators.
 pub struct JointSkillExecutor {
-    coordinators: Vec<PassCoordinator>,
+    coordinators: Vec<Slot>,
     /// Last reported joint status per player (persists like `SkillExecutor`).
     statuses: HashMap<PlayerId, SkillStatus>,
     /// Last rich result per player (persists until the player leaves the pass).
     results: HashMap<PlayerId, PassResult>,
+    /// Sequence number of the last FINISHED pass per (passer, receiver) pair.
+    /// Commands still carrying this seq are a stale re-send (the strategy hasn't
+    /// re-tasked the robots yet) — they must not resurrect the pass, and above
+    /// all must not wipe its un-consumed terminal status/result.
+    finished_seqs: HashMap<(PlayerId, PlayerId), u64>,
 }
 
 impl JointSkillExecutor {
@@ -87,13 +113,14 @@ impl JointSkillExecutor {
             coordinators: Vec::new(),
             statuses: HashMap::new(),
             results: HashMap::new(),
+            finished_seqs: HashMap::new(),
         }
     }
 
     fn coordinator_of(&self, id: PlayerId) -> Option<usize> {
         self.coordinators
             .iter()
-            .position(|c| c.passer() == id || c.receiver() == id)
+            .position(|s| s.coord.passer() == id || s.coord.receiver() == id)
     }
 
     /// Reconcile against the command map and tick every live coordinator once.
@@ -103,23 +130,42 @@ impl JointSkillExecutor {
         ctx: &PassContext<'_>,
     ) -> JointOutput {
         // --- 1. Liveness / cancellation over existing coordinators. ---
-        for coord in self.coordinators.iter_mut() {
+        for slot in self.coordinators.iter_mut() {
+            let coord = &mut slot.coord;
             let passer = coord.passer();
             let receiver = coord.receiver();
             let mut cancel: Option<(PassFailure, PassBallState)> = None;
             for (member, other) in [(passer, receiver), (receiver, passer)] {
-                match classify(commands.get(&member)) {
-                    SlotReq::Continue => {}
-                    SlotReq::Pass { partner, .. } if partner == other => {}
-                    SlotReq::Pass { .. } => {
-                        // Re-pointed at a different partner.
-                        cancel = Some((PassFailure::PartnerLeft, PassBallState::Unknown));
+                // A released passer's slot belongs to the per-player executor
+                // again; its commands no longer affect the pass.
+                if member == passer && coord.passer_released() {
+                    continue;
+                }
+                let leaving = match classify(commands.get(&member)) {
+                    SlotReq::Continue => None,
+                    // Same partner AND same pass (seq): still ours. A different
+                    // seq is a NEW pass decision between the same pair — cancel
+                    // so step 2 can create the fresh coordinator.
+                    SlotReq::Pass { partner, seq, .. }
+                        if partner == other && seq_matches(seq, slot.seq) =>
+                    {
+                        None
                     }
-                    SlotReq::Other => {
-                        cancel = Some((PassFailure::PartnerLeft, PassBallState::Unknown));
+                    SlotReq::Pass { .. } | SlotReq::Other => {
+                        Some((PassFailure::PartnerLeft, PassBallState::Unknown))
                     }
-                    SlotReq::Stop => {
-                        cancel = Some((PassFailure::Cancelled, PassBallState::Unknown));
+                    SlotReq::Stop => Some((PassFailure::Cancelled, PassBallState::Unknown)),
+                };
+                if let Some((reason, ball_state)) = leaving {
+                    if member == passer && coord.in_settle() {
+                        // Settle: the passer's job ended at Flight — release it
+                        // alone; the receiver handover continues. (A receiver
+                        // command change goes through force_terminate, which
+                        // retires the pass but never overwrites a published
+                        // Success — the handover-on-command release.)
+                        coord.release_passer();
+                    } else {
+                        cancel = Some((reason, ball_state));
                     }
                 }
             }
@@ -132,42 +178,59 @@ impl JointSkillExecutor {
             })) = commands.get(&passer)
             {
                 // Refresh the hints from the passer's command if present.
-                coord.update_hints(*target_hint, *forward_to);
+                if !coord.passer_released() {
+                    coord.update_hints(*target_hint, *forward_to);
+                }
             }
         }
 
         // --- 2. Create new coordinators for fresh, mutually-matched requests. ---
         let mut covered: HashSet<PlayerId> = HashSet::new();
-        for c in &self.coordinators {
-            covered.insert(c.passer());
-            covered.insert(c.receiver());
+        for s in &self.coordinators {
+            if !s.coord.passer_released() {
+                covered.insert(s.coord.passer());
+            }
+            covered.insert(s.coord.receiver());
         }
         let mut managed: HashSet<PlayerId> = covered.clone();
 
         // Gather this frame's pass requests in a deterministic order.
-        let mut requests: Vec<(PlayerId, PlayerId, PassRole)> = commands
+        let mut requests: Vec<(PlayerId, PlayerId, PassRole, u64)> = commands
             .iter()
             .filter_map(|(id, cmd)| match cmd {
-                Some(SkillCommand::Pass { partner, role, .. }) => Some((*id, *partner, *role)),
+                Some(SkillCommand::Pass {
+                    partner, role, seq, ..
+                }) => Some((*id, *partner, *role, *seq)),
                 _ => None,
             })
             .collect();
-        requests.sort_by_key(|(id, _, _)| *id);
+        requests.sort_by_key(|(id, _, _, _)| *id);
 
-        for (id, partner, role) in requests {
+        for (id, partner, role, seq) in requests {
             managed.insert(id);
             if covered.contains(&id) {
                 continue;
             }
-            // The partner must request a matching pass back.
+            // The partner must request a matching pass back (same pass: seq too).
             let matched = matches!(
                 classify(commands.get(&partner)),
-                SlotReq::Pass { partner: back, role: prole }
-                    if back == id && prole == opposite(role)
+                SlotReq::Pass { partner: back, role: prole, seq: pseq }
+                    if back == id && prole == opposite(role) && seq_matches(seq, pseq)
             );
             if matched {
                 // Create exactly once, from the lower id.
                 if id < partner {
+                    let (p, r) = match role {
+                        PassRole::Passer => (id, partner),
+                        PassRole::Receiver => (partner, id),
+                    };
+                    if seq != 0 && self.finished_seqs.get(&(p, r)) == Some(&seq) {
+                        // Stale re-send of a pass that already finished (the
+                        // strategy hasn't re-tasked the robots yet): do NOT
+                        // resurrect it — and critically, do NOT wipe the
+                        // terminal status/result it left behind.
+                        continue;
+                    }
                     let (target_hint, forward_to) = match commands.get(&id) {
                         Some(Some(SkillCommand::Pass {
                             target_hint,
@@ -176,12 +239,10 @@ impl JointSkillExecutor {
                         })) => (*target_hint, *forward_to),
                         _ => (None, None),
                     };
-                    let (p, r) = match role {
-                        PassRole::Passer => (id, partner),
-                        PassRole::Receiver => (partner, id),
-                    };
-                    self.coordinators
-                        .push(PassCoordinator::new(p, r, target_hint, forward_to));
+                    self.coordinators.push(Slot {
+                        seq,
+                        coord: PassCoordinator::new(p, r, target_hint, forward_to),
+                    });
                     covered.insert(id);
                     covered.insert(partner);
                     // Fresh pass — drop any stale terminal status/result.
@@ -206,22 +267,43 @@ impl JointSkillExecutor {
 
         // --- 3. Tick every coordinator once; collect inputs/status/result. ---
         let mut inputs: HashMap<PlayerId, PlayerControlInput> = HashMap::new();
-        for coord in self.coordinators.iter_mut() {
+        for slot in self.coordinators.iter_mut() {
+            let coord = &mut slot.coord;
             let passer = coord.passer();
             let receiver = coord.receiver();
             let out = coord.tick(ctx);
-            inputs.insert(passer, out.passer_input);
+            // A released passer belongs to the per-player executor again — no
+            // input, and no status/result refresh that step 4 would then have
+            // to fight.
+            if !coord.passer_released() {
+                inputs.insert(passer, out.passer_input);
+                self.statuses.insert(passer, out.status);
+            }
             inputs.insert(receiver, out.receiver_input);
-            self.statuses.insert(passer, out.status);
             self.statuses.insert(receiver, out.status);
             if let Some(result) = coord.result() {
-                self.results.insert(passer, result);
+                if !coord.passer_released() {
+                    self.results.insert(passer, result);
+                }
                 self.results.insert(receiver, result);
             }
         }
 
-        // Retire finished coordinators (their status/result persist in the maps).
-        self.coordinators.retain(|c| !c.is_done());
+        // Retire finished coordinators (their status/result persist in the
+        // maps), recording the finished seq so stale re-sends of the same pass
+        // can't resurrect it in a later frame's step 2.
+        let mut i = 0;
+        while i < self.coordinators.len() {
+            if self.coordinators[i].coord.is_done() {
+                let s = self.coordinators.swap_remove(i);
+                if s.seq != 0 {
+                    self.finished_seqs
+                        .insert((s.coord.passer(), s.coord.receiver()), s.seq);
+                }
+            } else {
+                i += 1;
+            }
+        }
 
         // --- 4. Clear stale joint state for players that left via a non-pass
         // command (the per-player SkillExecutor owns them now). ---
@@ -257,11 +339,15 @@ impl JointSkillExecutor {
     /// retained status with a generic description.
     pub fn get_all_infos(&self) -> HashMap<PlayerId, PlayerSkillInfo> {
         let mut infos = HashMap::new();
-        for coord in &self.coordinators {
+        for slot in &self.coordinators {
+            let coord = &slot.coord;
             let passer = coord.passer();
             let receiver = coord.receiver();
             let phase = coord.phase().as_str();
             for (id, role) in [(passer, "Passer"), (receiver, "Receiver")] {
+                if id == passer && coord.passer_released() {
+                    continue;
+                }
                 let state = self
                     .statuses
                     .get(&id)
@@ -308,6 +394,12 @@ impl JointSkillExecutor {
             self.coordinators.swap_remove(idx);
         }
     }
+
+    /// Test-only view of the live coordinator for a player.
+    #[cfg(test)]
+    fn coord_of(&self, id: PlayerId) -> Option<&PassCoordinator> {
+        self.coordinator_of(id).map(|i| &self.coordinators[i].coord)
+    }
 }
 
 impl Default for JointSkillExecutor {
@@ -323,11 +415,16 @@ mod tests {
     use dies_core::Vector2;
 
     fn pass(partner: u32, role: PassRole) -> Option<SkillCommand> {
+        pass_seq(partner, role, 0)
+    }
+
+    fn pass_seq(partner: u32, role: PassRole, seq: u64) -> Option<SkillCommand> {
         Some(SkillCommand::Pass {
             partner: PlayerId::new(partner),
             role,
             target_hint: None,
             forward_to: None,
+            seq,
         })
     }
 
@@ -432,6 +529,7 @@ mod tests {
                 position: Vector2::new(-2000.0, 0.0),
                 heading: None,
                 hold_ground: false,
+                avoid_robots: true,
             }),
         );
         jse.tick_all(&cmds2, &ctx());
@@ -444,5 +542,134 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// World with the ball missing entirely: any fresh coordinator fails its
+    /// entry guard with `BallLost`/`Unknown` on its first tick — a cheap way to
+    /// drive a pass to a terminal result in one frame.
+    fn no_ball_world() -> dies_core::TeamData {
+        world(
+            vec![
+                player(0, Vector2::new(0.0, 0.0), 0.0),
+                player(1, Vector2::new(2000.0, 0.0), 0.0),
+            ],
+            None,
+            0.016,
+        )
+    }
+
+    #[test]
+    fn stale_seq_commands_do_not_resurrect_finished_pass() {
+        // The wipe-bug regression: after a pass finishes, the strategy's stale
+        // Pass commands (same seq) arrive for one more frame. They must neither
+        // recreate the coordinator nor wipe the terminal status/result.
+        let mut jse = JointSkillExecutor::new();
+        let w = no_ball_world();
+        let tc = team_ctx();
+        let ctx = || PassContext {
+            world: &w,
+            team_context: &tc,
+        };
+        let mut cmds = HashMap::new();
+        cmds.insert(PlayerId::new(0), pass_seq(1, PassRole::Passer, 7));
+        cmds.insert(PlayerId::new(1), pass_seq(0, PassRole::Receiver, 7));
+
+        // Frame 1: created, fails the entry guard, retires.
+        jse.tick_all(&cmds, &ctx());
+        assert!(jse.coord_of(PlayerId::new(0)).is_none());
+        assert_eq!(jse.get_status(PlayerId::new(0)), Some(SkillStatus::Failed));
+
+        // Frame 2: identical stale commands → suppressed, result preserved.
+        jse.tick_all(&cmds, &ctx());
+        assert!(
+            jse.coord_of(PlayerId::new(0)).is_none(),
+            "stale same-seq commands must not resurrect the pass"
+        );
+        assert!(
+            matches!(
+                jse.pass_results().get(&PlayerId::new(0)),
+                Some(PassResult::Failure {
+                    reason: PassFailure::BallLost,
+                    ..
+                })
+            ),
+            "the un-consumed terminal result must survive stale re-sends"
+        );
+
+        // A NEW pass decision (fresh seq) between the same pair creates again.
+        let mut cmds2 = HashMap::new();
+        cmds2.insert(PlayerId::new(0), pass_seq(1, PassRole::Passer, 8));
+        cmds2.insert(PlayerId::new(1), pass_seq(0, PassRole::Receiver, 8));
+        jse.tick_all(&cmds2, &ctx());
+        // It fails its entry guard again (no ball), but it DID run: the stale
+        // suppression applies only to seq 7.
+        assert_eq!(
+            jse.finished_seqs.get(&(PlayerId::new(0), PlayerId::new(1))),
+            Some(&8)
+        );
+    }
+
+    #[test]
+    fn seq_zero_keeps_legacy_recreate_behavior() {
+        // Nonce-less strategies (seq 0) keep the old semantics: re-sent
+        // commands after a finish recreate the pass (no suppression).
+        let mut jse = JointSkillExecutor::new();
+        let w = no_ball_world();
+        let tc = team_ctx();
+        let ctx = || PassContext {
+            world: &w,
+            team_context: &tc,
+        };
+        let mut cmds = HashMap::new();
+        cmds.insert(PlayerId::new(0), pass(1, PassRole::Passer));
+        cmds.insert(PlayerId::new(1), pass(0, PassRole::Receiver));
+
+        jse.tick_all(&cmds, &ctx());
+        assert_eq!(jse.get_status(PlayerId::new(0)), Some(SkillStatus::Failed));
+
+        // Frame 2 recreates (and the fresh pass fails again the same way).
+        jse.tick_all(&cmds, &ctx());
+        assert_eq!(jse.get_status(PlayerId::new(0)), Some(SkillStatus::Failed));
+        assert!(jse.finished_seqs.is_empty(), "seq 0 must never be recorded");
+    }
+
+    #[test]
+    fn different_seq_mid_pass_cancels_for_the_new_pass() {
+        // A live pass whose members switch to a NEW seq (a fresh pass decision
+        // between the same pair, e.g. an immediate retry) is cancelled so the
+        // fresh coordinator can be created the same frame.
+        let mut jse = JointSkillExecutor::new();
+        // Free ball near the passer keeps the pass alive in Stage.
+        let w = world(
+            vec![
+                player(0, Vector2::new(0.0, 0.0), 0.0),
+                player(1, Vector2::new(2000.0, 0.0), 0.0),
+            ],
+            Some(Vector2::new(60.0, 0.0)),
+            0.016,
+        );
+        let tc = team_ctx();
+        let ctx = || PassContext {
+            world: &w,
+            team_context: &tc,
+        };
+        let mut cmds = HashMap::new();
+        cmds.insert(PlayerId::new(0), pass_seq(1, PassRole::Passer, 3));
+        cmds.insert(PlayerId::new(1), pass_seq(0, PassRole::Receiver, 3));
+        jse.tick_all(&cmds, &ctx());
+        assert!(jse.coord_of(PlayerId::new(0)).is_some());
+
+        let mut cmds2 = HashMap::new();
+        cmds2.insert(PlayerId::new(0), pass_seq(1, PassRole::Passer, 4));
+        cmds2.insert(PlayerId::new(1), pass_seq(0, PassRole::Receiver, 4));
+        // Frame 2 cancels the seq-3 pass (it still covers its players until
+        // retirement at the end of the frame)...
+        jse.tick_all(&cmds2, &ctx());
+        assert!(jse.coord_of(PlayerId::new(0)).is_none());
+        // ...and frame 3 creates the seq-4 pass — NOT suppressed, because only
+        // seq 3 finished.
+        jse.tick_all(&cmds2, &ctx());
+        assert!(jse.coord_of(PlayerId::new(0)).is_some());
+        assert_eq!(jse.get_status(PlayerId::new(0)), Some(SkillStatus::Running));
     }
 }
