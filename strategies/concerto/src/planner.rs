@@ -65,6 +65,11 @@ fn keeper_charge_radius(advance: f64) -> f64 {
 pub struct Plan {
     pub waypoints: Vec<Waypoint>,
     pub active_robot: PlayerId,
+    /// Set when this plan hoofs the ball toward a forward teammate: that teammate
+    /// is the intended kick-ahead receiver. The orchestrator arms a kick-ahead
+    /// intent from it so, once the kick clears, the runner is pinned to collect
+    /// the loose ball. `None` for every non-kick-ahead plan.
+    pub kickahead: Option<PlayerId>,
 }
 
 /// What the plan-controlled robots are covering this tick, exported to Formation
@@ -110,6 +115,10 @@ pub struct PlanInputs {
     /// coincides with a numerical break goal-side of the ball.
     pub fresh_possession: bool,
     pub now: f64,
+    /// When set, this robot is the kick-ahead receiver for a hoof now in flight:
+    /// if it is the loose-ball capturer it *collects* the ball (acquire + hold)
+    /// instead of striking it onward — the whole point is to keep possession.
+    pub kickahead_receiver: Option<PlayerId>,
 }
 
 /// Selects plans on discrete events. On a waypoint failure we always re-engage the
@@ -178,14 +187,15 @@ impl Planner {
                 let carrier = world.own_player(id)?;
                 let carrier_pos = carrier.position;
 
-                // Our attacking restart: this carrier is the kicker (it touched
-                // first, or nobody has yet). It must release the ball forward — a
-                // directed kick toward an open downfield zone — rather than dribble,
-                // to bring the ball into play and avoid a double-touch. A teammate
-                // then collects and normal play resumes. (Becomes a Pass in M4.)
-                let is_kicker = inputs.our_attacking_restart
-                    && (inputs.double_touch_robot.is_none()
-                        || inputs.double_touch_robot == Some(id));
+                // Set when the chosen waypoint hoofs toward a forward teammate —
+                // that teammate becomes the kick-ahead receiver (see `Plan`).
+                let mut kickahead: Option<PlayerId> = None;
+
+                // NOTE: our attacking restart (kickoff / free kick) never reaches
+                // this branch — the taker's first touch IS the kick, fired from a
+                // LOOSE ball, so the restart is aimed in the Loose branch via
+                // `strike_release` → `restart_strike_target`. There is no mid-take
+                // possession flip to We, so this branch is pure open play.
 
                 // Open-goal shot: aim at the widest open window in the mouth (keeper
                 // special-cased), not the centre. Gated on the window's angular
@@ -213,7 +223,7 @@ impl Planner {
                     && world.ball_contest().is_none()
                     && self.numerical_break(world, id, carrier_pos, inputs);
 
-                let waypoint = if !is_kicker && world.ball_contest().is_some() {
+                let waypoint = if world.ball_contest().is_some() {
                     // An opponent is physically pinning the ball we nominally hold.
                     // In the attacking strike zone, finish first-time — striking the
                     // contested ball goalward beats trying to keep it and losing the
@@ -221,44 +231,6 @@ impl Planner {
                     // presser — the old `correction_target` deadlock): break contact.
                     self.contested_finish(world, ball_pos, opp_goal, carrier_pos)
                         .unwrap_or_else(|| self.contest_escape(world, ball_pos, carrier_pos))
-                } else if is_kicker {
-                    // Restart: the kicker always RELEASES with a strike-through — a
-                    // reflex `Strike`, never a hold-and-aim (that would double-touch).
-                    //
-                    // Shoot directly only when the goal is *actually* clear (the
-                    // open-play gate, not the retired Div-B sliver gamble) and the
-                    // shot lane isn't fired straight into a close opponent. With no
-                    // clear shot:
-                    //   - kickoff: deflect off a distant opponent off to the side (the
-                    //     ball runs out for our restart), else a safe forward hoof;
-                    //   - free kick: a clean forward advance — a kick-ahead down an
-                    //     open lane, else the goal-mouth hoof; both aim toward their
-                    //     half, never back toward our goal.
-                    // Every candidate aim passes the close-opponent veto.
-                    let clear_shot = shot_raw
-                        .filter(|s| s.angle >= config::KICKER_SHOT_MIN_ANGLE)
-                        .filter(|_| (carrier_pos - opp_goal).norm() <= config::KICKER_SHOT_RANGE)
-                        .filter(|s| !self.fires_into_close_opp(world, ball_pos, s.target))
-                        .map(|s| s.target);
-
-                    let target = clear_shot.unwrap_or_else(|| {
-                        if inputs.our_restart_is_kickoff {
-                            self.kickoff_deflect_target(world, ball_pos)
-                                .unwrap_or_else(|| self.release_target(world, id, inputs))
-                        } else {
-                            self.best_kickahead_target(world, id, inputs)
-                                .map(|(_, t, _)| t)
-                                .filter(|t| !self.fires_into_close_opp(world, ball_pos, *t))
-                                .unwrap_or_else(|| self.release_target(world, id, inputs))
-                        }
-                    });
-                    Waypoint::Handle {
-                        action: BallAction::Strike {
-                            target,
-                            acquire_first: false,
-                        },
-                        rescue: false,
-                    }
                 } else if let (true, Some(aim)) = (in_range, shot) {
                     // A real aimed shot is on: finish FIRST-TIME with a reflex
                     // `Strike` — one uninterrupted approach → contact → kick episode.
@@ -358,9 +330,15 @@ impl Planner {
                         // behind their line rather than laying it back.
                         Some((None, target, _)) => {
                             if fast_break {
+                                kickahead =
+                                    self.kickahead_receiver(world, id, ball_pos, target, inputs);
                                 hoof(target)
+                            } else if let Some(w) = recycle_or_finish() {
+                                w
                             } else {
-                                recycle_or_finish().unwrap_or_else(|| hoof(target))
+                                kickahead =
+                                    self.kickahead_receiver(world, id, ball_pos, target, inputs);
+                                hoof(target)
                             }
                         }
                         // Nothing forward at all: strike if in range, else recycle,
@@ -379,7 +357,10 @@ impl Planner {
                                     rescue: false,
                                 }
                             } else {
-                                hoof(self.release_target(world, id, inputs))
+                                let target = self.release_target(world, id, inputs);
+                                kickahead =
+                                    self.kickahead_receiver(world, id, ball_pos, target, inputs);
+                                hoof(target)
                             }
                         }
                     }
@@ -387,6 +368,7 @@ impl Planner {
                 Plan {
                     waypoints: vec![waypoint],
                     active_robot: id,
+                    kickahead,
                 }
             }
 
@@ -412,6 +394,17 @@ impl Planner {
                         },
                         rescue: true,
                     }
+                } else if inputs.kickahead_receiver == Some(robot) {
+                    // This capturer is the kick-ahead runner: collect the hoofed
+                    // ball (acquire + hold) rather than striking it onward — the
+                    // point of the kick-ahead is to pick the ball up and keep
+                    // possession. Once held, the We-branch decides what's next.
+                    Waypoint::Handle {
+                        action: BallAction::Hold {
+                            heading: goalward_heading(ball_pos, opp_goal),
+                        },
+                        rescue: false,
+                    }
                 } else {
                     // Strike the loose ball directly: decide the release target NOW
                     // (from the ball position) and run one uninterrupted HandleBall
@@ -430,6 +423,7 @@ impl Planner {
                 Plan {
                     waypoints: vec![waypoint],
                     active_robot: robot,
+                    kickahead: None,
                 }
             }
 
@@ -455,6 +449,7 @@ impl Planner {
                 Plan {
                     waypoints: vec![waypoint],
                     active_robot: robot,
+                    kickahead: None,
                 }
             }
         };
@@ -553,34 +548,32 @@ impl Planner {
         from: Vector2,
         inputs: &PlanInputs,
     ) -> BallAction {
+        // Our kickoff / free kick is fired from a LOOSE ball (the taker's first
+        // touch is the kick), so this Loose-branch path — not the We-branch
+        // `is_kicker` — is what actually aims the restart. Route it through the
+        // restart target ladder (shoot only if genuinely clear, else deflect off a
+        // side opponent for a kickoff / clean forward advance for a free kick, never
+        // straight into a close opponent).
+        if inputs.our_attacking_restart {
+            return BallAction::Strike {
+                target: self.restart_strike_target(world, actor, from, inputs),
+                acquire_first: false,
+            };
+        }
         let opp_goal = world.opp_goal_center();
-        // 1. A real aimed-shot window in range → strike at the window midpoint.
-        let shot = geometry::best_shot(
-            from,
-            opp_goal.x,
-            world.goal_width(),
-            world.opp_players(),
-            Self::opp_keeper(world),
-            config::SHOT_ROBOT_RADIUS,
-            Self::keeper_shot_radius(world),
-            config::BALL_RADIUS,
-            config::SHOT_KEEPER_BIAS,
-        )
-        .filter(|s| s.angle >= config::SHOT_MIN_ANGLE)
-        .filter(|_| (from - opp_goal).norm() < config::SHOOT_RANGE);
-        let target = if let Some(shot) = shot {
-            shot.target
-        } else if from.x > 0.0 && (from - opp_goal).norm() < config::STRIKE_FINISH_RANGE {
-            // 2. Strike zone with no clean window → finish at the widest sliver
-            //    (or goal centre) — force the save/rebound rather than settle.
-            self.finish_strike_target(world, from, opp_goal)
-        } else {
-            // 3. Out of range → the forward release: kick-ahead into open space,
-            //    falling back to the back-line-cone hoof.
-            self.best_kickahead_target(world, actor, inputs)
-                .map(|(_, t, _)| t)
-                .unwrap_or_else(|| self.release_target(world, actor, inputs))
-        };
+        // 1. A genuinely clear aimed-shot window in range → strike its midpoint.
+        // 2. Strike zone, no clean window → finish at the widest sliver / goal
+        //    centre to force a save/rebound — but never blast the ball straight
+        //    into an opponent at point-blank range (the close-opponent veto).
+        // 3. Otherwise the forward release: a clean kick-ahead, else the hoof.
+        let target = self
+            .clear_shot(world, from, config::SHOOT_RANGE)
+            .or_else(|| {
+                (from.x > 0.0 && (from - opp_goal).norm() < config::STRIKE_FINISH_RANGE)
+                    .then(|| self.finish_strike_target(world, from, opp_goal))
+                    .filter(|t| !self.fires_into_close_opp(world, from, *t))
+            })
+            .unwrap_or_else(|| self.forward_release(world, actor, from, inputs));
         BallAction::Strike {
             target,
             acquire_first: false,
@@ -716,6 +709,91 @@ impl Planner {
             .map(|o| o.position)
     }
 
+    /// A direct shot at the opponent goal — taken only when a genuinely clear
+    /// window is open within `range` AND the lane isn't fired into a close
+    /// opponent. Shared by open play (`strike_release`) and restarts, both held to
+    /// the same "actually clear" gate ([`config::SHOT_MIN_ANGLE`]).
+    fn clear_shot(&self, world: &World, from: Vector2, range: f64) -> Option<Vector2> {
+        let opp_goal = world.opp_goal_center();
+        geometry::best_shot(
+            from,
+            opp_goal.x,
+            world.goal_width(),
+            world.opp_players(),
+            Self::opp_keeper(world),
+            config::SHOT_ROBOT_RADIUS,
+            Self::keeper_shot_radius(world),
+            config::BALL_RADIUS,
+            config::SHOT_KEEPER_BIAS,
+        )
+        .filter(|s| s.angle >= config::SHOT_MIN_ANGLE)
+        .filter(|_| (from - opp_goal).norm() < range)
+        .filter(|s| !self.fires_into_close_opp(world, from, s.target))
+        .map(|s| s.target)
+    }
+
+    /// Forward advancement release: a kick-ahead down an open lane (never fired
+    /// into a close opponent), else the goal-mouth-cone hoof. Shared by the
+    /// free-kick restart and the out-of-range open-play strike.
+    fn forward_release(
+        &self,
+        world: &World,
+        actor: PlayerId,
+        from: Vector2,
+        inputs: &PlanInputs,
+    ) -> Vector2 {
+        self.best_kickahead_target(world, actor, inputs)
+            .map(|(_, t, _)| t)
+            .filter(|t| !self.fires_into_close_opp(world, from, *t))
+            .unwrap_or_else(|| self.release_target(world, actor, inputs))
+    }
+
+    /// The aim point for our attacking restart (kickoff / free kick), fired from a
+    /// loose ball by the Loose branch (`strike_release`). Priority:
+    ///   1. a direct shot only when the goal is *actually* clear ([`clear_shot`]);
+    ///   2. kickoff, no clear shot: deflect off a distant opponent off to the side
+    ///      (ball runs out for our restart), else a safe side advance, else a hoof;
+    ///   3. free kick, no clear shot: a clean [`forward_release`] toward their half.
+    fn restart_strike_target(
+        &self,
+        world: &World,
+        actor: PlayerId,
+        from: Vector2,
+        inputs: &PlanInputs,
+    ) -> Vector2 {
+        self.clear_shot(world, from, config::KICKER_SHOT_RANGE)
+            .unwrap_or_else(|| {
+                if inputs.our_restart_is_kickoff {
+                    self.kickoff_deflect_target(world, from)
+                        .or_else(|| self.kickoff_side_advance(world, from))
+                        .unwrap_or_else(|| self.release_target(world, actor, inputs))
+                } else {
+                    self.forward_release(world, actor, from, inputs)
+                }
+            })
+    }
+
+    /// Kickoff fallback when no deflection target qualifies and the goal-mouth hoof
+    /// would fire straight into the opponent lined up in front: advance to open
+    /// space on the more-open flank, guaranteed to clear the close-opponent veto.
+    /// `None` (→ the last-resort hoof) only if both flanks are somehow blocked.
+    fn kickoff_side_advance(&self, world: &World, from: Vector2) -> Option<Vector2> {
+        let half_len = world.field_length() / 2.0;
+        let half_wid = world.field_width() / 2.0;
+        let opps = world.opp_players();
+        [
+            Vector2::new(half_len * 0.5, half_wid * 0.6),
+            Vector2::new(half_len * 0.5, -half_wid * 0.6),
+        ]
+        .into_iter()
+        .filter(|t| !self.fires_into_close_opp(world, from, *t))
+        .max_by(|a, b| {
+            let oa = geometry::lane_openness(from, *a, opps, config::KICK_LANE_CORRIDOR);
+            let ob = geometry::lane_openness(from, *b, opps, config::KICK_LANE_CORRIDOR);
+            oa.partial_cmp(&ob).unwrap_or(std::cmp::Ordering::Equal)
+        })
+    }
+
     /// Last-resort release target (restart with nothing on, or a carrier at the
     /// dribble cap with no hoof): the goal-mouth-cone hoof, falling back to a
     /// goal-biased point when even the cone is degenerate.
@@ -785,6 +863,40 @@ impl Planner {
             config::HOOF_CENTER_W,
             config::HOOF_MOUTH_INSET,
         )
+    }
+
+    /// The forward teammate a hoof toward `target` is aimed at, if any — the
+    /// nearest eligible mate to the ball→target ray (by perpendicular distance,
+    /// within [`config::KICKAHEAD_MAX_PERP`]) that projects forward along it. This
+    /// is the kick-ahead runner: the robot the orchestrator pins to collect the
+    /// ball once the kick clears. `None` when the hoof goes into empty space with
+    /// no mate on its path (a plain clearance, no runner).
+    fn kickahead_receiver(
+        &self,
+        world: &World,
+        carrier: PlayerId,
+        ball: Vector2,
+        target: Vector2,
+        inputs: &PlanInputs,
+    ) -> Option<PlayerId> {
+        let dir = (target - ball).try_normalize(1e-6)?;
+        world
+            .own_players()
+            .iter()
+            .filter(|p| p.id != carrier)
+            .filter(|p| Some(p.id) != inputs.keeper_id)
+            .filter(|p| Some(p.id) != inputs.double_touch_robot)
+            // A forward teammate, ahead of the ball along the kick direction.
+            .filter(|p| p.position.x > 0.0)
+            .filter(|p| (p.position - ball).dot(&dir) > 0.0)
+            .map(|p| {
+                let to_m = p.position - ball;
+                let perp = (to_m.x * dir.y - to_m.y * dir.x).abs();
+                (p.id, perp)
+            })
+            .filter(|(_, perp)| *perp <= config::KICKAHEAD_MAX_PERP)
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(id, _)| id)
     }
 
     /// Best kick-ahead target. Returns `(Some(supporter), lead_point, quality)` for
@@ -1045,6 +1157,7 @@ mod tests {
             carried: 0.0,
             fresh_possession: false,
             now: 0.0,
+            kickahead_receiver: None,
         }
     }
 
@@ -1490,6 +1603,51 @@ mod tests {
                 );
             }
             other => panic!("expected a deflection Strike, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn kickoff_from_loose_ball_deflects_not_straight_into_front_opponent() {
+        // Regression: our kickoff is fired from a LOOSE ball (the taker's first
+        // touch IS the kick), so the Loose branch — not the We-branch `is_kicker` —
+        // aims it. An opponent lined up in front must NOT be struck straight; the
+        // kick deflects off a distant side opponent instead.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1000.0, 0.0), // kicker (capturer of the loose ball)
+        ];
+        let opp = vec![
+            player(9, 4400.0, 0.0),     // opp keeper closing the mouth
+            player(8, 0.0, 0.0),        // opponent lined up dead ahead of the ball
+            player(7, 1500.0, 2200.0),  // distant side opponent (+y)
+            player(6, 1500.0, -1800.0), // distant side opponent (−y, less lateral)
+        ];
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+        let mut inp = inputs();
+        inp.our_attacking_restart = true;
+        inp.our_restart_is_kickoff = true;
+
+        let plan = planner
+            .replan(
+                &world,
+                &Possession::Loose,
+                Some(PlayerId::new(2)),
+                &inp,
+            )
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Handle {
+                action: BallAction::Strike { target, .. },
+                ..
+            } => {
+                assert!(
+                    (*target - Vector2::new(1500.0, 2200.0)).norm() < 1e-6,
+                    "loose-ball kickoff must deflect off the more-lateral side \
+                     opponent, not fire straight ahead, got {target:?}"
+                );
+            }
+            other => panic!("expected a deflection Strike from the loose ball, got {other:?}"),
         }
     }
 

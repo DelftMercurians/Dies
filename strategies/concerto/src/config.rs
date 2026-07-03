@@ -39,7 +39,7 @@ pub const FORWARD_OK_BAR: f64 = 0.50;
 /// Div-B conservative mode: 0.0 — passes are the dominant self-inflicted turnover
 /// source against lower-tier opponents, so the carrier always shoots, carries, or
 /// hoofs. Restore 1.0 for peer-level play.
-pub const PASS_SUCCESS_BASE: f64 = 0.5;
+pub const PASS_SUCCESS_BASE: f64 = 0.0;
 /// How far behind the ball (toward our own half) the recycle pivot sits, on the
 /// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
 /// where an extra central body would invite the defence to collapse the shot zone.
@@ -181,14 +181,12 @@ pub const SHOT_MIN_ANGLE: f64 = 0.10;
 // A restart kicker (our kickoff / free kick) always RELEASES with a strike-
 // through (a reflex `Strike`, never a hold-and-aim — that would double-touch).
 // It shoots directly only when the goal is *actually* clear, held to the same
-// standard as an open-play shot ([`SHOT_MIN_ANGLE`]). The old Div-B "benign
-// sliver" gamble — shoot at a ~70mm window from the kickoff spot and hope for a
-// wall deflection — is retired: with no clear shot a kickoff instead deflects off
-// a distant side opponent (below) and a free kick makes a clean forward advance,
-// both strictly better than a hopeful sliver that usually just concedes possession.
-/// Minimum open-window width (radians) for the restart kicker's direct shot — the
-/// goal must be genuinely clear, the same gate as an open-play shot.
-pub const KICKER_SHOT_MIN_ANGLE: f64 = SHOT_MIN_ANGLE;
+// standard as an open-play shot ([`SHOT_MIN_ANGLE`], shared via `clear_shot`).
+// The old Div-B "benign sliver" gamble — shoot at a ~70mm window from the kickoff
+// spot and hope for a wall deflection — is retired: with no clear shot a kickoff
+// instead deflects off a distant side opponent (below) and a free kick makes a
+// clean forward advance, both strictly better than a hopeful sliver that usually
+// just concedes possession.
 /// Maximum distance to the opponent goal for the restart shot — a coarse reach
 /// gate so we don't strike at goal from our own half (the ball would arrive dead).
 /// Covers the kickoff spot (4500mm) with margin.
@@ -321,6 +319,25 @@ pub const BOUNDARY_RESCUE_MARGIN: f64 = 300.0;
 /// into the inward push (0 = straight inward, larger = more goalward). Keeps a
 /// forward component while guaranteeing the dominant pull is away from the line.
 pub const RESCUE_GOAL_BIAS: f64 = 0.6;
+
+// ── Kick-ahead (hoof toward a supporter) ─────────────────────────────────────
+// When an open-play hoof is aimed near a forward teammate, we don't fire-and-
+// forget: that teammate is pinned as the ball-winner and, once the kick clears,
+// collects the ball in flight (a plain `Hold` acquire — no receive prediction,
+// just pick it up whichever way it comes). Distinct from a coordinated `Pass`:
+// the carrier never waits, it just hoofs, and the runner chases.
+/// Maximum perpendicular distance (mm) of a forward teammate from the hoof ray
+/// for it to be treated as the kick-ahead receiver. Tighter than the hoof's own
+/// mate-bias radius so we only commit a runner when the ball is genuinely on its
+/// path.
+pub const KICKAHEAD_MAX_PERP: f64 = 1000.0;
+/// How far (mm) the ball must travel from the kick origin for the kick to count
+/// as "cleared" — once cleared, the runner stays committed to the chase.
+pub const KICKAHEAD_CLEAR_DIST: f64 = 400.0;
+/// If the ball hasn't cleared [`KICKAHEAD_CLEAR_DIST`] within this many seconds
+/// of the kick releasing (kick whiffed / blocked / stuck on the kicker), abort
+/// the kick-ahead and replan the loose ball normally. World-time, not wall-clock.
+pub const KICKAHEAD_CLEAR_TIMEOUT: f64 = 0.6;
 
 // ── Driver ──────────────────────────────────────────────────────────────────
 /// Ball displacement from the engagement point that aborts any waypoint. This is

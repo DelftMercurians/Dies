@@ -43,6 +43,20 @@ const KICKOFF_STAGE_X: f64 = -300.0;
 /// PrepareKickoff/Kickoff states; stage slightly deeper so that's a no-op too.
 const KICKOFF_CIRCLE_MARGIN: f64 = 600.0;
 
+/// An in-progress kick-ahead: the carrier has hoofed (or is about to hoof) the
+/// ball toward a forward teammate, and that teammate is the intended runner.
+/// Distinct from a coordinated `Pass` — the carrier never waits; it just clears
+/// the ball, and the runner chases and collects it in flight.
+#[derive(Debug, Clone, Copy)]
+struct KickAhead {
+    /// The teammate pinned to collect the ball.
+    receiver: PlayerId,
+    /// `(ball position, world time)` at the moment the kick released (stamped on
+    /// the first pursuit tick after the hoof). `None` while still pending — the
+    /// carrier is lining up / executing the strike and the ball hasn't left yet.
+    kicked: Option<(Vector2, f64)>,
+}
+
 /// The Concerto strategy.
 pub struct ConcertoStrategy {
     /// Previous frame's possession, for detecting changes (the metric itself is
@@ -81,6 +95,9 @@ pub struct ConcertoStrategy {
     /// wall-clearer candidate pool. One tick stale by construction, which is fine
     /// at frame rate.
     last_wall_ids: Vec<PlayerId>,
+    /// In-progress kick-ahead intent (a hoof aimed at a forward runner). Armed
+    /// from the plan while we hold the ball, consumed/aborted after the kick.
+    kickahead: Option<KickAhead>,
 }
 
 impl ConcertoStrategy {
@@ -100,6 +117,7 @@ impl ConcertoStrategy {
             penalty: penalty::PenaltyState::default(),
             wall_clearer: None,
             last_wall_ids: Vec::new(),
+            kickahead: None,
         }
     }
 }
@@ -215,6 +233,7 @@ impl Strategy for ConcertoStrategy {
         if game_state_changed {
             self.planner.clear_plan();
             self.driver.clear();
+            self.kickahead = None;
         }
         self.last_game_state = game_state;
 
@@ -330,7 +349,7 @@ impl Strategy for ConcertoStrategy {
             can_act && !keeper_has_ball && (passing || matches!(possession, Possession::We(_)));
         let pursuit = can_act && !offense && !keeper_has_ball;
 
-        let inputs = PlanInputs {
+        let mut inputs = PlanInputs {
             keeper_id: world.our_keeper_id(),
             double_touch_robot: self.double_touch_robot,
             our_attacking_restart: us_operating
@@ -342,6 +361,9 @@ impl Strategy for ConcertoStrategy {
                 .map(|t| now - t < config::FAST_BREAK_WINDOW)
                 .unwrap_or(false),
             now,
+            // Set below, once the kick-ahead lifecycle has run (the runner only
+            // collects — rather than strikes — a loose ball that is in flight).
+            kickahead_receiver: None,
         };
 
         // Robots Formation must not position: those the Planner already controls
@@ -359,10 +381,21 @@ impl Strategy for ConcertoStrategy {
                 || (!passing && (possession_changed || contest_changed || game_state_changed));
             if needs_replan {
                 match self.planner.replan(&world, &possession, None, &inputs) {
-                    Some(plan) => self
-                        .driver
-                        .set_waypoint(plan.waypoints[0].clone(), plan.active_robot),
-                    None => self.driver.clear(),
+                    Some(plan) => {
+                        // Arm/refresh (or drop) the kick-ahead intent from the
+                        // fresh plan: a hoof toward a forward runner carries that
+                        // runner's id; any other plan carries `None`.
+                        self.kickahead = plan.kickahead.map(|receiver| KickAhead {
+                            receiver,
+                            kicked: None,
+                        });
+                        self.driver
+                            .set_waypoint(plan.waypoints[0].clone(), plan.active_robot);
+                    }
+                    None => {
+                        self.driver.clear();
+                        self.kickahead = None;
+                    }
                 }
             }
             if self.driver.active_robot_id().is_some() {
@@ -378,7 +411,21 @@ impl Strategy for ConcertoStrategy {
             // Not acting — replan fresh when play resumes.
             self.planner.clear_plan();
             self.driver.clear();
+            self.kickahead = None;
         }
+
+        // ── Kick-ahead lifecycle ────────────────────────────────────────
+        // Advance the intent armed above: stamp the kick-release origin on the
+        // first pursuit tick, then hold the runner committed until the ball
+        // clears (success) or the clear-gate times out (abort → replan normally).
+        self.step_kickahead(&world, possession, offense, pursuit, now);
+        // A kick-ahead runner in flight *collects* the loose ball (see the Loose
+        // branch); only expose it to the planner once the kick has actually
+        // released (`kicked` stamped), so a mid-strike replan still strikes.
+        inputs.kickahead_receiver = self
+            .kickahead
+            .filter(|ka| ka.kicked.is_some())
+            .map(|ka| ka.receiver);
 
         // ── Our set-piece preparation: designate & position a kicker ─────
         // Covers states that are not yet ball-in-play but where comply() would
@@ -500,10 +547,12 @@ impl Strategy for ConcertoStrategy {
                 ineligible,
                 // During our set piece the capture role is reserved for the
                 // pinned taker — matching may not hand the ball to anyone else.
+                // A kick-ahead in flight likewise reserves it for the runner, so
+                // the intended teammate (not the nearest body) collects the ball.
                 pinned: if take_window {
                     self.restart_kicker
                 } else {
-                    None
+                    inputs.kickahead_receiver
                 },
             }
         });
@@ -796,6 +845,64 @@ impl ConcertoStrategy {
             p.set_role(role);
         }
         Some(id)
+    }
+
+    /// Advance the kick-ahead intent one tick. Phases:
+    /// - **Pending** (`kicked` is `None`): the carrier is lining up / executing
+    ///   the hoof. Held alive while we still hold the ball (offense); on the first
+    ///   pursuit tick (the kick has released) we stamp the origin + time and enter
+    ///   the flight phase. A stoppage in between drops it.
+    /// - **Flight** (`kicked` is `Some`): the runner is pinned to collect the ball.
+    ///   Dropped when we regain the ball (collected → offense), the opponent takes
+    ///   it, play stops, or the clear-gate times out without the ball travelling
+    ///   [`config::KICKAHEAD_CLEAR_DIST`] from the kick origin (a whiffed/blocked
+    ///   kick → abort and let the normal loose-ball capture take over).
+    fn step_kickahead(
+        &mut self,
+        world: &World,
+        possession: Possession,
+        offense: bool,
+        pursuit: bool,
+        now: f64,
+    ) {
+        let Some(mut ka) = self.kickahead.take() else {
+            return;
+        };
+        // The runner must still be on the field to chase.
+        if !world.own_players().iter().any(|p| p.id == ka.receiver) {
+            return;
+        }
+        match ka.kicked {
+            None => {
+                if offense {
+                    // Still pending — the carrier hasn't released the ball yet.
+                    self.kickahead = Some(ka);
+                } else if pursuit {
+                    // Kick released: stamp the origin/time and commit the runner.
+                    if let Some(ball) = world.ball_position() {
+                        ka.kicked = Some((ball, now));
+                        self.kickahead = Some(ka);
+                    }
+                }
+                // Otherwise (stoppage / not acting) drop it.
+            }
+            Some((origin, t)) => {
+                // Consumed (we hold it again), opponent stole it, or play stopped.
+                if offense || !pursuit || matches!(possession, Possession::Opp(_)) {
+                    return;
+                }
+                let dist = world
+                    .ball_position()
+                    .map(|b| (b - origin).norm())
+                    .unwrap_or(0.0);
+                let cleared = dist > config::KICKAHEAD_CLEAR_DIST;
+                if !cleared && now - t > config::KICKAHEAD_CLEAR_TIMEOUT {
+                    // The kick never travelled clear of the kicker → abort.
+                    return;
+                }
+                self.kickahead = Some(ka);
+            }
+        }
     }
 
     fn draw_debug(
