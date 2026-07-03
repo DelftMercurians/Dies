@@ -15,7 +15,7 @@
   },
   "tracker_settings": {
     "field_mask": {
-      "x_min": -1.0,
+      "x_min": 0.0,
       "x_max": 1.0,
       "y_min": -1.0,
       "y_max": 1.0
@@ -41,28 +41,32 @@
   "yellow_team_settings": {
     "handicaps": {},
     "tof_backup_breakbeam": [],
-    "ignore_gc": false
+    "ignore_gc": true
   },
   "blue_team_settings": {
     "handicaps": {},
     "tof_backup_breakbeam": [],
-    "ignore_gc": true
+    "ignore_gc": false
   },
   "skill_tunables": {
     "handle_ball.PICKUP_LATERAL_OFFSET": 0.0,
-    "handle_ball.MAGNET_ENABLED": 0.0,
-    "handle_ball.APPROACH_GAIN": 2.0,
-    "handle_ball.COMMIT_DISTANCE": 280.0,
-    "handle_ball.CARRY_DRIBBLER_SPEED": 0.2,
-    "handle_ball.GATE_PERP": 80.0,
-    "handle_ball.APPROACH_CARE": -0.6,
-    "handle_ball.APPROACH_MIN_SPEED": 200.0,
-    "handle_ball.AIM_BACKSTOP": 60.0,
-    "handle_ball.DRIBBLER_SPEED": 0.15,
-    "handle_ball.LATERAL_GAIN": 6.0,
     "handle_ball.APPROACH_DISTANCE": 250.0,
+    "handle_ball.APPROACH_CARE": -0.6,
+    "handle_ball.GATE_PERP": 80.0,
+    "handle_ball.AIM_BACKSTOP": 60.0,
+    "handle_ball.MAGNET_ENABLED": 0.0,
+    "receive.LATERAL_GAIN": 1.5,
+    "handle_ball.COMMIT_PERP": 20.0,
+    "handle_ball.APPROACH_GAIN": 2.0,
     "handle_ball.APPROACH_HYSTERESIS": 400.0,
-    "handle_ball.COMMIT_PERP": 20.0
+    "handle_ball.CARRY_DRIBBLER_SPEED": 0.2,
+    "handle_ball.LATERAL_GAIN": 6.0,
+    "receive.CUSHION_RANGE": 800.0,
+    "receive.CUSHION_SPEED": 1000.0,
+    "handle_ball.COMMIT_DISTANCE": 280.0,
+    "handle_ball.DRIBBLER_SPEED": 0.15,
+    "handle_ball.APPROACH_MIN_SPEED": 200.0,
+    "receive.CUSHION_GAIN": 0.8
   },
   "possession_config": {
     "acquire_dist": 120.0,
@@ -102,6 +106,7 @@
     "planner_margin": 10.0,
     "replan_target_tol": 150.0,
     "planner_enabled": true,
-    "orca_enabled": true
+    "orca_enabled": true,
+    "orca_hold_ground": true
   }
 }

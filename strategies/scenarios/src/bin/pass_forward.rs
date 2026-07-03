@@ -24,8 +24,8 @@ const FREE_DIST: f64 = 400.0;
 /// Receive points for the one-timer, offset laterally from the center→goal
 /// line: from a ball near midfield the incoming pass and the outgoing
 /// redirect toward [`OPP_GOAL`] meet at a shallow (~45°) deflection.
-const HINT_HIGH: Vector2 = Vector2::new(2500.0, 900.0);
-const HINT_LOW: Vector2 = Vector2::new(2500.0, -900.0);
+const HINT_HIGH: Vector2 = Vector2::new(-2500.0, 900.0);
+const HINT_LOW: Vector2 = Vector2::new(-2500.0, -900.0);
 
 /// Free the ball for `passer`: if the robot holds it (or is pressed against
 /// it), back straight away from the ball to [`FREE_DIST`]; if it is too far,
@@ -65,14 +65,14 @@ fn release(passer: PlayerId) -> Step {
 fn main() {
     run_scenario(|| {
         let a = PlayerId::new(4);
-        let b = PlayerId::new(5);
+        let b = PlayerId::new(0);
         Scenario::looping(move || {
             vec![
                 release(a),
-                Step::pass_forward(a, b, Some(HINT_HIGH), OPP_GOAL).timeout(30.0),
+                Step::pass_forward(a, b, Some(HINT_HIGH), Vector2::new(-4500.0, 0.0)).timeout(30.0),
                 Step::wait(3.0),
                 release(b),
-                Step::pass_forward(b, a, Some(HINT_LOW), OPP_GOAL).timeout(30.0),
+                Step::pass_forward(b, a, Some(HINT_LOW), Vector2::new(-4500.0, 0.0)).timeout(30.0),
                 Step::wait(3.0),
             ]
         })

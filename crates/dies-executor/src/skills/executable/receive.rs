@@ -194,7 +194,7 @@ impl ReceiveSkill {
 
         // Move towards target
         //input.velocity = Velocity::Global(diff.normalize() * 100.0);
-        input.with_dribbling(0.6);
+        input.with_dribbling(0.8);
         input.with_yaw(target_heading);
 
         // Position to intercept the pass. The receiver anchors its depth at the
