@@ -178,7 +178,9 @@ pub struct Cli {
     #[clap(long, default_value = "0")]
     pub vision_delay_ms: u32,
 
-    // current interface enp3s0f1 |  previous interface enxf8e43ba77d03
+    /// Network interface for the vision/GC multicast join. Pass "all" to join
+    /// on every IPv4 interface (auto-detect). Broadcast vision/GC addresses
+    /// need no interface — reception on the port always works.
     #[clap(long, default_value = "enp3s0f1")]
     pub interface: Option<String>,
 
