@@ -997,8 +997,13 @@ fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
             passer,
             receiver,
             target_area,
+            forward_to,
         } => (
-            "Pass",
+            if forward_to.is_some() {
+                "Pass(OT)"
+            } else {
+                "Pass"
+            },
             format!(
                 "p{}→p{} @ ({:.0}, {:.0})",
                 passer.as_u32(),
@@ -1064,7 +1069,7 @@ fn opp_time_to_ball(world: &World, ball: Vector2) -> f64 {
 /// A robot missing its kicker or dribbler can't do ball duty (capture, set-piece
 /// kicks): it can neither strike nor hold the ball. `NoBreakbeam` doesn't bar
 /// anything — the ToF backup covers ball detection.
-fn ball_duty_barred(p: &PlayerState) -> bool {
+pub(crate) fn ball_duty_barred(p: &PlayerState) -> bool {
     p.handicaps.contains(&Handicap::NoKicker) || p.handicaps.contains(&Handicap::NoDribbler)
 }
 

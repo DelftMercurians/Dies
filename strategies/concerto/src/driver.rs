@@ -211,16 +211,26 @@ impl Driver {
             passer,
             receiver,
             target_area,
+            forward_to,
         } = waypoint
         {
-            ctx.pass(passer, receiver)
+            let mut pass = ctx
+                .pass(passer, receiver)
                 .target_hint(target_area)
                 .seq(self.pass_seq);
+            if let Some(aim) = forward_to {
+                pass = pass.forward_to(aim);
+            }
+            drop(pass);
             if let Some(p) = ctx.player(passer) {
                 p.set_role("passing");
             }
             if let Some(r) = ctx.player(receiver) {
-                r.set_role("receiving");
+                r.set_role(if forward_to.is_some() {
+                    "one_timer"
+                } else {
+                    "receiving"
+                });
             }
             let status = match ctx.pass_result(passer) {
                 Some(PassResult::Success { .. }) => {
@@ -524,6 +534,7 @@ mod tests {
             passer: PlayerId::new(2),
             receiver: PlayerId::new(3),
             target_area: Vector2::new(2500.0, 0.0),
+            forward_to: None,
         }
     }
 

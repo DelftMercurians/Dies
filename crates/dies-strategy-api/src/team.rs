@@ -268,9 +268,11 @@ impl PassBuilder<'_> {
     /// reports `forwarded: true` (or `false` if the reflex dudded and the ball
     /// stuck to the dribbler — still a completed pass).
     ///
-    /// The coordinator trusts the caller's geometry: keep the deflection angle
-    /// (incoming pass vs receiver→`target`) shallow, roughly ≲60°, or the ball
-    /// glances off the shell. The angle is emitted as a debug value.
+    /// Deflection convention (`angle(incoming, outgoing)`): 180° is a head-on
+    /// return (ideal), 90° the physical limit — below the coordinator's
+    /// `ONE_TIMER_MIN_DEFLECTION` gate the ball arrives behind the kicker mouth
+    /// and the pass fails pre-release with `InfeasibleGeometry`. The angle is
+    /// emitted as a debug value.
     pub fn forward_to(mut self, target: Vector2) -> Self {
         self.forward_to = Some(target);
         self

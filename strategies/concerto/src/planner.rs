@@ -38,6 +38,11 @@ pub enum Waypoint {
         passer: PlayerId,
         receiver: PlayerId,
         target_area: Vector2,
+        /// `Some(aim)` turns the receive into a one-timer: the receiver waits
+        /// with the reflex kick pre-armed facing `aim` and redirects the ball
+        /// there on contact (the coordinator's `forward_to` mode). `None` is a
+        /// plain catch pass.
+        forward_to: Option<Vector2>,
     },
 }
 
@@ -248,6 +253,13 @@ impl Planner {
                         },
                         rescue: false,
                     }
+                } else if let Some(w) = self.corner_one_timer(world, id, inputs) {
+                    // Corner one-timer: deep and wide of the box with no shot
+                    // window, cross to a teammate at the box edge for a reflex
+                    // redirect into goal — the one pass whitelisted past the
+                    // Div-B kill-switch. Pre-empts the strike-finish fallback
+                    // (a near-zero-angle blast) when the geometry is on.
+                    w
                 } else {
                     // Primary advancement is a kick-ahead toward a supporter or open
                     // space (dribbling is unreliable and rule-capped). When the best
@@ -260,6 +272,7 @@ impl Planner {
                         passer: id,
                         receiver,
                         target_area,
+                        forward_to: None,
                     };
                     let hoof = |target: Vector2| Waypoint::Handle {
                         action: BallAction::Strike {
@@ -316,12 +329,14 @@ impl Planner {
                                     passer: id,
                                     receiver,
                                     target_area,
+                                    forward_to: None,
                                 })
                             } else {
                                 Waypoint::Pass {
                                     passer: id,
                                     receiver,
                                     target_area,
+                                    forward_to: None,
                                 }
                             }
                         }
@@ -942,6 +957,155 @@ impl Planner {
             .filter(|(_, perp)| *perp <= config::KICKAHEAD_MAX_PERP)
             .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(id, _)| id)
+    }
+
+    /// The corner one-timer (the "1-2" finish). A carrier deep and wide of the
+    /// opponent box — where `best_shot` never clears [`config::SHOT_MIN_ANGLE`]
+    /// and the strike-finish fallback blasts from a near-zero angle — instead
+    /// crosses to a teammate posted at the box edge, which redirects the ball
+    /// into the goal with the pre-armed reflex kick (the coordinator's
+    /// one-timer mode, `forward_to`).
+    ///
+    /// This is the single pass shape whitelisted past the Div-B kill-switch:
+    /// its gates are pure deflection geometry (the `CORNER_OT_*` consts), never
+    /// scaled by [`config::PASS_SUCCESS_BASE`]. Selection is feasibility-first:
+    /// pockets and aims are ranked by deflection margin above the coordinator's
+    /// `ONE_TIMER_MIN_DEFLECTION` gate (180° = head-on = ideal — its exact
+    /// convention), with shot-lane openness only a bounded tiebreak. The
+    /// receiver is whichever eligible robot arrives fastest — cross-field pulls
+    /// are intended (the play is worth a body); commit is immediate and the
+    /// coordinator's Stage phase walks it into the pocket while the passer
+    /// stages behind the ball. Returns `None` when the play is off (wrong zone,
+    /// no feasible pocket, blocked cross lane, or no receiver in time).
+    fn corner_one_timer(
+        &self,
+        world: &World,
+        carrier: PlayerId,
+        inputs: &PlanInputs,
+    ) -> Option<Waypoint> {
+        let ball = world.ball_position()?;
+        let carrier_pos = world.own_player(carrier)?.position;
+        let pen = world.opp_penalty_area();
+        let pen_half_w = (pen.max.y - pen.min.y) / 2.0;
+
+        // Trigger zone: deep (near/past the box front) and wide of the box.
+        // The caller has already ruled out a real aimed shot.
+        let deep = carrier_pos.x > pen.min.x - config::CORNER_OT_ZONE_DEPTH;
+        let wide = carrier_pos.y.abs() > pen_half_w + config::CORNER_OT_MIN_WIDE;
+        if !deep || !wide {
+            return None;
+        }
+
+        let opps = world.opp_players();
+        let opp_goal = world.opp_goal_center();
+        // Aim candidates stay off the posts by this much (ball + slack).
+        let aim_inset = world.goal_width() / 2.0 - 120.0;
+
+        // Deflection angle (degrees) at `pocket` redirecting the incoming cross
+        // toward `aim` — the coordinator's exact formula (pass_coordinator.rs):
+        // 180° = head-on return = ideal, below its gate the ball arrives behind
+        // the kicker mouth.
+        let deflection = |pocket: Vector2, aim: Vector2| -> f64 {
+            (pocket - ball).angle(&(aim - pocket)).to_degrees()
+        };
+
+        // Best redirect aim from `pocket`: feasibility (deflection margin over
+        // the commit bar) is the primary pull; openness of the pocket→goal lane
+        // adds at most CORNER_OT_AIM_OPENNESS_WEIGHT degrees of equivalent
+        // margin. Returns `None` when no goal-mouth aim is feasible.
+        let best_aim = |pocket: Vector2| -> Option<(Vector2, f64)> {
+            const AIM_SAMPLES: usize = 5;
+            let mut best: Option<(Vector2, f64)> = None;
+            for i in 0..AIM_SAMPLES {
+                let t = i as f64 / (AIM_SAMPLES - 1) as f64;
+                let aim = Vector2::new(opp_goal.x, -aim_inset + t * 2.0 * aim_inset);
+                let margin = deflection(pocket, aim) - config::CORNER_OT_MIN_DEFLECTION;
+                if margin < 0.0 {
+                    continue;
+                }
+                let open =
+                    geometry::lane_openness(pocket, aim, opps, config::KICK_LANE_CORRIDOR);
+                let score = margin + open * config::CORNER_OT_AIM_OPENNESS_WEIGHT;
+                if best.map_or(true, |(_, s)| score > s) {
+                    best = Some((aim, score));
+                }
+            }
+            best
+        };
+
+        // Pocket candidates hug the defense-area edge (standoff keeps the touch
+        // point legal): the front edge plus both side edges. Near-side pockets
+        // self-filter — their deflection to goal is far below the gate.
+        let standoff = config::CORNER_OT_POCKET_MARGIN;
+        let mut pockets: Vec<Vector2> = Vec::with_capacity(11);
+        const FRONT_SAMPLES: usize = 5;
+        for i in 0..FRONT_SAMPLES {
+            let t = i as f64 / (FRONT_SAMPLES - 1) as f64;
+            let y = -pen_half_w + t * 2.0 * pen_half_w;
+            pockets.push(Vector2::new(pen.min.x - standoff, y));
+        }
+        const SIDE_SAMPLES: usize = 3;
+        let depth = pen.max.x - pen.min.x;
+        for i in 0..SIDE_SAMPLES {
+            let x = pen.min.x + depth * (i as f64 + 0.5) / SIDE_SAMPLES as f64;
+            pockets.push(Vector2::new(x, pen_half_w + standoff));
+            pockets.push(Vector2::new(x, -(pen_half_w + standoff)));
+        }
+
+        // Rank pockets: feasible aim (hard), open cross lane from the ball
+        // (hard), opponent sitting on the pocket discounts but never vetoes —
+        // adjacent samples win, the "slide along the box edge" behavior.
+        let mut best_pocket: Option<(Vector2, Vector2, f64)> = None;
+        for pocket in pockets {
+            let lane = geometry::lane_openness(ball, pocket, opps, config::KICK_LANE_CORRIDOR);
+            if lane < config::CORNER_OT_MIN_LANE {
+                continue;
+            }
+            let Some((aim, aim_score)) = best_aim(pocket) else {
+                continue;
+            };
+            let clear = config::CORNER_OT_CLEARANCE_FLOOR
+                + (1.0 - config::CORNER_OT_CLEARANCE_FLOOR)
+                    * geometry::receiver_clearance(pocket, opps);
+            let score = aim_score * lane * clear;
+            if best_pocket.map_or(true, |(_, _, s)| score > s) {
+                best_pocket = Some((pocket, aim, score));
+            }
+        }
+        let (pocket, aim, _) = best_pocket?;
+
+        // Nominate the fastest eligible receiver to the pocket. The travel cap
+        // keeps the commit inside the coordinator's stage budget with margin.
+        let receiver = world
+            .own_players()
+            .iter()
+            .filter(|p| p.id != carrier)
+            .filter(|p| Some(p.id) != inputs.keeper_id)
+            .filter(|p| Some(p.id) != inputs.double_touch_robot)
+            .filter(|p| !crate::ball_duty_barred(p))
+            .map(|p| {
+                let t = geometry::redirect_time(
+                    p.position,
+                    p.velocity,
+                    pocket,
+                    config::V_MAX,
+                    config::A_MAX,
+                );
+                (p.id, t)
+            })
+            .filter(|(_, t)| *t <= config::CORNER_OT_MAX_TRAVEL)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)?;
+
+        debug::value("corner_ot.deflection", deflection(pocket, aim));
+        debug::cross("corner_ot.pocket", pocket);
+
+        Some(Waypoint::Pass {
+            passer: carrier,
+            receiver,
+            target_area: pocket,
+            forward_to: Some(aim),
+        })
     }
 
     /// Best kick-ahead target. Returns `(Some(supporter), lead_point, quality)` for
@@ -1628,6 +1792,177 @@ mod tests {
                 );
             }
             other => panic!("expected a forward hoof, got {other:?}"),
+        }
+    }
+
+    /// Div-B corner geometry shared by the corner one-timer tests: carrier on
+    /// the ball deep in the opponent corner (no shot window from that angle),
+    /// their keeper home, a presser behind the ball.
+    fn corner_world(own: Vec<PlayerState>, extra_opps: Vec<PlayerState>) -> World {
+        let ball = Vector2::new(4150.0, 2650.0);
+        let mut opp = vec![
+            player(14, 4400.0, 100.0),  // their keeper
+            player(5, 4300.0, 2500.0),  // presser behind the ball
+        ];
+        opp.extend(extra_opps);
+        world_contest(ball, own, opp, None)
+    }
+
+    #[test]
+    fn corner_carrier_emits_one_timer_pass() {
+        // The 1-2 finish: carrier in the opponent corner (shot angle far below
+        // SHOT_MIN_ANGLE) with a lone teammate on the other side of the field
+        // must cross to a box-edge pocket for a reflex redirect into the goal —
+        // the single pass whitelisted past the Div-B kill-switch, and worth a
+        // cross-field receiver pull.
+        let own = vec![
+            player(1, -4000.0, 0.0),    // keeper
+            player(2, 4150.0, 2650.0),  // carrier, on the ball in the corner
+            player(3, 1500.0, -1500.0), // far-side teammate — the pull
+        ];
+        let world = corner_world(own, vec![]);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Pass {
+                passer,
+                receiver,
+                target_area,
+                forward_to,
+            } => {
+                assert_eq!(*passer, PlayerId::new(2));
+                assert_eq!(*receiver, PlayerId::new(3), "the lone teammate is pulled");
+                let aim = forward_to.expect("a corner pass must be a one-timer");
+                assert!(
+                    (aim.x - 4500.0).abs() < 1e-6 && aim.y.abs() <= 500.0,
+                    "redirect must aim into the goal mouth, got {aim:?}"
+                );
+                // Pocket presses to the box edge but stays legally outside it.
+                let pen = world.opp_penalty_area();
+                assert!(
+                    !pen.contains(*target_area),
+                    "receive pocket must be outside the defense area, got {target_area:?}"
+                );
+                // Geometry must clear the executor's one-timer gate (120°) with
+                // the commit margin (135°): 180° = head-on = ideal.
+                let ball = world.ball_position().unwrap();
+                let deflection = (target_area - ball)
+                    .angle(&(aim - target_area))
+                    .to_degrees();
+                assert!(
+                    deflection >= config::CORNER_OT_MIN_DEFLECTION,
+                    "deflection {deflection:.0}° below the commit bar"
+                );
+            }
+            other => panic!("expected the corner one-timer Pass, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn corner_one_timer_needs_a_receiver() {
+        // Nobody to pull (keeper is never eligible): the corner carrier falls
+        // back to today's behavior — a first-time strike, never a pass.
+        let own = vec![
+            player(1, -4000.0, 0.0),   // keeper
+            player(2, 4150.0, 2650.0), // carrier, on the ball in the corner
+        ];
+        let world = corner_world(own, vec![]);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        assert!(
+            !matches!(&plan.waypoints[0], Waypoint::Pass { .. }),
+            "no eligible receiver: must not pass, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn corner_one_timer_blocked_cross_lanes_fall_through() {
+        // A corner trap: an opponent arc between the ball and every box-edge
+        // pocket kills the cross-lane gate — the play stays off and the carrier
+        // strikes first-time instead of feeding the wall.
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 4150.0, 2650.0),
+            player(3, 1500.0, -1500.0),
+        ];
+        // Ring at ~600mm from the ball spanning the bearings toward the box.
+        let trap = vec![
+            player(6, 4098.0, 2052.0),
+            player(7, 3806.0, 2159.0),
+            player(8, 3606.0, 2396.0),
+        ];
+        let world = corner_world(own, trap);
+        let mut planner = Planner::new();
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inputs())
+            .expect("should produce a plan");
+        assert!(
+            !matches!(&plan.waypoints[0], Waypoint::Pass { .. }),
+            "every cross lane is walled: must not pass, got {:?}",
+            plan.waypoints[0]
+        );
+    }
+
+    #[test]
+    fn corner_one_timer_zone_gates() {
+        // Wide but not deep, and deep but not wide (a workable strike angle):
+        // neither position is the corner play.
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 2400.0, 2650.0), // wide midfielder, not deep
+            player(3, 1500.0, -1500.0),
+        ];
+        let world = world_contest(Vector2::new(2400.0, 2650.0), own, vec![], None);
+        let planner = Planner::new();
+        assert!(
+            planner
+                .corner_one_timer(&world, PlayerId::new(2), &inputs())
+                .is_none(),
+            "not deep enough: zone gate must hold"
+        );
+
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 4000.0, 800.0), // deep but in front of the box
+            player(3, 1500.0, -1500.0),
+        ];
+        let world = world_contest(Vector2::new(4000.0, 800.0), own, vec![], None);
+        assert!(
+            planner
+                .corner_one_timer(&world, PlayerId::new(2), &inputs())
+                .is_none(),
+            "not wide of the box: zone gate must hold"
+        );
+    }
+
+    #[test]
+    fn corner_one_timer_skips_barred_receiver() {
+        // A receiver needs a working kicker for the reflex redirect: the closer
+        // teammate with a dead kicker is skipped for the farther healthy one.
+        let mut near = player(3, 2800.0, -800.0);
+        near.handicaps.insert(Handicap::NoKicker);
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 4150.0, 2650.0),
+            near,
+            player(4, 1500.0, -1500.0),
+        ];
+        let world = corner_world(own, vec![]);
+        let planner = Planner::new();
+
+        match planner.corner_one_timer(&world, PlayerId::new(2), &inputs()) {
+            Some(Waypoint::Pass { receiver, .. }) => {
+                assert_eq!(receiver, PlayerId::new(4), "NoKicker robot must be skipped");
+            }
+            other => panic!("expected the one-timer Pass, got {other:?}"),
         }
     }
 

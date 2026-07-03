@@ -298,6 +298,53 @@ pub const ESCAPE_STEP: f64 = 300.0;
 /// aim point — see `geometry::best_clear_ray`.)
 pub const ESCAPE_CLEAR_AIM_Y: f64 = 250.0;
 
+// ── Corner one-timer (the 1-2 finish) ────────────────────────────────────────
+// The one pass shape whitelisted through the Div-B pass kill-switch
+// ([`PASS_SUCCESS_BASE`] = 0): a carrier deep and wide of the opponent box — no
+// shot window from that acute angle — crosses to a teammate posted at the box
+// edge, which redirects it into the goal with the pre-armed reflex kick
+// (`ctx.pass(..).forward_to(..)`, zero handling latency). These gates are
+// deliberately independent of every generic pass-quality estimate: the play is
+// judged on its own deflection geometry, not on the disabled pass model.
+/// How far upfield of the opponent box front the trigger zone extends: the
+/// carrier must be at `x > box_front − CORNER_OT_ZONE_DEPTH`. Deep enough to
+/// cover the whole corner pocket where the strike-finish fallback fires from
+/// near-zero angle, shallow enough that a wide midfielder doesn't spray
+/// crosses from halfway.
+pub const CORNER_OT_ZONE_DEPTH: f64 = 500.0;
+/// How far outside the box's lateral edge (|y| > pen_half_width + this) the
+/// carrier must be. Inside this band a direct strike still has workable
+/// geometry; the one-timer is for genuinely acute angles.
+pub const CORNER_OT_MIN_WIDE: f64 = 200.0;
+/// Commit bar on the deflection angle (degrees; 180° = head-on = ideal, same
+/// convention as the executor's `ONE_TIMER_MIN_DEFLECTION`). Must stay above
+/// the coordinator's 120° pre-commit gate with slack, so staging drift and a
+/// moving ball can't turn a committed pass into an `InfeasibleGeometry` abort.
+pub const CORNER_OT_MIN_DEFLECTION: f64 = 135.0;
+/// Minimum openness (0..1, [`KICK_LANE_CORRIDOR`]-width) of the cross lane from
+/// the ball to the pocket. Below this the cross is a giveaway into a blocker —
+/// hard gate, NOT scaled by [`PASS_SUCCESS_BASE`].
+pub const CORNER_OT_MIN_LANE: f64 = 0.5;
+/// Cap on the nominated receiver's momentum-aware travel time to the pocket
+/// (s). Cross-field pulls are intended (the play is worth a body), but a robot
+/// that can't arrive inside the coordinator's 8s stage budget with margin
+/// would just burn the possession staging.
+pub const CORNER_OT_MAX_TRAVEL: f64 = 4.0;
+/// Standoff of the pocket candidates outside the opponent defense area edge.
+/// Attackers may not touch the ball inside the area, so the receive point
+/// presses to the edge but keeps a robot radius + legal/intercept margin out.
+pub const CORNER_OT_POCKET_MARGIN: f64 = 300.0;
+/// Weight of lane openness from the pocket to the goal-mouth aim when ranking
+/// feasible aims, in degrees of equivalent deflection margin. Feasibility is
+/// the primary pull; a fully open shooting lane is worth this many extra
+/// degrees of margin, no more.
+pub const CORNER_OT_AIM_OPENNESS_WEIGHT: f64 = 15.0;
+/// Floor of the pocket-clearance factor (0..1). An opponent parked on the
+/// pocket discounts it (adjacent samples win — the "slide along the box edge"
+/// behavior) but never vetoes it outright: pressing into a crowded box is part
+/// of the play.
+pub const CORNER_OT_CLEARANCE_FLOOR: f64 = 0.35;
+
 // ── Penalty kick (rules §5.3.5) ──────────────────────────────────────────────
 // The taker is driven directly (not through the planner): the shot distance
 // (goal_line_to_penalty_mark, 6m Div B) exceeds [`KICKER_SHOT_RANGE`], and the
@@ -405,7 +452,7 @@ pub const THREAT_GOAL_FAR: f64 = 6000.0;
 /// (Fix A: SHADOW_MIN is retained for reference but the goal wall now always
 /// emits `SHADOW_MAX` shadows; the *staffed* count emerges from importance.)
 pub const SHADOW_MIN: usize = 1;
-pub const SHADOW_MAX: usize = 3;
+pub const SHADOW_MAX: usize = 2; // TODO: CHECk
 /// Fix A: per-arc-step importance falloff for the always-emitted shadow wall.
 /// The central shadow (on the ball→goal ray) keeps full importance; each step out
 /// toward a wing multiplies by this, so at low threat only the centre is staffed
@@ -860,7 +907,7 @@ pub const CLEAR_OPEN_RANGE: f64 = 3000.0;
 /// (Div B) is a foul-counter foul at 10s of ball-in-defense-area; 6s leaves
 /// ample margin for the approach + strike + ball exit. An aimless/throw-in
 /// outcome (no foul counter) always beats the held-ball foul.
-pub const CLEAR_PANIC_T: f64 = 6.0;
+pub const CLEAR_PANIC_T: f64 = 4.0;
 /// Panic-mode bonus per unit of |ray dir y| — prefer sideways shots when
 /// nothing is clean: a blocked central ray ricochets back toward our goal,
 /// a blocked sideways ray deflects laterally, and a clean sideways exit over
