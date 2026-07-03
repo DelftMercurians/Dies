@@ -306,6 +306,10 @@ pub const ESCAPE_CLEAR_AIM_Y: f64 = 250.0;
 // (`ctx.pass(..).forward_to(..)`, zero handling latency). These gates are
 // deliberately independent of every generic pass-quality estimate: the play is
 // judged on its own deflection geometry, not on the disabled pass model.
+/// Master switch for the whole play. `false` reverts cleanly to the previous
+/// Div-B behavior — no passes at all, only goal shots and kick-aheads (the
+/// planner branch is the single entry point, so nothing else changes).
+pub const CORNER_OT_ENABLED: bool = true;
 /// How far upfield of the opponent box front the trigger zone extends: the
 /// carrier must be at `x > box_front − CORNER_OT_ZONE_DEPTH`. Deep enough to
 /// cover the whole corner pocket where the strike-finish fallback fires from
@@ -334,6 +338,17 @@ pub const CORNER_OT_MAX_TRAVEL: f64 = 4.0;
 /// Attackers may not touch the ball inside the area, so the receive point
 /// presses to the edge but keeps a robot radius + legal/intercept margin out.
 pub const CORNER_OT_POCKET_MARGIN: f64 = 300.0;
+/// Room the passer needs BEHIND the ball on the cross axis (mm): the pass
+/// coordinator stages the passer behind the free ball and drives through it,
+/// so the robot-centre point this far behind the ball (away from the pocket)
+/// must be inside the field. A deep-corner ball fails this for pockets whose
+/// axis points out of the corner — those pockets are skipped, not the whole
+/// play (a different pocket bends the axis back into the field). Without the
+/// gate the release wedges against the boundary and burns the whole stage
+/// budget (observed in the corner_one_timer scenario: 7 s Release timeout,
+/// 0 mm/s kick). 250 matches the release backoff measured on clean releases
+/// (~235 mm behind the ball at kick).
+pub const CORNER_OT_STAGE_ROOM: f64 = 250.0;
 /// Weight of lane openness from the pocket to the goal-mouth aim when ranking
 /// feasible aims, in degrees of equivalent deflection margin. Feasibility is
 /// the primary pull; a fully open shooting lane is worth this many extra
@@ -470,6 +485,10 @@ pub const SHADOW_STANDOFF: f64 = 1600.0;
 /// the wall is built centre-out on the direct ball→goal line, so an even count
 /// straddles the centre rather than splitting around it.
 pub const SHADOW_SPACING: f64 = 170.0;
+/// Lateral spacing for a **compacted 2-body wall** (anchor + one wing brought onto
+/// the same band, side by side). Separate knob from [`SHADOW_SPACING`] so the 2-wall
+/// pair can be tuned independently; defaults to the same tight, no-gap wall spacing.
+pub const COMPACT_SPACING: f64 = SHADOW_SPACING;
 /// How far outside the defense-area box (mm) the shadow **wing** curve sits. The
 /// wall now slides along a rounded-rectangle offset of the box rather than a radial
 /// line: this is the wings' offset, and [`ANCHOR_BOX_MARGIN`] the (tighter) anchor's.

@@ -983,6 +983,9 @@ impl Planner {
         carrier: PlayerId,
         inputs: &PlanInputs,
     ) -> Option<Waypoint> {
+        if !config::CORNER_OT_ENABLED {
+            return None;
+        }
         let ball = world.ball_position()?;
         let carrier_pos = world.own_player(carrier)?.position;
         let pen = world.opp_penalty_area();
@@ -1052,11 +1055,24 @@ impl Planner {
             pockets.push(Vector2::new(x, -(pen_half_w + standoff)));
         }
 
-        // Rank pockets: feasible aim (hard), open cross lane from the ball
-        // (hard), opponent sitting on the pocket discounts but never vetoes —
-        // adjacent samples win, the "slide along the box edge" behavior.
+        // Rank pockets: feasible aim (hard), staging room behind the ball on
+        // the cross axis (hard — the coordinator drives through the ball from
+        // behind, and a deep-corner ball puts that point outside the field for
+        // out-pointing axes), open cross lane from the ball (hard), opponent
+        // sitting on the pocket discounts but never vetoes — adjacent samples
+        // win, the "slide along the box edge" behavior.
+        let half_len = world.field_length() / 2.0;
+        let half_wid = world.field_width() / 2.0;
         let mut best_pocket: Option<(Vector2, Vector2, f64)> = None;
         for pocket in pockets {
+            let Some(axis) = (ball - pocket).try_normalize(1e-6) else {
+                continue;
+            };
+            let stage = ball + axis * config::CORNER_OT_STAGE_ROOM;
+            // Robot-centre clearance to the boundary lines (radius + slack).
+            if stage.x.abs() > half_len - 130.0 || stage.y.abs() > half_wid - 130.0 {
+                continue;
+            }
             let lane = geometry::lane_openness(ball, pocket, opps, config::KICK_LANE_CORRIDOR);
             if lane < config::CORNER_OT_MIN_LANE {
                 continue;
@@ -1799,7 +1815,7 @@ mod tests {
     /// the ball deep in the opponent corner (no shot window from that angle),
     /// their keeper home, a presser behind the ball.
     fn corner_world(own: Vec<PlayerState>, extra_opps: Vec<PlayerState>) -> World {
-        let ball = Vector2::new(4150.0, 2650.0);
+        let ball = Vector2::new(4150.0, 2500.0);
         let mut opp = vec![
             player(14, 4400.0, 100.0),  // their keeper
             player(5, 4300.0, 2500.0),  // presser behind the ball
@@ -1815,9 +1831,12 @@ mod tests {
         // must cross to a box-edge pocket for a reflex redirect into the goal —
         // the single pass whitelisted past the Div-B kill-switch, and worth a
         // cross-field receiver pull.
+        if !config::CORNER_OT_ENABLED {
+            return; // play switched off — nothing to assert
+        }
         let own = vec![
             player(1, -4000.0, 0.0),    // keeper
-            player(2, 4150.0, 2650.0),  // carrier, on the ball in the corner
+            player(2, 4150.0, 2500.0),  // carrier, on the ball in the corner
             player(3, 1500.0, -1500.0), // far-side teammate — the pull
         ];
         let world = corner_world(own, vec![]);
@@ -1867,7 +1886,7 @@ mod tests {
         // back to today's behavior — a first-time strike, never a pass.
         let own = vec![
             player(1, -4000.0, 0.0),   // keeper
-            player(2, 4150.0, 2650.0), // carrier, on the ball in the corner
+            player(2, 4150.0, 2500.0), // carrier, on the ball in the corner
         ];
         let world = corner_world(own, vec![]);
         let mut planner = Planner::new();
@@ -1889,7 +1908,7 @@ mod tests {
         // strikes first-time instead of feeding the wall.
         let own = vec![
             player(1, -4000.0, 0.0),
-            player(2, 4150.0, 2650.0),
+            player(2, 4150.0, 2500.0),
             player(3, 1500.0, -1500.0),
         ];
         // Ring at ~600mm from the ball spanning the bearings toward the box.
@@ -1944,14 +1963,37 @@ mod tests {
     }
 
     #[test]
+    fn corner_one_timer_needs_staging_room() {
+        // Ball hard against the touchline: every cross axis out of the corner
+        // leaves no in-field room for the passer to stage behind the ball, so
+        // the play stays off (the release would wedge on the boundary).
+        let own = vec![
+            player(1, -4000.0, 0.0),
+            player(2, 4200.0, 2850.0),
+            player(3, 1500.0, -1500.0),
+        ];
+        let world = world_contest(Vector2::new(4200.0, 2850.0), own, vec![], None);
+        let planner = Planner::new();
+        assert!(
+            planner
+                .corner_one_timer(&world, PlayerId::new(2), &inputs())
+                .is_none(),
+            "no staging room behind a touchline ball: play must stay off"
+        );
+    }
+
+    #[test]
     fn corner_one_timer_skips_barred_receiver() {
         // A receiver needs a working kicker for the reflex redirect: the closer
         // teammate with a dead kicker is skipped for the farther healthy one.
+        if !config::CORNER_OT_ENABLED {
+            return; // play switched off — nothing to assert
+        }
         let mut near = player(3, 2800.0, -800.0);
         near.handicaps.insert(Handicap::NoKicker);
         let own = vec![
             player(1, -4000.0, 0.0),
-            player(2, 4150.0, 2650.0),
+            player(2, 4150.0, 2500.0),
             near,
             player(4, 1500.0, -1500.0),
         ];

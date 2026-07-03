@@ -24,8 +24,12 @@
 use scenarios::prelude::*;
 
 /// Ball seed point of the +y leg — the corner-analog (real corner ≈
-/// (4100, 2600), translated −2500 in x away from the goal).
-const SEED: Vector2 = Vector2::new(1600.0, 2600.0);
+/// (4100, 2450), translated −2500 in x away from the goal). Kept ≥550 mm off
+/// the touchline: the passer stages ~250 mm BEHIND the ball on the cross axis,
+/// and the carry can settle the ball up to 250 mm past the seed — a deeper
+/// seed wedges the release against the boundary (the exact failure the
+/// planner's `CORNER_OT_STAGE_ROOM` gate excludes in the real play).
+const SEED: Vector2 = Vector2::new(1600.0, 2450.0);
 
 /// Pocket relative to the settled ball (real play: ball (4100, 2600) →
 /// box-edge pocket (3200, −800)). Yields ≈136° deflection with [`AIM_REL`].
@@ -92,6 +96,19 @@ fn carry_to(r: PlayerId, dest: Vector2, side: f64) -> Step {
     .timeout(40.0)
 }
 
+/// Park the upcoming receiver far from the play — every leg is a COLD
+/// cross-field pull, like the real corner play (the receiver is nominated from
+/// wherever it happens to be, often the other side of the field). Without this
+/// the loop settles into a rhythm where the receiver starts each leg already
+/// posted near the pocket, which hides arrival-transient misses (observed:
+/// warm legs 100%, cold legs missed).
+fn pull_away(r: PlayerId, to: Vector2) -> Step {
+    Step::skill(format!("{r} parks far (cold pull)"), r, move |h| {
+        h.go_to(to);
+    })
+    .timeout(15.0)
+}
+
 /// Free the ball for `passer`: if the robot holds it (or is pressed against
 /// it), back straight away from the ball to [`FREE_DIST`]; if it is too far,
 /// walk in. Succeeds once the ball is free and at a passable distance.
@@ -128,13 +145,16 @@ fn main() {
         let b = PlayerId::new(4);
         Scenario::looping(move || {
             vec![
-                // +y corner: a crosses, b posts at the pocket and redirects.
+                // +y corner: a crosses, b is pulled COLD from across the field
+                // to the pocket and redirects.
                 carry_to(a, SEED, 1.0),
+                pull_away(b, Vector2::new(-1200.0, -1800.0)),
                 release(a),
                 Step::pass_forward(a, b, |w| corner_geometry(w, 1.0)).timeout(30.0),
                 Step::wait(3.0),
                 // Mirrored −y corner: roles swap, the field re-seeds itself.
                 carry_to(b, Vector2::new(SEED.x, -SEED.y), -1.0),
+                pull_away(a, Vector2::new(-1200.0, 1800.0)),
                 release(b),
                 Step::pass_forward(b, a, |w| corner_geometry(w, -1.0)).timeout(30.0),
                 Step::wait(3.0),

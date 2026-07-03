@@ -705,7 +705,7 @@ impl Formation {
                     if let Some(rank) = compacted.iter().position(|s| *s == slot) {
                         let s = base_s
                             + (rank as f64 - (compacted.len() as f64 - 1.0) / 2.0)
-                                * config::SHADOW_SPACING;
+                                * config::COMPACT_SPACING;
                         return (config::SHADOW_BOX_OFFSET, wing_band, s);
                     }
                 }

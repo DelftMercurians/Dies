@@ -43,6 +43,18 @@ tunables! {
     /// skill starts, disarm (by ending the skill) and fail so the strategy re-plans.
     #[tunable(unit = "s", min = 0.5, max = 6.0, step = 0.5)]
     ARRIVE_TIMEOUT: f64 = 3.0;
+    /// Robot centre → kicker-mouth stance compensation. The one-timer faces the
+    /// SHOT target, not the incoming ball, so the mouth (dribbler point, 111 mm
+    /// off-centre) leaves the pass line unless the stand position backs off by
+    /// this much along the heading. Without it an oblique deflection (e.g.
+    /// 135°) parks the mouth ~80 mm off the line and the ball glances into a
+    /// dud-catch. Deliberately UNDER the true 111 mm: the residual bias tucks
+    /// the mouth slightly inside the line, so lateral tracking error on the
+    /// body side degrades to a dud-catch (still a completed pass) instead of
+    /// the outside error's total miss (cold-pull legs measured misses passing
+    /// just ~20-40 mm outside a perfectly-on-line mouth).
+    #[tunable(unit = "mm", min = 0.0, max = 160.0, step = 5.0)]
+    MOUTH_OFFSET: f64 = 85.0;
 }
 
 fn dkey(ctx: &SkillContext<'_>, tag: &str) -> String {
@@ -157,7 +169,15 @@ impl ExecutableSkill for ReflexReceiveSkill {
             .as_ref()
             .map(|b| (b.position.xy(), b.velocity.xy()));
         let ix = solve_intercept(self.from_pos, self.intercept_pos, self.capture_limit, ball);
-        input.with_position(ix.position);
+        // The intercept solve puts a point ON the pass line — but the mouth, not
+        // the body centre, must meet the ball there. Facing the shot target (not
+        // the incoming ball), the mouth is MOUTH_OFFSET off-centre along the
+        // heading, so stand backed off by that much.
+        let mouth = (self.target - ix.position)
+            .try_normalize(1e-6)
+            .unwrap_or_else(Vector2::zeros)
+            * MOUTH_OFFSET();
+        input.with_position(ix.position - mouth);
 
         let tc = ctx.team_context;
         tc.debug_string(dkey(&ctx, "stage"), "armed");
