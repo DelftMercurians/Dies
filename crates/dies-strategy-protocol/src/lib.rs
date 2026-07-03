@@ -40,5 +40,5 @@ pub use world::*;
 // Re-export commonly used types from dies-core for convenience
 pub use dies_core::{
     Angle, ArcZone, FieldGeometry, MotionBounds, ParamKind, ParamSpec, ParamValue, PlayerId,
-    StrategyParams, TeamStrategyParams, Vector2, Vector3,
+    RectBandZone, StrategyParams, TeamStrategyParams, Vector2, Vector3,
 };

@@ -498,6 +498,8 @@ impl PlayerTracker {
                 imu_readings: f.imu_readings,
                 kicker_status: f.kicker_status,
                 reflex_kick_state: f.reflex_kick_state,
+                reflex_kick_counter: f.reflex_kick_counter,
+                smart_kick_counter: f.smart_kick_counter,
                 skill: None,
                 handicaps: self.handicaps.clone(),
                 // Feedback-only (bench, no vision) is the radio-alive case, not
@@ -538,6 +540,8 @@ impl PlayerTracker {
             imu_readings: self.last_feedback.and_then(|f| f.imu_readings),
             kicker_status: self.last_feedback.and_then(|f| f.kicker_status),
             reflex_kick_state: self.last_feedback.and_then(|f| f.reflex_kick_state),
+            reflex_kick_counter: self.last_feedback.and_then(|f| f.reflex_kick_counter),
+            smart_kick_counter: self.last_feedback.and_then(|f| f.smart_kick_counter),
             skill: None,
             handicaps: self.handicaps.clone(),
             sideline: self

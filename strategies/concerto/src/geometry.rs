@@ -1033,9 +1033,107 @@ pub fn shadow_arc(
         .collect()
 }
 
+/// The rounded-rectangle offset curve around a box (the defense area), parametrized
+/// by signed arc-length `s`. `s = 0` is the front-centre point `(front_x + offset,
+/// cy)`; `+s` runs toward `+y`. The curve is the flat front edge, a quarter-circle
+/// of radius `offset` at each front corner (centred on the box corner), then the two
+/// side edges — clamped at the goal line so it never wraps behind the goal. This is
+/// the path the goal wall slides along; the matching [`MotionBounds::RoundedRect`]
+/// band keeps robots pinned to it in the depth direction.
+pub fn rect_offset_point(pen: &Rect, offset: f64, s: f64) -> Vector2 {
+    let front_x = pen.max.x;
+    let half_wid = (pen.max.y - pen.min.y) / 2.0;
+    let cy = (pen.max.y + pen.min.y) / 2.0;
+    let depth = pen.max.x - pen.min.x;
+    let quarter = std::f64::consts::FRAC_PI_2 * offset;
+    let l = half_wid + quarter + depth;
+    let s = s.clamp(-l, l);
+    let sign = if s >= 0.0 { 1.0 } else { -1.0 };
+    let a = s.abs();
+    let (x, ymag) = if a <= half_wid {
+        // Flat front edge.
+        (front_x + offset, a)
+    } else if a <= half_wid + quarter {
+        // Rounded corner: sweep from facing +x to facing +y.
+        let ang = (a - half_wid) / offset;
+        (
+            front_x + offset * ang.cos(),
+            half_wid + offset * ang.sin(),
+        )
+    } else {
+        // Side edge, receding toward the goal line.
+        let t = a - half_wid - quarter;
+        (front_x - t, half_wid + offset)
+    };
+    Vector2::new(x, cy + sign * ymag)
+}
+
+/// Inverse of [`rect_offset_point`]: the signed arc-length `s` of the curve point
+/// nearest `p`. Continuous across the front→corner→side transitions and the x-axis,
+/// so the wall's base point (and hence slot identity) doesn't jump as the ball
+/// sweeps. Used both to pick the wall's base_s from the ball ray and to measure each
+/// member's along-curve position for the rigid-translation pacing.
+pub fn project_to_rect_offset(pen: &Rect, offset: f64, p: Vector2) -> f64 {
+    let front_x = pen.max.x;
+    let half_wid = (pen.max.y - pen.min.y) / 2.0;
+    let cy = (pen.max.y + pen.min.y) / 2.0;
+    let depth = pen.max.x - pen.min.x;
+    let quarter = std::f64::consts::FRAC_PI_2 * offset;
+    let l = half_wid + quarter + depth;
+
+    let dy = p.y - cy;
+    let sign = if dy >= 0.0 { 1.0 } else { -1.0 };
+    let ay = dy.abs();
+
+    let s = if ay <= half_wid {
+        // In front of (or beside) the flat front edge → arc-length along it.
+        sign * ay
+    } else if p.x >= front_x {
+        // Off a front corner → angle swept from the corner.
+        let ang = (ay - half_wid)
+            .atan2((p.x - front_x).max(0.0))
+            .clamp(0.0, std::f64::consts::FRAC_PI_2);
+        sign * (half_wid + offset * ang)
+    } else {
+        // Beside a side edge → distance receded toward the goal line.
+        let t = (front_x - p.x).clamp(0.0, depth);
+        sign * (half_wid + quarter + t)
+    };
+    s.clamp(-l, l)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rect_offset_roundtrip_and_corner_wrap() {
+        // Standard SSL own defense area: x∈[-4500,-3500], y∈[-1000,1000].
+        let pen = Rect::new(Vector2::new(-4500.0, -1000.0), Vector2::new(-3500.0, 1000.0));
+        let off = 550.0;
+        // Front-centre is at (front_x + offset, 0) at s = 0.
+        let p0 = rect_offset_point(&pen, off, 0.0);
+        assert!((p0 - Vector2::new(-3500.0 + off, 0.0)).norm() < 1e-6);
+        // point→s→point is identity for points on the curve (front, corner, side).
+        for s in [-1600.0, -900.0, -300.0, 0.0, 400.0, 1050.0, 1800.0] {
+            let p = rect_offset_point(&pen, off, s);
+            let s2 = project_to_rect_offset(&pen, off, p);
+            let p2 = rect_offset_point(&pen, off, s2);
+            assert!((p - p2).norm() < 1.0, "roundtrip s={s}: {:?} vs {:?}", p, p2);
+        }
+        // A base near the +y front corner fans onto BOTH the front edge and the
+        // side edge (wraps the corner) instead of a straight chord — every point
+        // stays at ~`off` from the box (never deeper, so never inside it).
+        let base = project_to_rect_offset(&pen, off, Vector2::new(-3500.0, 1000.0)); // corner
+        for i in [-1.0, 0.0, 1.0] {
+            let pt = rect_offset_point(&pen, off, base + i * 170.0);
+            // Distance outside the box must be ~off (rounded corner, no clipping in).
+            let nx = pt.x.clamp(pen.min.x, pen.max.x);
+            let ny = pt.y.clamp(pen.min.y, pen.max.y);
+            let d = (pt - Vector2::new(nx, ny)).norm();
+            assert!((d - off).abs() < 1.0, "fanned pt off-box dist {d}, want {off}");
+        }
+    }
 
     #[test]
     fn closest_approach_head_on_offset_and_receding() {

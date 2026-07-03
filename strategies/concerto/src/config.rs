@@ -329,6 +329,33 @@ pub const SHADOW_STANDOFF: f64 = 1600.0;
 /// the wall is built centre-out on the direct ball→goal line, so an even count
 /// straddles the centre rather than splitting around it.
 pub const SHADOW_SPACING: f64 = 170.0;
+/// How far outside the defense-area box (mm) the shadow **wing** curve sits. The
+/// wall now slides along a rounded-rectangle offset of the box rather than a radial
+/// line: this is the wings' offset, and [`ANCHOR_BOX_MARGIN`] the (tighter) anchor's.
+/// Together they replace the goal-centre-radial `SHADOW_STANDOFF`. Sits ~one
+/// robot-width-plus outside the anchor so a 2-body wall never stacks. Tuning surface
+/// — changes wall depth/coverage; validate in sim.
+pub const SHADOW_BOX_OFFSET: f64 = 550.0;
+/// Half-width (mm) of the bounded band around each shadow offset curve. The
+/// no-overshoot envelope keeps a waller within `offset ± this` of the box. Must
+/// exceed the executor's BOUNDS_MARGIN (30) or the target sits on an unreachable
+/// band edge and the robot chatters.
+pub const WALL_BAND_SLACK: f64 = 80.0;
+/// Max along-curve translation speed (mm/s of arc-length) of the wall as a rigid
+/// unit. Kept below the GoToBounded speed cap so no member is asked to translate
+/// faster than it can track → relative spacing stays pinned.
+pub const WALL_SLEW_RATE: f64 = 1800.0;
+/// Along-curve tracking-error tolerance (mm). When the furthest-behind wall member
+/// lags its slot target by this much, group translation freezes (paced to
+/// [`PACE_FLOOR`]) until it catches up, so the wall never shears apart mid-swing.
+pub const WALL_LAG_TOL: f64 = 260.0;
+/// Floor on the rigid-wall pace factor (0..1) so a single persistently-slow /
+/// handicapped member can never fully stall the whole wall's tracking.
+pub const PACE_FLOOR: f64 = 0.1;
+/// A waller further than `max_offset + this` (mm) from its band drives in with the
+/// planner+ORCA (`go_to`) instead of the bounded direct drive (which bypasses both
+/// and would cut straight through obstacles); it hands off to bounded once inside.
+pub const WALL_HANDOFF_SLACK: f64 = 250.0;
 /// The central shadow (on the ball→goal ray) is promoted to an "anchor": a sticky
 /// last-line field defender, distinct from the keeper at the mouth. It is pulled
 /// in from the wall standoff to the penalty-area front edge plus this margin (mm)

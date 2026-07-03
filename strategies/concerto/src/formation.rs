@@ -78,6 +78,10 @@ struct Role {
     position: Vector2,
     importance: f64,
     face: Vector2,
+    /// Bounded-motion region for this role, when it should be driven by the
+    /// keeper-style direct-velocity + no-overshoot envelope instead of the
+    /// planner+ORCA `go_to`. Currently only the shadow wall sets it.
+    bounds: Option<MotionBounds>,
 }
 
 /// A positioning command for one formation-controlled robot.
@@ -86,6 +90,9 @@ pub struct FormationCommand {
     pub target: Vector2,
     pub face: Vector2,
     pub role: &'static str,
+    /// When `Some`, drive with `go_to_bounded` (bounded direct drive, ORCA+planner
+    /// off) inside this region rather than the planned `go_to`.
+    pub bounds: Option<MotionBounds>,
 }
 
 /// Request to include a ball-winner in the matching this tick. Present only when
@@ -185,6 +192,14 @@ pub struct Formation {
     /// (an operator action, not world jitter — don't make it wait out the
     /// cooldown while robots hold a role that no longer exists).
     last_toggles: RoleToggles,
+    /// Shared along-curve position (signed arc-length on the wing offset curve) of
+    /// the shadow wall's centre. The whole wall's slot targets derive from this one
+    /// scalar, slew-rate-limited and paced by the furthest-behind member, so the
+    /// wall translates as a rigid unit with pinned relative spacing. `None` when no
+    /// wall is present (reset so re-appearance re-seeds without a slew jump). Lives
+    /// here — position state, like `support_prev`; never enters the matcher, so it
+    /// can't cause role churn. World-time driven (deterministic).
+    wall_base_s: Option<f64>,
 }
 
 impl Default for Formation {
@@ -208,6 +223,7 @@ impl Formation {
             stance: config::StanceConfig::from_env(),
             toggles: RoleToggles::default(),
             last_toggles: RoleToggles::default(),
+            wall_base_s: None,
         }
     }
 
@@ -346,6 +362,7 @@ impl Formation {
                 target: role.position,
                 face: role.face,
                 role: role_name(role.id.kind),
+                bounds: role.bounds,
             });
         }
         self.last_capturer = capturer;
@@ -445,7 +462,10 @@ impl Formation {
         capture: Option<&CaptureRole>,
         n: usize,
         field_n: usize,
-        staffed_shadow_slots: &[u16],
+        // Was used by the retired wall-pair compaction; the rounded-rect wall no
+        // longer needs it (the two offset bands never collapse). Kept in the
+        // signature so existing test call sites compile unchanged.
+        _staffed_shadow_slots: &[u16],
         keeper_clearing: bool,
     ) -> Vec<Role> {
         let mut roles: Vec<Role> = Vec::new();
@@ -467,6 +487,7 @@ impl Formation {
                 position: c.pos,
                 importance: c.importance,
                 face: ball,
+                bounds: None,
             });
         }
 
@@ -524,77 +545,92 @@ impl Formation {
         //    `k = SHADOW_MAX`); support is zeroed below so nothing forward outranks
         //    the outer wall slots.
         if self.toggles.wall {
-            let positions = geometry::shadow_arc(
-                ball,
-                own_goal,
-                config::SHADOW_MAX,
-                config::SHADOW_STANDOFF,
-                config::SHADOW_SPACING,
-            );
+            // The wall slides along a rounded-rectangle offset curve around the
+            // defense-area box instead of a radial line off the goal centre: wings
+            // on a wide band, the central anchor on a tighter one (kept distinct).
+            // Corner-aware by construction — the arc-length fan wraps a box corner
+            // rather than chording across it, so a 2-body wall is never split — and
+            // driven by the keeper-style bounded direct drive (see lib.rs dispatch),
+            // so ORCA can't push the pair apart. The anchor stays a sticky, importance-
+            // floored last-line body at the box edge; wings fade center-out with threat.
+            let pen = world.own_penalty_area();
+            let band_center = pen.center();
+            let half_extents = Vector2::new(pen.width() / 2.0, pen.height() / 2.0);
+            let make_band = |offset: f64| {
+                MotionBounds::RoundedRect(RectBandZone {
+                    center: band_center,
+                    half_extents,
+                    min_offset: (offset - config::WALL_BAND_SLACK).max(1.0),
+                    max_offset: offset + config::WALL_BAND_SLACK,
+                })
+            };
+            let anchor_band = make_band(config::ANCHOR_BOX_MARGIN);
+            let wing_band = make_band(config::SHADOW_BOX_OFFSET);
             let shadow_center = (config::SHADOW_MAX as f64 - 1.0) / 2.0;
-            // The central shadow on the ball→goal ray is promoted to an "anchor": a
-            // sticky last-line field defender (distinct from the keeper at the mouth).
-            // In open play it is (a) pulled in to the penalty-area edge so a body
-            // always hugs the box, and (b) floored in importance so it doesn't
-            // collapse with ball_threat the way the wing wall does — otherwise when we
-            // commit forward (ball_threat→0) the whole wall drops below the
-            // striker/support roles and the box is left to the keeper alone. On
-            // set-piece defense the centre stays in the contiguous wall (leg-2 fix).
-            let pen_depth = world
-                .field()
-                .map(|f| f.penalty_area_depth)
-                .unwrap_or(1000.0);
-            let anchor_standoff = pen_depth + config::ANCHOR_BOX_MARGIN;
-            // Count-aware wall sizing (the core dynamic-robot-count fix): always emit
-            // the central anchor as the one guaranteed home body, then emit only as
-            // many threat-scaled wings as the field-robot count affords —
-            // `clamp(field_n - forward_reserve - 1, 0, SHADOW_MAX-1)`. A short-handed
-            // team thus thins its wall (e.g. 3 field robots → anchor only) and frees
-            // bodies forward, instead of pinning every robot to a fixed 3-wide wall.
-            // Wings are kept in stable index order (not ball-dependent) so the
-            // generated shadow slot set is constant within a match → no role churn.
-            // Sized from `field_n` (plan-reserved carrier included), never the
-            // assignable count, so the wall keeps its width across a possession flip.
-            // On set-piece defense the full wall is always committed (leg-2).
+            let anchor_slot = shadow_center as u16;
+            let slot_is_anchor = |slot: u16| slot == anchor_slot && !setpiece_defense;
+            let slot_offset = |slot: u16| (slot as f64 - shadow_center) * config::SHADOW_SPACING;
+
+            // Desired wall centre: project the ball→goal ray onto the wing curve
+            // (reusing the radial reference, capped at 0.8·dist for a near ball), so
+            // the wall tracks the shot line and wraps to the near side for a wide ball.
+            let ref_standoff = (pen.max.x - own_goal.x) + config::SHADOW_BOX_OFFSET;
+            let ref_pt = geometry::goal_ray_point(ball, own_goal, ref_standoff);
+            let desired_s =
+                geometry::project_to_rect_offset(&pen, config::SHADOW_BOX_OFFSET, ref_pt);
+
+            // Rigid translation: slew-limit the shared base_s and pace it by the
+            // furthest-behind staffed member so the whole wall moves as one and
+            // relative spacing stays pinned. On keeper-clearing (an intentional
+            // structural jump) snap and skip pacing so the coordinator doesn't fight
+            // the keyhole vacate. World-time driven (`world.dt()`) → deterministic.
+            let base_s = match self.wall_base_s {
+                Some(prev) if !keeper_clearing => {
+                    let mut max_lag = 0.0_f64;
+                    for (id, rid) in &self.assignment {
+                        if rid.kind != RoleKind::Shadow {
+                            continue;
+                        }
+                        if let Some(pl) = world.own_player(*id) {
+                            let off = if slot_is_anchor(rid.slot) {
+                                config::ANCHOR_BOX_MARGIN
+                            } else {
+                                config::SHADOW_BOX_OFFSET
+                            };
+                            let member_s =
+                                geometry::project_to_rect_offset(&pen, off, pl.position);
+                            let target_s = prev + slot_offset(rid.slot);
+                            max_lag = max_lag.max((member_s - target_s).abs());
+                        }
+                    }
+                    let pace = (1.0 - max_lag / config::WALL_LAG_TOL)
+                        .clamp(config::PACE_FLOOR, 1.0);
+                    let max_step = config::WALL_SLEW_RATE * world.dt();
+                    let delta = (desired_s - prev).clamp(-max_step, max_step);
+                    prev + pace * delta
+                }
+                // First appearance or keeper-clearing: seed/snap (no slew jump).
+                _ => desired_s,
+            };
+            self.wall_base_s = Some(base_s);
+
+            // Count-aware wall sizing (unchanged): always emit the central anchor,
+            // then only as many threat-scaled wings as the field-robot count affords —
+            // `clamp(field_n - forward_reserve - 1, 0, SHADOW_MAX-1)`. Sized from
+            // `field_n` (carrier included) so the wall keeps its width across a
+            // possession flip. On set-piece defense the full wall is committed.
             let wing_budget = if setpiece_defense {
                 config::SHADOW_MAX
             } else {
                 (field_n as f64 - self.stance.forward_reserve - 1.0)
                     .clamp(0.0, (config::SHADOW_MAX - 1) as f64) as usize
             };
-            // Wall-pair compaction: a 2-body wall (anchor + exactly one staffed
-            // wing — whether by wing budget or because matching gave the other
-            // slots away) must be a standard 2-waller, not the layered shape.
-            // The layering (anchor at the box edge, wings 400mm further out with
-            // only a ±170mm lateral offset) leaves the pair nearly stacked on the
-            // shot line, and the 0.8·dist standoff caps collapse them onto the
-            // same radius 170mm apart as the ball closes on the box — commanded
-            // interpenetration. So the staffed wing is snapped onto a second arc
-            // at the *anchor's* standoff: tight beside the anchor, same radius at
-            // every ball distance (the caps now shrink both together). The
-            // unstaffed wing slot keeps its outer-arc position — that's where a
-            // third body rejoins, which lifts the staffed count and releases the
-            // compaction a tick later. Not applied on set-piece defense (no
-            // anchor promotion; the wall is already contiguous).
-            let anchor_slot = shadow_center as u16;
-            let compact_pair = !setpiece_defense
-                && staffed_shadow_slots.len() == 2
-                && staffed_shadow_slots.contains(&anchor_slot);
-            let compact_positions = if compact_pair {
-                geometry::shadow_arc(
-                    ball,
-                    own_goal,
-                    config::SHADOW_MAX,
-                    anchor_standoff,
-                    config::SHADOW_SPACING,
-                )
-            } else {
-                Vec::new()
-            };
+
             let mut wings_pushed = 0usize;
-            for (i, pos) in positions.into_iter().enumerate() {
+            for i in 0..config::SHADOW_MAX {
+                let slot = i as u16;
                 let off_center = (i as f64 - shadow_center).abs();
-                let is_anchor = off_center < 1e-9 && !setpiece_defense;
+                let is_anchor = slot_is_anchor(slot);
                 if !is_anchor {
                     if wings_pushed >= wing_budget {
                         continue;
@@ -611,29 +647,21 @@ impl Formation {
                 } else {
                     0.5 + 0.5 * ball_threat
                 };
-                let mut position = if is_anchor {
-                    geometry::goal_ray_point(ball, own_goal, anchor_standoff)
-                } else if compact_pair && staffed_shadow_slots.contains(&(i as u16)) {
-                    compact_positions[i]
+                let (offset, band) = if is_anchor {
+                    (config::ANCHOR_BOX_MARGIN, anchor_band)
                 } else {
-                    pos
+                    (config::SHADOW_BOX_OFFSET, wing_band)
                 };
-                // Keeper clearing a settled ball out of our box: the wall would
-                // otherwise stand exactly on the clear line (the anchor sits on
-                // the ball→goal ray ~150–550mm in front of an in-box ball) and
-                // eat the strike, and for a box-corner ball the shadows bunch at
-                // the keepout line right next to it, boxing the keeper out of
-                // its own approach. Vacate a keyhole: the keeper's work disc
-                // around the ball ([`CLEAR_BALL_CLEARANCE`]) plus the fixed
-                // corridor ball→opp-goal-centre (every goal-bound ray the keeper
-                // can pick fits inside it) — each slot stepping to the side it
-                // is already on, so the wall splits into two flanking groups
-                // (rebound coverage). Anchor included: full vacate. Slot IDs are
-                // untouched, so matching stability is unaffected, and the wall
-                // snaps back the frame the clear ends.
+                let mut position =
+                    geometry::rect_offset_point(&pen, offset, base_s + slot_offset(slot));
+                // Keeper clearing a settled ball out of our box: vacate a keyhole
+                // (the keeper's work disc [`CLEAR_BALL_CLEARANCE`] plus the fixed
+                // ball→opp-goal corridor) and hand motion back to the planner
+                // (`bounds = None`) so the envelope doesn't fight the sideways step.
+                // The wall snaps back to the bounded curve the frame the clear ends.
                 //
                 // [`CLEAR_BALL_CLEARANCE`]: config::CLEAR_BALL_CLEARANCE
-                if keeper_clearing {
+                let bounds = if keeper_clearing {
                     position = geometry::project_out_of_keyhole(
                         position,
                         ball,
@@ -641,17 +669,24 @@ impl Formation {
                         config::CLEAR_BALL_CLEARANCE,
                         config::CLEAR_CORRIDOR_HALF_WIDTH,
                     );
-                }
+                    None
+                } else {
+                    Some(band)
+                };
                 roles.push(Role {
                     id: RoleId {
                         kind: RoleKind::Shadow,
-                        slot: i as u16,
+                        slot,
                     },
                     position,
                     importance: config::IMP_SHADOW_BASE * threat_factor * stagger,
                     face: ball,
+                    bounds,
                 });
             }
+        } else {
+            // No wall this tick: reset so a re-appearance re-seeds base_s cleanly.
+            self.wall_base_s = None;
         }
 
         // 2. Marking — one role per opponent, slot = stable opponent index.
@@ -707,6 +742,7 @@ impl Formation {
                         position: pos,
                         importance: config::IMP_MARK_BASE * opp_threat * openness,
                         face: ball,
+                        bounds: None,
                     });
                 }
             }
@@ -789,6 +825,7 @@ impl Formation {
                     position: pos,
                     importance: support_imp,
                     face: world.opp_goal_center(),
+                    bounds: None,
                 });
             }
         }
@@ -886,6 +923,7 @@ impl Formation {
                 position: pos,
                 importance: config::IMP_STRIKER * af * self.stance.aggression,
                 face: world.opp_goal_center(),
+                bounds: None,
             });
         }
 
@@ -908,6 +946,7 @@ impl Formation {
                 position: Vector2::new(px, py),
                 importance: config::IMP_PIVOT * self.stance.aggression,
                 face: world.opp_goal_center(),
+                bounds: None,
             });
         }
 
@@ -932,6 +971,7 @@ impl Formation {
                 position: geometry::goal_ray_point(ball, own_goal, config::BALANCE_STANDOFF),
                 importance: config::IMP_BALANCE,
                 face: ball,
+                bounds: None,
             });
         }
 
@@ -1001,6 +1041,7 @@ impl Formation {
                     .ball()
                     .map(|b| b.position.xy())
                     .unwrap_or(world.opp_goal_center()),
+                bounds: None,
             });
         }
 
@@ -1029,6 +1070,7 @@ impl Formation {
                 position: Vector2::new(0.0, y),
                 importance: config::IMP_SPREAD,
                 face: ball,
+                bounds: None,
             });
             slot += 1;
         }

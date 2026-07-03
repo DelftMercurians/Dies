@@ -56,10 +56,23 @@ impl HandleBallSkill {
             let along_depart = (ball_pos - kick_ball).dot(&dir);
             let vel_along = ball_vel.dot(&dir);
             let armed_ms = (now - armed_at) * 1000.0;
+            // Require BOTH a ball departure AND a hardware fire (counter increment):
+            // the reflex counter proves *we* discharged the kicker, so a ball nudged
+            // by a contesting robot — or a whiff that fired but missed — can't be
+            // read as our strike. The counter usually lags the ball by a frame or
+            // two (feedback latency), so success is declared once it catches up,
+            // still inside REFLEX_TIMEOUT. Degrades to departure-only if the robot
+            // never reported the counter (see `kick_counter_confirms`).
+            let counter_fired = self.kick_counter_fired(ctx);
             tc.debug_value(dkey(ctx, "depart_along"), along_depart);
             tc.debug_value(dkey(ctx, "armed_ms"), armed_ms);
-            if along_depart > KICK_DEPART_DIST() || vel_along > KICK_DEPART_SPEED() {
-                log::debug!("strike departed: d{along_depart:.0} v{vel_along:.0}");
+            tc.debug_value(
+                dkey(ctx, "kick_counter_fired"),
+                if counter_fired { 1.0 } else { 0.0 },
+            );
+            let departed = along_depart > KICK_DEPART_DIST() || vel_along > KICK_DEPART_SPEED();
+            if departed && self.kick_counter_confirms(ctx) {
+                log::debug!("strike departed: d{along_depart:.0} v{vel_along:.0} c{counter_fired}");
                 self.status = SkillStatus::Succeeded;
                 return SkillProgress::success();
             }
@@ -158,6 +171,11 @@ impl HandleBallSkill {
             // Arm-state bookkeeping only — the departure/whiff verify runs above,
             // independent of the latch.
             self.kick_ball_pos.get_or_insert(ball_pos);
+            // Sample the reflex counter the frame the reflex is first armed (its
+            // pre-fire value) so a later increment reads as this strike's fire.
+            if self.armed_at.is_none() {
+                self.kick_counter_baseline = self.live_kick_counter(ctx);
+            }
             self.armed_at.get_or_insert(now);
             self.detail = format!("striking a{along:.0} p{perp:.0}");
         } else {

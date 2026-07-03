@@ -459,6 +459,16 @@ pub struct PlayerData {
     /// `Armed` means the kicker will fire the instant the ball trips the beam.
     /// Surfaced for logging/UI; skills may read it to confirm the firmware armed.
     pub reflex_kick_state: Option<ReflexKickState>,
+    /// Firmware reflex-kick counter (own players only; `None` when unreported).
+    /// Increments each time the robot *actually* fires a reflex kick. Skills diff
+    /// it against a baseline captured at arm time to confirm a strike fired even
+    /// when vision misses the ball's departure. Wraps at 255.
+    pub reflex_kick_counter: Option<u8>,
+    /// Firmware smart-kick counter (own players only; `None` when unreported).
+    /// Increments each time the robot fires a commanded (smart) kick — used the
+    /// same way as `reflex_kick_counter` to verify the aimed-shot release. Wraps
+    /// at 255.
+    pub smart_kick_counter: Option<u8>,
 
     /// The skill this player is currently executing, if known. Only populated
     /// for own players (the team we control); `None` for opponents and when no
@@ -508,6 +518,8 @@ impl PlayerData {
             kicker_status: None,
             imu_readings: None,
             reflex_kick_state: None,
+            reflex_kick_counter: None,
+            smart_kick_counter: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1114,6 +1126,8 @@ pub fn mock_world_data() -> WorldData {
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             reflex_kick_state: None,
+            reflex_kick_counter: None,
+            smart_kick_counter: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1145,6 +1159,8 @@ pub fn mock_world_data() -> WorldData {
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             reflex_kick_state: None,
+            reflex_kick_counter: None,
+            smart_kick_counter: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1212,6 +1228,8 @@ pub fn mock_team_data() -> TeamData {
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             reflex_kick_state: None,
+            reflex_kick_counter: None,
+            smart_kick_counter: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,
@@ -1243,6 +1261,8 @@ pub fn mock_team_data() -> TeamData {
             imu_readings: Some([0.0; 6]),
             kicker_status: Some(SysStatus::Standby),
             reflex_kick_state: None,
+            reflex_kick_counter: None,
+            smart_kick_counter: None,
             skill: None,
             handicaps: HashSet::new(),
             sideline: None,

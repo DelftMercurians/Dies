@@ -159,6 +159,9 @@ impl HandleBallSkill {
         input.with_dribbling(0.0);
         self.kick_ball_pos = Some(ball_pos);
         self.kick_time = Some(now);
+        // Baseline the kicker's counter at its pre-fire value so a later increment
+        // verifies the release even if vision misses the ball leaving.
+        self.kick_counter_baseline = self.live_kick_counter(ctx);
         self.stage = Stage::Verifying;
         self.stage_entered = now;
         SkillProgress::Continue(input)
@@ -176,12 +179,21 @@ impl HandleBallSkill {
             .map(|p0| (ball_pos - p0).norm())
             .unwrap_or(0.0);
         let elapsed = self.kick_time.map(|t| now - t).unwrap_or(0.0);
+        let counter_fired = self.kick_counter_fired(ctx);
         let tc = ctx.team_context;
         tc.debug_value(dkey(ctx, "depart_dist"), depart_dist);
         tc.debug_value(dkey(ctx, "verify_ms"), elapsed * 1000.0);
+        tc.debug_value(
+            dkey(ctx, "kick_counter_fired"),
+            if counter_fired { 1.0 } else { 0.0 },
+        );
         self.detail = format!("verify {depart_dist:.0}mm {:.0}ms", elapsed * 1000.0);
 
-        let departed = depart_dist > KICK_DEPART_DIST() || ball_vel_norm > KICK_DEPART_SPEED();
+        // AND the ball departure with a hardware fire (counter increment) so a
+        // bumped ball can't fake a shot; degrades to departure-only when the counter
+        // is unreported.
+        let departed = (depart_dist > KICK_DEPART_DIST() || ball_vel_norm > KICK_DEPART_SPEED())
+            && self.kick_counter_confirms(ctx);
         if departed {
             self.status = SkillStatus::Succeeded;
             return SkillProgress::success();

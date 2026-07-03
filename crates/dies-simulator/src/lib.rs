@@ -709,6 +709,13 @@ struct Player {
     reflex_armed: bool,
     /// Whether the armed reflex has already fired (one-shot per arm).
     reflex_fired_this_arm: bool,
+    /// Firmware reflex-kick counter mirror — incremented each time a reflex kick
+    /// actually fires. Reported over feedback so the strike verify can confirm a
+    /// fire without seeing the ball leave. Wraps at 255.
+    reflex_kick_counter: u8,
+    /// Firmware smart-kick counter mirror — incremented each time a commanded
+    /// (smart) kick actually fires. Wraps at 255.
+    smart_kick_counter: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -1138,6 +1145,8 @@ impl Simulation {
             last_kick_counter: 0,
             reflex_armed: false,
             reflex_fired_this_arm: false,
+            reflex_kick_counter: 0,
+            smart_kick_counter: 0,
         });
     }
 
@@ -2619,6 +2628,8 @@ impl Simulation {
                 } else {
                     ReflexKickState::Off
                 });
+                feedback.reflex_kick_counter = Some(player.reflex_kick_counter);
+                feedback.smart_kick_counter = Some(player.smart_kick_counter);
                 feedback.kicker_status = Some(SysStatus::Ready);
                 feedback.imu_status = if self.config.has_imu {
                     Some(SysStatus::Ready)
@@ -2786,8 +2797,14 @@ impl Simulation {
                         && self.config.realism.shot_failure_prob > 0.0
                         && self.rng.gen::<f64>() < self.config.realism.shot_failure_prob;
                     if (is_kicking || reflex_fire) && !misfire {
+                        // Bump the counter that matches the kicker that actually
+                        // fired — mirrors the firmware, which increments a distinct
+                        // reflex/smart counter on each discharge (never on a dud).
                         if reflex_fire {
                             player.reflex_fired_this_arm = true;
+                            player.reflex_kick_counter = player.reflex_kick_counter.wrapping_add(1);
+                        } else {
+                            player.smart_kick_counter = player.smart_kick_counter.wrapping_add(1);
                         }
                         ball_kicked_this_frame = true;
                         // Realism: noisy kick heading + power. `kick_dir` is the
@@ -3358,6 +3375,8 @@ impl SimulationBuilder {
             last_kick_counter: 0,
             reflex_armed: false,
             reflex_fired_this_arm: false,
+            reflex_kick_counter: 0,
+            smart_kick_counter: 0,
         });
     }
 }

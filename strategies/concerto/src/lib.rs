@@ -648,14 +648,44 @@ impl Strategy for ConcertoStrategy {
                             .sqrt();
                     }
                 }
-                // Shadows (the wall, anchor included) run with ORCA off: wall
-                // members are commanded closer together than a robot width
-                // (SHADOW_SPACING 170 < ~180mm), so avoidance between them would
-                // jitter/push the wall apart — and an attacker driving at the
-                // wall must not deflect it either.
-                p.go_to(target)
-                    .facing(cmd.face)
-                    .avoid_robots(cmd.role != "shadow");
+                // Shadows (the wall) ride a rounded-rect bounded path around the box:
+                // keeper-style direct-velocity drive with a no-overshoot envelope,
+                // ORCA + planner off. The envelope keeps the pair locked to the curve
+                // (and out of the box) so ORCA can't split them at a corner and the
+                // rigid base_s keeps their spacing pinned. A waller that's still far
+                // outside its band drives in with the planner first (go_to_bounded
+                // bypasses it and would cut straight through obstacles), handing off
+                // to bounded once inside. During keeper-clearing bounds is None (set
+                // by the generator) so the wall vacates on the planner, not the
+                // envelope. All other roles use the planned go_to as before.
+                match cmd.bounds {
+                    Some(bounds) => {
+                        let near_band = match bounds {
+                            MotionBounds::RoundedRect(z) => {
+                                let d = z.center
+                                    + Vector2::new(
+                                        (p.position().x - z.center.x)
+                                            .clamp(-z.half_extents.x, z.half_extents.x),
+                                        (p.position().y - z.center.y)
+                                            .clamp(-z.half_extents.y, z.half_extents.y),
+                                    );
+                                (p.position() - d).norm()
+                                    <= z.max_offset + config::WALL_HANDOFF_SLACK
+                            }
+                            _ => true,
+                        };
+                        if near_band {
+                            p.go_to_bounded(target, bounds).facing(cmd.face);
+                        } else {
+                            p.go_to(target).facing(cmd.face).avoid_robots(false);
+                        }
+                    }
+                    None => {
+                        p.go_to(target)
+                            .facing(cmd.face)
+                            .avoid_robots(cmd.role != "shadow");
+                    }
+                }
                 p.set_role(cmd.role);
             }
         }

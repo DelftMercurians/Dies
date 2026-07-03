@@ -274,6 +274,8 @@ impl SideAssignment {
             breakbeam_ball_detected: player.breakbeam_ball_detected,
             has_ball: player.has_ball,
             reflex_kick_state: player.reflex_kick_state,
+            reflex_kick_counter: player.reflex_kick_counter,
+            smart_kick_counter: player.smart_kick_counter,
             tof_ok: player.tof_ok,
             tof_ball_detected: player.tof_ball_detected,
             // ToF fields are robot-local (sensor frame), so they pass through the

@@ -134,8 +134,8 @@ pub use dies_core::{Angle, FieldGeometry};
 pub use dies_strategy_protocol::{
     AcquirePosition, ArcZone, BallAction, BallState, DebugColor, DebugEntry, DebugShape,
     DebugValue, GameState, Handicap, MotionBounds, ParamKind, ParamSpec, ParamValue, PassBallState,
-    PassFailure, PassResult, PassRole, PlayerId, PlayerState, Possession, SkillCommand,
-    SkillStatus, StrategyParams, Vector2, WorldSnapshot,
+    PassFailure, PassResult, PassRole, PlayerId, PlayerState, Possession, RectBandZone,
+    SkillCommand, SkillStatus, StrategyParams, Vector2, WorldSnapshot,
 };
 
 /// Prelude module for convenient imports.
@@ -158,7 +158,7 @@ pub mod prelude {
     pub use dies_strategy_protocol::{
         AcquirePosition, ArcZone, BallAction, BallState, DebugColor, GameState, Handicap,
         MotionBounds, ParamKind, ParamSpec, ParamValue, PlayerId, PlayerState, Possession,
-        SkillCommand, SkillStatus, Vector2,
+        RectBandZone, SkillCommand, SkillStatus, Vector2,
     };
 }
 

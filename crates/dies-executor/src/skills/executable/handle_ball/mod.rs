@@ -490,6 +490,15 @@ pub struct HandleBallSkill {
     // ── strike (reflex) state ──
     kick_ball_pos: Option<Vector2>,
     armed_at: Option<f64>,
+    /// The firmware kick counter (reflex or smart, per the kicker used) sampled at
+    /// the instant the reflex was armed / the kick was commanded. A later feedback
+    /// frame reporting a *different* value proves the robot actually fired the
+    /// kicker; the verify requires this *in addition to* a ball departure (AND), so
+    /// a ball nudged by another robot — or a whiff that never moved the ball — can't
+    /// be mistaken for our strike. `None` until armed, or when the robot doesn't
+    /// report the counter (e.g. old firmware); the AND gate then degrades to
+    /// departure alone rather than deadlocking.
+    kick_counter_baseline: Option<u8>,
     // ── re-aim state ──
     /// The disengage release completed this episode: the held ball has been
     /// let go and the terminal kick proceeds as a plain drive-through strike.
@@ -530,6 +539,7 @@ impl HandleBallSkill {
             committed_since: None,
             kick_ball_pos: None,
             armed_at: None,
+            kick_counter_baseline: None,
             disengaged: false,
             arm_guard_blocks: 0,
             launch: None,
@@ -562,6 +572,36 @@ impl HandleBallSkill {
             && ctx.player.tof_ok
             // && ctx.player.tof_ball_detected
             && committed
+    }
+
+    /// The firmware kick counter relevant to the current shot's kicker (reflex vs
+    /// smart). `None` when there's no shot or the robot doesn't report the counter.
+    fn live_kick_counter(&self, ctx: &SkillContext<'_>) -> Option<u8> {
+        use crate::control::KickerControlInput;
+        match self.shot() {
+            Some((_, KickerControlInput::ReflexKick)) => ctx.player.reflex_kick_counter,
+            Some((_, KickerControlInput::Kick)) => ctx.player.smart_kick_counter,
+            _ => None,
+        }
+    }
+
+    /// Whether the robot has fired since arming: the live kick counter differs from
+    /// the baseline captured at arm/commit time. Compared with `!=` (not `>`) so a
+    /// `u8` wrap still reads as a fire. A kick counter increment is direct proof the
+    /// kicker discharged; the verify ANDs this with the ball-departure check. Inert
+    /// (false) until both a baseline and a live reading are present.
+    pub(super) fn kick_counter_fired(&self, ctx: &SkillContext<'_>) -> bool {
+        matches!(
+            (self.kick_counter_baseline, self.live_kick_counter(ctx)),
+            (Some(base), Some(live)) if base != live
+        )
+    }
+
+    /// The kick-counter half of the AND verify. `true` when the counter confirms a
+    /// fire, or when no baseline was captured (counter unobservable — e.g. old
+    /// firmware) so the gate must degrade to departure-only rather than deadlock.
+    pub(super) fn kick_counter_confirms(&self, ctx: &SkillContext<'_>) -> bool {
+        self.kick_counter_baseline.is_none() || self.kick_counter_fired(ctx)
     }
 
     /// Exit-bias heading for the acquire sub-phase. An explicit `Heading` overrides;
