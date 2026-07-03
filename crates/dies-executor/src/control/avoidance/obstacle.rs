@@ -15,8 +15,8 @@
 //! Everything is in team-relative coordinates, millimetres.
 
 use dies_core::{
-    AvoidanceConfig, BallData, FieldGeometry, GameState, PlayerId, TeamData, Vector2, BALL_RADIUS,
-    PLAYER_RADIUS,
+    AvoidanceConfig, BallData, FieldGeometry, FieldMask, GameState, PlayerId, TeamData, Vector2,
+    BALL_RADIUS, PLAYER_RADIUS,
 };
 
 /// Center-to-center ball keep-out for our kickoff kicker during `PrepareKickoff`.
@@ -194,6 +194,7 @@ impl ObstacleSet {
         gates: AvoidanceGates,
         game_state: GameState,
         cfg: &AvoidanceConfig,
+        field_mask: &FieldMask,
     ) -> ObstacleSet {
         let mut set = ObstacleSet::default();
 
@@ -234,7 +235,7 @@ impl ObstacleSet {
         }
 
         if let Some(field) = world.field_geom.as_ref() {
-            set.push_walls(field, cfg, gates.wall_care);
+            set.push_walls(field, cfg, gates.wall_care, field_mask);
             if gates.avoid_defense_area {
                 set.push_defense_areas(field, cfg);
             }
@@ -249,15 +250,33 @@ impl ObstacleSet {
     /// `wall_care * wall_margin`. `.max(0.0)` is the hardware safety floor: a
     /// negative margin would push the keep-in plane outside the physical wall and
     /// let the robot leave the field.
-    fn push_walls(&mut self, field: &FieldGeometry, cfg: &AvoidanceConfig, wall_care: f64) {
+    ///
+    /// The walls are the intersection of the physical field with the vision
+    /// `field_mask` sub-rectangle, so a sub-field test region is treated as a
+    /// wall (robots stop `margin` inside the crop and stay tracked). The mask
+    /// can only *shrink* the field; the full-field default (`[-1, 1]`) is a
+    /// no-op and reduces to the symmetric physical walls. Mask fractions are
+    /// scaled by the same `field_extent/2 + boundary_width` used in
+    /// [`FieldMask::contains`].
+    fn push_walls(
+        &mut self,
+        field: &FieldGeometry,
+        cfg: &AvoidanceConfig,
+        wall_care: f64,
+        mask: &FieldMask,
+    ) {
         let margin = (wall_care * cfg.wall_margin).max(0.0);
-        let x_max = field.field_length / 2.0 + field.boundary_width - margin;
-        let y_max = field.field_width / 2.0 + field.boundary_width - margin;
+        let phys_x = field.field_length / 2.0 + field.boundary_width;
+        let phys_y = field.field_width / 2.0 + field.boundary_width;
+        let upper_x = phys_x.min(mask.x_max * phys_x) - margin;
+        let lower_x = (-phys_x).max(mask.x_min * phys_x) + margin;
+        let upper_y = phys_y.min(mask.y_max * phys_y) - margin;
+        let lower_y = (-phys_y).max(mask.y_min * phys_y) + margin;
         for (normal, offset) in [
-            (Vector2::new(1.0, 0.0), x_max),
-            (Vector2::new(-1.0, 0.0), x_max),
-            (Vector2::new(0.0, 1.0), y_max),
-            (Vector2::new(0.0, -1.0), y_max),
+            (Vector2::new(1.0, 0.0), upper_x),
+            (Vector2::new(-1.0, 0.0), -lower_x), // keep-in: p.x >= lower_x
+            (Vector2::new(0.0, 1.0), upper_y),
+            (Vector2::new(0.0, -1.0), -lower_y), // keep-in: p.y >= lower_y
         ] {
             self.statics.push(StaticObstacle::new(
                 ObstacleShape::HalfPlane { normal, offset },
@@ -534,6 +553,7 @@ mod tests {
             gates(1.0, false, false),
             GameState::Run,
             &cfg,
+            &FieldMask::default(),
         );
         let w = wall_offsets(&set);
         assert_eq!(w.len(), 4, "four keep-in walls");
@@ -555,6 +575,7 @@ mod tests {
                 gates(care, false, false),
                 GameState::Run,
                 &cfg,
+                &FieldMask::default(),
             ))[0]
         };
         // care = 0 → offset at the physical boundary (no margin).
@@ -563,6 +584,36 @@ mod tests {
         assert!((off(0.5) - (base_x - 0.5 * cfg.wall_margin)).abs() < 1e-6);
         // negative care → clamped to the physical boundary (floor).
         assert!((off(-1.0) - base_x).abs() < 1e-6);
+    }
+
+    #[test]
+    fn field_mask_shrinks_walls() {
+        let field = FieldGeometry::default();
+        let cfg = AvoidanceConfig::default();
+        let phys_x = field.field_length / 2.0 + field.boundary_width;
+        let phys_y = field.field_width / 2.0 + field.boundary_width;
+        // Right-half mask: x in [0, 1], full y. The -x keep-in plane moves in to
+        // the center line + margin; the other three stay at the physical wall.
+        let mask = FieldMask {
+            x_min: 0.0,
+            x_max: 1.0,
+            y_min: -1.0,
+            y_max: 1.0,
+        };
+        let set = ObstacleSet::build(
+            &team(field.clone(), None),
+            PlayerId::new(0),
+            gates(1.0, false, false),
+            GameState::Run,
+            &cfg,
+            &mask,
+        );
+        // Order is (+x, -x, +y, -y); the -x plane's offset is `-lower_x`.
+        let w = wall_offsets(&set);
+        assert!((w[0] - (phys_x - cfg.wall_margin)).abs() < 1e-6, "+x unchanged");
+        assert!((w[1] - (-cfg.wall_margin)).abs() < 1e-6, "-x at center+margin");
+        assert!((w[2] - (phys_y - cfg.wall_margin)).abs() < 1e-6, "+y unchanged");
+        assert!((w[3] - (phys_y - cfg.wall_margin)).abs() < 1e-6, "-y unchanged");
     }
 
     #[test]
@@ -576,6 +627,7 @@ mod tests {
             gates(1.0, true, true),
             GameState::Run,
             &cfg,
+            &FieldMask::default(),
         );
         let count = |k: ObstacleKind| set.statics.iter().filter(|s| s.kind == k).count();
         assert_eq!(count(ObstacleKind::Wall), 4);
@@ -598,6 +650,7 @@ mod tests {
             gates(1.0, false, false),
             GameState::Run,
             &cfg,
+            &FieldMask::default(),
         );
         assert_eq!(
             ungated
@@ -619,6 +672,7 @@ mod tests {
             gates(1.0, false, false),
             GameState::BallReplacement(Vector2::new(1000.0, 0.0)),
             &cfg,
+            &FieldMask::default(),
         );
         assert!(
             set.statics

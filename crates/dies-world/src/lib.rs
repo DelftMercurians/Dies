@@ -303,52 +303,33 @@ impl WorldTracker {
                 y_min,
                 y_max,
             } = &self.tracker_settings.field_mask;
+            // Scale the normalized mask by the field half-extent *including*
+            // `boundary_width`, matching `FieldMask::contains` and the mask-as-wall
+            // half-planes in the executor so the overlay coincides with the wall.
+            let sx = geom.field_length / 2.0 + geom.boundary_width;
+            let sy = geom.field_width / 2.0 + geom.boundary_width;
             dies_core::debug_line(
                 "mask.x_min".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_min,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_max,
-                ),
+                Vector2::new(sx * x_min, sy * y_min),
+                Vector2::new(sx * x_min, sy * y_max),
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
                 "mask.x_max".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_min,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_max,
-                ),
+                Vector2::new(sx * x_max, sy * y_min),
+                Vector2::new(sx * x_max, sy * y_max),
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
                 "mask.y_min".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_min,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_min,
-                ),
+                Vector2::new(sx * x_min, sy * y_min),
+                Vector2::new(sx * x_max, sy * y_min),
                 dies_core::DebugColor::Green,
             );
             dies_core::debug_line(
                 "mask.y_max".to_string(),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_min,
-                    geom.field_width / 2.0 * y_max,
-                ),
-                Vector2::new(
-                    geom.field_length / 2.0 * x_max,
-                    geom.field_width / 2.0 * y_max,
-                ),
+                Vector2::new(sx * x_min, sy * y_max),
+                Vector2::new(sx * x_max, sy * y_max),
                 dies_core::DebugColor::Green,
             );
         }

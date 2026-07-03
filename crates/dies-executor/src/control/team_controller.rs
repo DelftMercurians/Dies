@@ -479,7 +479,14 @@ impl TeamController {
                 is_kickoff_kicker: effective_input.role_type == RoleType::KickoffKicker,
                 wall_care: effective_input.wall_care,
             };
-            let obstacles = ObstacleSet::build(&world_data, id, gates, game_state, &cfg);
+            let obstacles = ObstacleSet::build(
+                &world_data,
+                id,
+                gates,
+                game_state,
+                &cfg,
+                &self.settings.tracker_settings.field_mask,
+            );
 
             // ORCA is decoupled per concern. It runs if the robot wants EITHER
             // reciprocal avoidance OR wall containment; the two feed different
@@ -614,6 +621,7 @@ impl TeamController {
                 },
                 world_data.current_game_state.game_state,
                 &self.settings.avoidance,
+                &self.settings.tracker_settings.field_mask,
             );
 
             let ctx = SkillContext {
