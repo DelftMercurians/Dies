@@ -37,6 +37,7 @@
 
 mod acquire;
 mod aim;
+mod disengage;
 mod strike;
 
 use std::time::Duration;
@@ -384,7 +385,44 @@ tunables! {
     /// Carry angular speed cap.
     #[tunable(unit = "rad/s", min = 0.5, max = 4.0, step = 0.1)]
     CARRY_ANGULAR_LIMIT: f64 = 1.5;
+
+    // ── re-aim from possession (orbit vs disengage) ───────────────────────────
+    section "HandleBall re-aim";
+
+    /// Held-ball re-aim strategy: `>0.5` = **disengage-and-re-strike** (release
+    /// the ball, back off minimally, drive-through reflex strike — reliable,
+    /// built from IRL-proven pieces); `≤0.5` = **orbit** (keep the dribbler on
+    /// and orbit the held ball onto the shot axis — faster and never lets go,
+    /// but untested live at large angles). The live A/B flip.
+    #[tunable(min = 0.0, max = 1.0, step = 1.0)]
+    REAIM_DISENGAGE: f64 = 1.0;
+    /// Yaw error to the kick axis below which a held ball is fired via the
+    /// existing aligned path instead of re-aiming at all — and the tolerance of
+    /// the held-ball arm guard (a reflex armed while the beam is high fires
+    /// INSTANTLY at the current yaw, so arming from possession is allowed only
+    /// inside this cone).
+    #[tunable(unit = "deg", min = 3.0, max = 45.0, step = 1.0)]
+    REAIM_YAW_DEG: f64 = 15.0;
+    /// Stationary spin-down pause before the disengage back-off: the dribbler
+    /// is cut (ramp bypassed) and the robot holds still so the ball is released
+    /// dead, not dragged.
+    #[tunable(unit = "s", min = 0.0, max = 1.0, step = 0.05)]
+    DISENGAGE_SETTLE: f64 = 0.3;
+    /// How far past ball contact the robot backs off before re-staging —
+    /// minimized: just enough to clear the dribbler mouth and the capture cone
+    /// (the destination after that is the normal strike staging point, ~200 mm
+    /// behind the ball on the strike axis).
+    #[tunable(unit = "mm", min = 80.0, max = 400.0, step = 10.0)]
+    BREAK_CONTACT_DIST: f64 = 150.0;
 }
+
+/// Back-off speed during the disengage break-contact drive. Structural: slow
+/// enough to leave the released ball undisturbed, fast enough that the whole
+/// disengage stays well inside the pass Stage budget.
+const DISENGAGE_BACKOFF_SPEED: f64 = 350.0;
+/// Backstop on the break-contact drive (post-settle) before the disengage
+/// fails — a robot pinned against something can't back off forever.
+const DISENGAGE_TIMEOUT: f64 = 1.5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Stage {
@@ -400,6 +438,10 @@ enum Stage {
     Verifying,
     /// Possess + face a heading; never self-completes.
     Hold,
+    /// Deliberately release the held ball (spin-down, then a minimal back-off)
+    /// so the kick can be re-aimed via the drive-through reflex strike. Entered
+    /// only in disengage re-aim mode; exits into the plain strike flow.
+    Disengage,
 }
 
 pub struct HandleBallSkill {
@@ -448,6 +490,15 @@ pub struct HandleBallSkill {
     // ── strike (reflex) state ──
     kick_ball_pos: Option<Vector2>,
     armed_at: Option<f64>,
+    // ── re-aim state ──
+    /// The disengage release completed this episode: the held ball has been
+    /// let go and the terminal kick proceeds as a plain drive-through strike.
+    /// Also suppresses re-entering `Disengage` while the fused possession
+    /// signal decays after the release.
+    disengaged: bool,
+    /// Ticks the held-ball arm guard suppressed a reflex arm (misaligned with
+    /// the beam high). Should be 0 in clean runs — nonzero flags a routing bug.
+    arm_guard_blocks: u32,
     // ── aim / verify state ──
     launch: Option<Vector2>,
     kick_time: Option<f64>,
@@ -479,6 +530,8 @@ impl HandleBallSkill {
             committed_since: None,
             kick_ball_pos: None,
             armed_at: None,
+            disengaged: false,
+            arm_guard_blocks: 0,
             launch: None,
             kick_time: None,
             detail: String::new(),
@@ -545,19 +598,15 @@ impl HandleBallSkill {
     }
 
     /// Whether the current act stage matches the (possibly just-swapped) action.
+    /// Both `Strike` variants map to `Aim`: a drive-through Strike only reaches
+    /// the act stages via the orbit re-aim route (held ball, orbit mode).
     fn stage_matches_action(&self) -> bool {
         matches!(
             (self.stage, self.action),
             (Stage::Hold, BallAction::Hold { .. })
                 | (Stage::Carry, BallAction::Carry { .. })
                 | (Stage::Aim, BallAction::Shoot { .. })
-                | (
-                    Stage::Aim,
-                    BallAction::Strike {
-                        acquire_first: true,
-                        ..
-                    }
-                )
+                | (Stage::Aim, BallAction::Strike { .. })
         )
     }
 
@@ -565,13 +614,11 @@ impl HandleBallSkill {
     fn enter_act(&mut self, now: f64) {
         self.stage = match self.action {
             BallAction::Carry { .. } => Stage::Carry,
-            BallAction::Shoot { .. }
-            | BallAction::Strike {
-                acquire_first: true,
-                ..
-            } => Stage::Aim,
-            // Hold, and the drive-through Strike (handled before this point).
-            _ => Stage::Hold,
+            // Both Strike variants: the free-ball drive-through never reaches
+            // this point; a held-ball Strike orbits to aim (orbit re-aim mode)
+            // and reflex-fires once aligned.
+            BallAction::Shoot { .. } | BallAction::Strike { .. } => Stage::Aim,
+            BallAction::Hold { .. } => Stage::Hold,
         };
         self.stage_entered = now;
         self.launch = None;
@@ -710,17 +757,57 @@ impl ExecutableSkill for HandleBallSkill {
             self.had_ball = true;
         }
         let player_pos = ctx.player.position;
+        // Held for arming purposes: the RAW breakbeam (the signal the firmware
+        // reflex fires on) OR the fused possession.
+        let holding = has_ball || ctx.player.breakbeam_ball_detected;
+        let reaim_disengage = REAIM_DISENGAGE() > 0.5;
+
+        // Post-disengage: the deliberately released ball is kicked via the
+        // plain drive-through, whatever the kick action variant.
+        if self.disengaged {
+            if let Some(target) = self.kick_target() {
+                return self.tick_strike(&ctx, target, now);
+            }
+            // Action swapped to a non-kick mid-release — resume normal routing.
+            self.disengaged = false;
+        }
+
+        // Live disengage release.
+        if self.stage == Stage::Disengage {
+            self.emit_common(&ctx, "disengage");
+            return self.tick_disengage(&ctx, now);
+        }
 
         // Drive-through Strike is a one-motion reflex strike-through: handled
         // separately (never holds, never re-acquires). The `acquire_first` variant
         // instead falls through to the normal acquire → aim path below and fires via
         // reflex once aimed.
+        //
+        // A HELD ball can't be driven through — arming the reflex with the beam
+        // high fires instantly at the *current* yaw — so a misaligned held ball is
+        // re-aimed first, per the re-aim flag: disengage-and-re-strike, or fall
+        // through into the stage machinery and orbit (Aim) with the reflex fired
+        // once aligned. Within [`REAIM_YAW_DEG`] the drive-through's own held-ball
+        // arm guard permits the immediate aligned fire.
         if let BallAction::Strike {
             target,
             acquire_first: false,
         } = self.action
         {
-            return self.tick_strike(&ctx, target, now);
+            let in_aim_path = matches!(self.stage, Stage::Aim | Stage::Kicking | Stage::Verifying);
+            if !in_aim_path {
+                if holding && self.reaim_needed(&ctx, target) {
+                    if reaim_disengage {
+                        self.enter_disengage(now);
+                        self.emit_common(&ctx, "disengage");
+                        return self.tick_disengage(&ctx, now);
+                    }
+                    // Orbit mode: fall through — Acquire sees possession and
+                    // routes the Strike into Aim.
+                } else {
+                    return self.tick_strike(&ctx, target, now);
+                }
+            }
         }
 
         // Thrash backstop: a persistent loss surfaces as a failure and the caller
@@ -789,6 +876,21 @@ impl ExecutableSkill for HandleBallSkill {
             self.enter_act(now);
         }
 
+        // Disengage re-aim for the aim-bound kicks (Shoot / acquire-first
+        // Strike): a held ball far off the shot axis is released and re-struck
+        // instead of orbited when the flag says so. Within [`REAIM_YAW_DEG`]
+        // the orbit commits almost immediately, so the aligned fast path is
+        // shared by both modes.
+        if self.stage == Stage::Aim && reaim_disengage && holding {
+            if let Some(target) = self.kick_target() {
+                if self.reaim_needed(&ctx, target) {
+                    self.enter_disengage(now);
+                    self.emit_common(&ctx, "disengage");
+                    return self.tick_disengage(&ctx, now);
+                }
+            }
+        }
+
         self.status = SkillStatus::Running;
         let stage_name = match self.stage {
             Stage::Acquire => "acquire",
@@ -797,6 +899,7 @@ impl ExecutableSkill for HandleBallSkill {
             Stage::Kicking => "kick",
             Stage::Verifying => "verify",
             Stage::Hold => "hold",
+            Stage::Disengage => "disengage",
         };
         self.emit_common(&ctx, stage_name);
         let mut progress = match self.stage {
@@ -806,6 +909,7 @@ impl ExecutableSkill for HandleBallSkill {
             Stage::Kicking => self.drive_kick(&ctx, ball_pos, now),
             Stage::Verifying => self.drive_verify(&ctx, ball_pos, ball_vel_norm, now),
             Stage::Acquire => unreachable!("acquire handled above"),
+            Stage::Disengage => unreachable!("disengage handled above"),
         };
         // Capture settle: for a short window after the acquire→act transition,
         // cap deceleration and yaw rate so the robot glides through the contact
@@ -848,6 +952,7 @@ impl ExecutableSkill for HandleBallSkill {
             Stage::Kicking => "kicking",
             Stage::Verifying => "verifying",
             Stage::Hold => "holding",
+            Stage::Disengage => "disengaging",
         };
         if self.detail.is_empty() {
             format!("{act}: {stage}")
@@ -1049,14 +1154,224 @@ mod tests {
     }
 
     #[test]
-    fn drive_through_strike_is_not_an_aim_shot() {
-        // The free-ball drive-through is handled by `tick_strike`, not the aim path,
-        // so it must not be picked up as a `shot()` here.
+    fn drive_through_strike_maps_to_reflex_shot() {
+        // Both Strike variants map to a reflex release on the aim path: the
+        // free-ball drive-through never routes there, but a HELD drive-through
+        // re-aimed via the orbit route fires the reflex once aligned.
         let s = skill(BallAction::Strike {
             target: Vector2::new(1000.0, 0.0),
             acquire_first: false,
         });
-        assert!(s.shot().is_none());
+        assert!(matches!(
+            s.shot(),
+            Some((_, KickerControlInput::ReflexKick))
+        ));
+    }
+
+    // ── re-aim from possession ────────────────────────────────────────────────
+
+    /// Serializes the tests that read or mutate the process-global
+    /// `REAIM_DISENGAGE` tunable (tests run in parallel threads).
+    static REAIM_FLAG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A robot at the origin facing −x (yaw π) with the ball seated at its
+    /// mouth — 180° off a +x kick axis: the canonical re-aim case (caught
+    /// facing the passer, must kick the other way).
+    fn held_misaligned() -> (PlayerData, Vector2) {
+        let mut p = player(0, Vector2::new(0.0, 0.0), std::f64::consts::PI);
+        p.has_ball = true;
+        p.breakbeam_ball_detected = true;
+        (p, Vector2::new(-110.0, 0.0))
+    }
+
+    #[test]
+    fn held_misaligned_strike_disengages_and_never_arms() {
+        let _flag = REAIM_FLAG.lock().unwrap();
+        let target = Vector2::new(3000.0, 0.0);
+        let mut s = skill(BallAction::Strike {
+            target,
+            acquire_first: false,
+        });
+        let (p, ball) = held_misaligned();
+        let tc = team_ctx();
+        let w = world_at(&p, ball, 0.0);
+        match s.tick(ctx(&w, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    !matches!(input.kicker, KickerControlInput::ReflexKick),
+                    "a held, misaligned ball must never arm the reflex"
+                );
+                assert_eq!(input.dribbling_speed, 0.0);
+                assert!(
+                    input.dribbler_brake,
+                    "release must bypass the dribbler ramp"
+                );
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+        assert!(matches!(s.stage, Stage::Disengage));
+        assert_eq!(
+            s.arm_guard_blocks, 0,
+            "routing must prevent the arm guard from ever tripping"
+        );
+    }
+
+    #[test]
+    fn held_misaligned_shoot_disengages_too() {
+        // The aim-bound kicks (Shoot / acquire-first Strike) take the same
+        // release path when the disengage flag (default) is on.
+        let _flag = REAIM_FLAG.lock().unwrap();
+        let mut s = skill(BallAction::Shoot {
+            target: Vector2::new(3000.0, 0.0),
+        });
+        let (p, ball) = held_misaligned();
+        let tc = team_ctx();
+        let w = world_at(&p, ball, 0.0);
+        assert!(matches!(
+            s.tick(ctx(&w, &tc, &p)),
+            SkillProgress::Continue(_)
+        ));
+        assert!(matches!(s.stage, Stage::Disengage));
+    }
+
+    #[test]
+    fn disengage_releases_then_restages_the_strike() {
+        let _flag = REAIM_FLAG.lock().unwrap();
+        let target = Vector2::new(3000.0, 0.0);
+        let mut s = skill(BallAction::Strike {
+            target,
+            acquire_first: false,
+        });
+        let (p, ball) = held_misaligned();
+        let tc = team_ctx();
+
+        // D1: stationary spin-down.
+        let w0 = world_at(&p, ball, 0.0);
+        assert!(matches!(
+            s.tick(ctx(&w0, &tc, &p)),
+            SkillProgress::Continue(_)
+        ));
+
+        // D2: past the settle window, still in contact → back straight away
+        // from the ball (+x here), never arming.
+        let w1 = world_at(&p, ball, DISENGAGE_SETTLE() + 0.05);
+        match s.tick(ctx(&w1, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                match input.velocity {
+                    crate::control::Velocity::Global(v) => {
+                        assert!(v.x > 0.0, "back-off must move away from the ball")
+                    }
+                    ref v => panic!("expected a global back-off velocity, got {v:?}"),
+                }
+                assert!(!matches!(input.kicker, KickerControlInput::ReflexKick));
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+
+        // Released: beam low, ball clear of the mouth → hand over to the
+        // drive-through, which stages behind the live ball (position command).
+        let freed = player(0, Vector2::new(200.0, 0.0), std::f64::consts::PI);
+        let w2 = world_at(&freed, ball, DISENGAGE_SETTLE() + 0.4);
+        match s.tick(ctx(&w2, &tc, &freed)) {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    input.position.is_some(),
+                    "released ball must be re-staged by the drive-through"
+                );
+                assert!(!matches!(input.kicker, KickerControlInput::ReflexKick));
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+        assert!(s.disengaged, "release must latch the disengaged route");
+    }
+
+    #[test]
+    fn arm_guard_blocks_misaligned_held_commit() {
+        // Defense in depth: even if routing failed and the drive-through ran
+        // with a held, misaligned ball in commit-ready geometry, the commit
+        // latch (and thus the reflex) must be suppressed — the firmware fires
+        // the instant the beam is high. Call tick_strike directly to bypass
+        // the routing.
+        let target = Vector2::new(3000.0, 0.0);
+        let mut s = skill(BallAction::Strike {
+            target,
+            acquire_first: false,
+        });
+        let mut p = player(0, Vector2::new(-200.0, 0.0), std::f64::consts::PI);
+        p.has_ball = true;
+        p.breakbeam_ball_detected = true;
+        let tc = team_ctx();
+        let w = world_at(&p, Vector2::new(0.0, 0.0), 0.0);
+        match s.tick_strike(&ctx(&w, &tc, &p), target, 0.0) {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    !matches!(input.kicker, KickerControlInput::ReflexKick),
+                    "the arm guard must suppress the commit"
+                );
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+        assert!(s.arm_guard_blocks > 0, "the guard must record the block");
+    }
+
+    #[test]
+    fn aligned_held_strike_fires_immediately() {
+        // Within the re-aim cone a held ball is fired via the drive-through's
+        // aligned arm (invariant clause b): no re-aim detour.
+        let target = Vector2::new(3000.0, 0.0);
+        let mut s = skill(BallAction::Strike {
+            target,
+            acquire_first: false,
+        });
+        // Robot behind the ball on the axis, facing the target, ball seated.
+        let mut p = player(0, Vector2::new(-110.0, 0.0), 0.0);
+        p.has_ball = true;
+        p.breakbeam_ball_detected = true;
+        let tc = team_ctx();
+        let w = world_at(&p, Vector2::new(0.0, 0.0), 0.0);
+        match s.tick(ctx(&w, &tc, &p)) {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    matches!(input.kicker, KickerControlInput::ReflexKick),
+                    "an aligned, held ball is a deliberate immediate fire"
+                );
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+        assert!(matches!(s.stage, Stage::Acquire), "no re-aim detour");
+    }
+
+    #[test]
+    fn orbit_mode_routes_held_strike_to_aim() {
+        // Flag off: the held drive-through falls through into the stage
+        // machinery and orbits (Aim) instead of disengaging. The knob is
+        // process-global — serialized with the other flag-sensitive tests.
+        let _flag = REAIM_FLAG.lock().unwrap();
+        assert!(super::__tunable_set("handle_ball.REAIM_DISENGAGE", 0.0));
+        let target = Vector2::new(3000.0, 0.0);
+        let mut s = skill(BallAction::Strike {
+            target,
+            acquire_first: false,
+        });
+        let (p, ball) = held_misaligned();
+        let tc = team_ctx();
+        let w = world_at(&p, ball, 0.0);
+        let out = s.tick(ctx(&w, &tc, &p));
+        super::__tunable_set("handle_ball.REAIM_DISENGAGE", 1.0);
+        match out {
+            SkillProgress::Continue(input) => {
+                assert!(
+                    !matches!(input.kicker, KickerControlInput::ReflexKick),
+                    "gathering into the orbit must not arm"
+                );
+                assert!(
+                    input.dribbling_speed > 0.0,
+                    "the orbit keeps the dribbler pressed"
+                );
+            }
+            p => panic!("expected Continue, got {p:?}"),
+        }
+        assert!(matches!(s.stage, Stage::Aim));
     }
 
     #[test]

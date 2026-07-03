@@ -28,10 +28,11 @@
 //! same frame and reports a [`PassResult`]; the joint executor then releases
 //! them back to the strategy. In particular a whiffed strike fails jointly with
 //! [`PassFailure::KickFailed`] — the receiver never chases the ball back toward
-//! the passer; the planner re-decides. A pass commanded while the passer holds
-//! the ball is an upstream contract violation (ball handling lives entirely in
-//! one `HandleBall` episode) and fails fast, as does a ball that isn't near the
-//! passer to begin with — the pass never chases a loose ball.
+//! the passer; the planner re-decides. A pass may start from possession (the
+//! embedded strike re-aims a held ball itself — disengage-and-re-strike or a
+//! gated orbit, per the `"HandleBall re-aim"` tunables — enabling give-and-go
+//! chains), but never from a ball that isn't near the passer — the pass never
+//! chases a loose ball.
 //!
 //! ## Settle: secure the catch, then hand over on command
 //!
@@ -564,15 +565,13 @@ impl PassCoordinator {
     }
 
     /// First-tick contract checks. `Some` fails the pass before it starts.
+    ///
+    /// A pass may start from possession: the embedded strike re-aims a held
+    /// ball itself (disengage-and-re-strike, or a gated orbit — see the
+    /// `"HandleBall re-aim"` tunables), all inside the gated `Stage` phase.
+    /// The remaining entry contract is only that the ball is near the passer —
+    /// a pass still never chases a loose ball across the field.
     fn entry_guard(&self, passer: &PlayerData, ball_pos: Option<Vector2>) -> Option<PassResult> {
-        // A pass never starts from possession: ball handling lives entirely in
-        // one `HandleBall` episode, and the drive-through needs a free ball.
-        if passer.has_ball {
-            return Some(PassResult::Failure {
-                reason: PassFailure::BallLost,
-                ball_state: PassBallState::WithPasser,
-            });
-        }
         let Some(bp) = ball_pos else {
             return Some(PassResult::Failure {
                 reason: PassFailure::BallLost,
@@ -1236,27 +1235,40 @@ mod tests {
     }
 
     #[test]
-    fn fails_fast_when_passer_holds_the_ball() {
-        // A pass never starts from possession (ball handling lives entirely in
-        // one HandleBall episode): fail fast, planner re-decides.
-        let mut passer = player(0, STAGED, 0.0);
+    fn pass_from_possession_starts_and_disengages() {
+        // A pass MAY start from possession: the embedded strike re-aims the
+        // held ball (disengage), so the pass proceeds through Stage instead of
+        // failing fast. The passer holds the ball at its mouth facing AWAY
+        // from the receiver (the re-aim case) and must never arm the reflex on
+        // the entry tick.
+        let mut passer = player(0, Vector2::new(-110.0, 0.0), std::f64::consts::PI);
         passer.has_ball = true;
+        passer.breakbeam_ball_detected = true;
         let w = world(
             vec![passer, player(1, RECEIVER_POS, 0.0)],
             Some(BALL),
             0.016,
         );
         let tc = team_ctx();
-        let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None, None);
+        // Hint away from the receiver so the barrier is NOT satisfied — the
+        // pass stays gated in Stage while the passer disengages.
+        let mut c = PassCoordinator::new(
+            PlayerId::new(0),
+            PlayerId::new(1),
+            Some(Vector2::new(2000.0, 1500.0)),
+            None,
+        );
         let out = c.tick(&ctx(&w, &tc));
-        assert_eq!(out.status, SkillStatus::Failed);
-        assert!(matches!(
-            c.result(),
-            Some(PassResult::Failure {
-                reason: PassFailure::BallLost,
-                ball_state: PassBallState::WithPasser,
-            })
-        ));
+        assert_eq!(out.status, SkillStatus::Running);
+        assert_eq!(c.phase(), PassPhase::Stage);
+        assert!(
+            !matches!(out.passer_input.kicker, KickerControlInput::ReflexKick),
+            "a held, misaligned ball must never arm the reflex"
+        );
+        assert!(
+            out.passer_input.dribbler_brake,
+            "the disengage release must brake the dribbler, not ramp it"
+        );
     }
 
     #[test]

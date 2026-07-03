@@ -83,6 +83,21 @@ impl HandleBallSkill {
             DRIBBLER_SPEED()
         });
 
+        // Held-ball arm guard: the firmware reflex fires the INSTANT the beam is
+        // high, so a commit while the robot holds the ball is an immediate kick
+        // at the *current* yaw. Allow it only inside the re-aim cone (a
+        // deliberate aligned fire); otherwise force staging and never arm — the
+        // re-aim routing (orbit / disengage) owns misaligned possession. This is
+        // defense in depth: with correct routing the guard never trips, so the
+        // counter is a routing-bug detector in the logs.
+        let holding = ctx.player.breakbeam_ball_detected || ctx.player.has_ball;
+        let yaw_err_deg = (heading - ctx.player.yaw).degrees().abs();
+        let arm_blocked = holding && yaw_err_deg > REAIM_YAW_DEG();
+        if arm_blocked {
+            self.arm_guard_blocks += 1;
+        }
+        tc.debug_value(dkey(ctx, "arm_guard"), self.arm_guard_blocks as f64);
+
         // Schmitt-latched commit (mirrors `drive_acquire`): hold through the release
         // bands (perp *and* along) so a transient nudge — or the ball estimate
         // collapsing into the hull at contact — doesn't disarm the reflex
@@ -92,7 +107,7 @@ impl HandleBallSkill {
         // The external hold-fire gate (pass coordinator) suppresses the latch
         // entirely: the staging point is already inside the commit corridor, so a
         // gated strike waits there lined up and commits the tick after ungating.
-        if self.strike_gated {
+        if self.strike_gated || arm_blocked {
             self.commit_latched = false;
         } else if committed(along, perp) {
             self.commit_latched = true;

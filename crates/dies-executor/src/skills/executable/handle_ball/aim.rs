@@ -14,18 +14,18 @@ use crate::control::{KickerControlInput, Velocity};
 
 impl HandleBallSkill {
     /// The shot `target` and the kicker mechanism for the aim/kick/verify path.
-    /// `Shoot` releases with the smart (counter) kick; an `acquire_first` `Strike`
-    /// releases via the firmware reflex — a single double-touch-safe contact fired
-    /// the instant the (already-seated) ball trips the breakbeam. Any other action
-    /// has no shot, so the aim path falls back to a hold / fails.
+    /// `Shoot` releases with the smart (counter) kick; a `Strike` releases via
+    /// the firmware reflex — a single contact fired the instant the
+    /// (already-seated) ball trips the breakbeam. Both `Strike` variants map
+    /// here: a drive-through (`acquire_first: false`) only reaches the aim path
+    /// via the orbit re-aim route, where the aligned reflex fire is exactly the
+    /// intended release. Any other action has no shot, so the aim path falls
+    /// back to a hold / fails.
     pub(super) fn shot(&self) -> Option<(Vector2, KickerControlInput)> {
         match self.action {
             BallAction::Shoot { target } => Some((target, KickerControlInput::Kick)),
-            BallAction::Strike {
-                target,
-                acquire_first: true,
-            } => Some((target, KickerControlInput::ReflexKick)),
-            _ => None,
+            BallAction::Strike { target, .. } => Some((target, KickerControlInput::ReflexKick)),
+            BallAction::Carry { .. } | BallAction::Hold { .. } => None,
         }
     }
 
@@ -106,12 +106,15 @@ impl HandleBallSkill {
         );
         // Commit gate: precise (tight yaw, clear lane) — or, past the backstop,
         // forced (loose yaw, lane ignored: boot it through the covered corridor).
+        // The pass coordinator's hold-fire gate suppresses the commit: a gated,
+        // aligned orbit holds the ball on-axis with the dribbler on, unarmed,
+        // and fires the tick after ungating (the orbit-mode pass release).
         let committable = if forced {
             err_deg < AIM_FORCED_YAW_DEG()
         } else {
             err.abs() < YAW_TOLERANCE() && !blocked
         };
-        if committable && ctx.player.has_ball {
+        if committable && ctx.player.has_ball && !self.strike_gated {
             self.stage = Stage::Kicking;
             self.stage_entered = now;
         }

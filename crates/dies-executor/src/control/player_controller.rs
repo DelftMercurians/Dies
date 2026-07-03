@@ -578,13 +578,18 @@ impl PlayerController {
             self.w = angular_velocity;
         }
 
-        // Dribbler: raises apply instantly, drops decay (see DRIBBLER_DECAY_TAU).
-        self.dribble_speed = ramp_dribble(
-            self.dribble_speed,
-            input.dribbling_speed,
-            DRIBBLER_DECAY_TAU(),
-            dt,
-        );
+        // Dribbler: raises apply instantly, drops decay (see DRIBBLER_DECAY_TAU)
+        // — unless the skill explicitly brakes (a deliberate ball release).
+        self.dribble_speed = if input.dribbler_brake {
+            input.dribbling_speed
+        } else {
+            ramp_dribble(
+                self.dribble_speed,
+                input.dribbling_speed,
+                DRIBBLER_DECAY_TAU(),
+                dt,
+            )
+        };
 
         // Magnet is a held mode (level signal), recomputed each frame; composed
         // with the kicker state when the wire command is built.

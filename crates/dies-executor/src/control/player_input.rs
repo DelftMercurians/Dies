@@ -126,6 +126,12 @@ pub struct PlayerControlInput {
     pub angular_velocity: Option<f64>,
     /// Dribbler speed normalised to \[0, 1\]
     pub dribbling_speed: f64,
+    /// Apply a dribbler-speed DROP instantly instead of through the
+    /// controller's decay ramp. The ramp exists to protect skill seams (a
+    /// one-frame zero command must not cut the spin); a skill that
+    /// *deliberately* releases the ball (e.g. the disengage re-aim) sets this
+    /// so the ball is let go now, not dragged along by a decaying dribbler.
+    pub dribbler_brake: bool,
     /// Kicker control input
     pub kicker: KickerControlInput,
     /// Engage firmware magnet mode (2-axis ToF ball capture) this tick. While
@@ -200,6 +206,7 @@ impl Default for PlayerControlInput {
             yaw: None,
             angular_velocity: None,
             dribbling_speed: 0.0,
+            dribbler_brake: false,
             kicker: KickerControlInput::default(),
             magnet: false,
             care: 0.0,
