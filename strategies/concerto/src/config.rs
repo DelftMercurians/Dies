@@ -14,6 +14,15 @@ pub const ROLE_PIVOT_ENABLED: bool = true;
 pub const ROLE_BALANCE_ENABLED: bool = false;
 pub const ROLE_OUTLET_ENABLED: bool = true;
 
+/// Master switch for the goalkeeper. When `false` the keeper robot is not driven
+/// by the Guard/Clear machine and is no longer excluded from Formation — it folds
+/// into the assignable pool and takes a regular field role like any other robot.
+/// Purely a concerto-side knob (testing/scrimmage); the GC keeper designation and
+/// executor-side keeper handling are unaffected. Route every role-purpose keeper
+/// lookup through [`crate::our_keeper_id`] rather than `world.our_keeper_id()` so
+/// this stays the single gate.
+pub const GOALIE_ENABLED: bool = true;
+
 // ── Attacking-half recycle pivot ─────────────────────────────────────────────
 // When the carrier has no good *forward* option in the opponent half, it lays the
 // ball back to a deep recycle pivot to keep possession, rather than forcing a

@@ -67,8 +67,16 @@ pub enum GcOverride {
     /// Obey the actual Game Controller state (normal operation).
     #[default]
     None,
-    /// Ignore the GC; the team always plays as free play ([`GameState::Run`]).
-    IgnoreGc,
+    /// Ignore the GC; the team follows a manually-driven game state instead.
+    /// This is what the in-app "simulated GC" drives in live mode: absent any
+    /// command the state is [`GameState::Run`] (free play), but the operator can
+    /// override it (stop/halt/kickoff/free-kick/penalty) via the GC panel.
+    /// `operating_team` is the absolute-color team the GC designated as
+    /// operating (kicking) for restart states, if any.
+    IgnoreGc {
+        game_state: GameState,
+        operating_team: Option<TeamColor>,
+    },
     /// Ignore the GC; the team is always halted ([`GameState::Halt`]), stopping
     /// all of its robots.
     Halt,
@@ -140,7 +148,13 @@ impl SideAssignment {
             current_game_state: GameStateData {
                 game_state: match gc_override {
                     GcOverride::Halt => GameState::Halt,
-                    GcOverride::IgnoreGc => GameState::Run,
+                    GcOverride::IgnoreGc { game_state, .. } => {
+                        if let GameState::BallReplacement(pos) = game_state {
+                            GameState::BallReplacement(self.transform_vec2(color, &pos))
+                        } else {
+                            game_state
+                        }
+                    }
                     GcOverride::None => {
                         if let GameState::BallReplacement(pos) = world_data.game_state.game_state {
                             GameState::BallReplacement(self.transform_vec2(color, &pos))
@@ -149,7 +163,10 @@ impl SideAssignment {
                         }
                     }
                 },
-                us_operating: world_data.game_state.operating_team == color,
+                us_operating: match gc_override {
+                    GcOverride::IgnoreGc { operating_team, .. } => operating_team == Some(color),
+                    _ => world_data.game_state.operating_team == color,
+                },
                 yellow_cards: match color {
                     TeamColor::Blue => world_data.game_state.blue_team_yellow_cards,
                     TeamColor::Yellow => world_data.game_state.yellow_team_yellow_cards,

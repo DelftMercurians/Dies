@@ -24,6 +24,19 @@ use driver::{Driver, WaypointStatus};
 use formation::Formation;
 use planner::{PlanInputs, Planner};
 
+/// The keeper id concerto should treat as the goalkeeper for role purposes.
+/// Wraps `world.our_keeper_id()` behind [`config::GOALIE_ENABLED`]: when the
+/// goalie is disabled it returns `None`, so the keeper robot is neither driven by
+/// the keeper machine nor excluded from Formation — it takes a regular field role.
+/// Every role/positioning site must use this, not `world.our_keeper_id()` directly.
+pub(crate) fn our_keeper_id(world: &World) -> Option<PlayerId> {
+    if config::GOALIE_ENABLED {
+        world.our_keeper_id()
+    } else {
+        None
+    }
+}
+
 /// Standoff distance (mm) the set-piece kicker stages behind the ball during a
 /// prepare/setup state. The executor *hard-enforces* a no-touch ball keep-out for
 /// our kicker in `PrepareKickoff` (no robot may touch the ball before Normal Start
@@ -282,7 +295,7 @@ impl Strategy for ConcertoStrategy {
                 if let Some(id) = self.elect_kicker(&world, anchor) {
                     penalty::update_taker(&mut self.penalty, &world, ctx, id, game_state);
                 }
-            } else if let Some(k) = world.our_keeper_id().and_then(|kid| ctx.player(kid)) {
+            } else if let Some(k) = our_keeper_id(&world).and_then(|kid| ctx.player(kid)) {
                 // Theirs: the keeper holds the goal line until the kick is
                 // live (keeper.rs penalty gate), then guards/intercepts.
                 keeper::update(&mut self.keeper, &world, k);
@@ -347,7 +360,7 @@ impl Strategy for ConcertoStrategy {
         // build a carrier plan around it, and no field robot should chase a ball our
         // keeper holds inside the box.
         let keeper_has_ball =
-            matches!(possession, Possession::We(id) if Some(id) == world.our_keeper_id());
+            matches!(possession, Possession::We(id) if Some(id) == our_keeper_id(&world));
         // Offense — we hold the ball (or a pass is in flight): the Planner owns the
         // active robot(s). Pursuit — a ball we don't hold but may contest: Formation's
         // matching picks the capturer, weighing it against every defensive duty.
@@ -356,7 +369,7 @@ impl Strategy for ConcertoStrategy {
         let pursuit = can_act && !offense && !keeper_has_ball;
 
         let mut inputs = PlanInputs {
-            keeper_id: world.our_keeper_id(),
+            keeper_id: our_keeper_id(&world),
             double_touch_robot: self.double_touch_robot,
             our_attacking_restart: us_operating
                 && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
@@ -533,7 +546,7 @@ impl Strategy for ConcertoStrategy {
             // shepherd still beats an unchased ball. There is no failure-based
             // exclusion — a stuck robot re-engages.
             let mut ineligible: Vec<PlayerId> = self.double_touch_robot.into_iter().collect();
-            let keeper_id = world.our_keeper_id();
+            let keeper_id = our_keeper_id(&world);
             let any_able = world
                 .own_players()
                 .iter()
@@ -769,7 +782,7 @@ impl Strategy for ConcertoStrategy {
         }
 
         // ── Goalkeeper ──────────────────────────────────────────────────
-        if let Some(kid) = world.our_keeper_id() {
+        if let Some(kid) = our_keeper_id(&world) {
             if let Some(k) = ctx.player(kid) {
                 keeper::update(&mut self.keeper, &world, k);
             }
@@ -808,7 +821,7 @@ impl ConcertoStrategy {
     /// its robot is on the field, otherwise elect the non-keeper nearest to
     /// `anchor` (the ball, or the expected ball spot) and latch it.
     fn elect_kicker(&mut self, world: &World, anchor: Vector2) -> Option<PlayerId> {
-        let keeper_id = world.our_keeper_id();
+        let keeper_id = our_keeper_id(world);
         let id = match self
             .restart_kicker
             .filter(|id| world.own_players().iter().any(|p| p.id == *id))

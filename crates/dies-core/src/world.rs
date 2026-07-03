@@ -1324,6 +1324,23 @@ mod tests {
     }
 
     #[test]
+    fn ignore_gc_override_uses_manual_state() {
+        let wd = mock_world_data();
+        // Manual GC drives a Blue free-kick; both teams see FreeKick, but only
+        // Blue is the operating team.
+        let ov = crate::GcOverride::IgnoreGc {
+            game_state: GameState::FreeKick,
+            operating_team: Some(TeamColor::Blue),
+        };
+        let blue = wd.get_team_data(TeamColor::Blue, ov);
+        assert_eq!(blue.current_game_state.game_state, GameState::FreeKick);
+        assert!(blue.current_game_state.us_operating);
+        let yellow = wd.get_team_data(TeamColor::Yellow, ov);
+        assert_eq!(yellow.current_game_state.game_state, GameState::FreeKick);
+        assert!(!yellow.current_game_state.us_operating);
+    }
+
+    #[test]
     fn test_ball_placement_equals() {
         assert!(
             GameState::BallReplacement(Vector2::zeros())

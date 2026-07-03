@@ -3,9 +3,10 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 use anyhow::Result;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    Angle, BallData, DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerCmd, PlayerData,
-    PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment, SidelineReason,
-    SimulatorCmd, TeamColor, TeamPlayerId, Vector2, Vector3, WorldData, WorldInstant, WorldUpdate,
+    Angle, BallData, DebugSubscriber, ExecutorInfo, ExecutorSettings, GameState, GcOverride,
+    GcSimCommand, PlayerCmd, PlayerData, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand,
+    SideAssignment, SidelineReason, SimulatorCmd, TeamColor, TeamPlayerId, TeamSpecificSettings,
+    Vector2, Vector3, WorldData, WorldInstant, WorldUpdate,
 };
 use dies_logger::worker;
 use dies_protos::{
@@ -350,6 +351,54 @@ impl PlayerOverrideState {
 ///
 /// The executor can be used in 3 different regimes: externally driven, automatic, and
 /// simulation. Now supports team-agnostic operation with 0, 1, or 2 active team controllers.
+/// Manually-driven game state for the in-app "simulated GC". In live mode the
+/// GC panel's [`GcSimCommand`]s drive this instead of the simulator's auto-ref;
+/// it takes effect only for teams with `ignore_gc` on (see
+/// [`Executor::team_gc_override`]), overriding whatever the real GC says.
+#[derive(Clone, Copy, Debug)]
+struct ManualGc {
+    game_state: GameState,
+    /// Absolute-color team the GC designated as operating (kicking) for restart
+    /// states, if any.
+    operating_team: Option<TeamColor>,
+}
+
+impl Default for ManualGc {
+    fn default() -> Self {
+        Self {
+            game_state: GameState::Run,
+            operating_team: None,
+        }
+    }
+}
+
+impl ManualGc {
+    /// Apply a GC command, mirroring the real GC → [`GameState`] mapping in
+    /// `dies-world`'s `GameStateTracker`. Kickoff is two-step (`KickOff` →
+    /// `PrepareKickoff`, then `NormalStart` → `Kickoff`); free-kick and penalty
+    /// are one-shot. Restart states persist until the operator resumes with
+    /// `NormalStart`/`ForceStart`. `BallPlacement`/`YellowCard` have no per-team
+    /// game-state effect and are ignored in live mode.
+    fn apply(&mut self, cmd: GcSimCommand) {
+        let (game_state, operating_team) = match cmd {
+            GcSimCommand::Stop => (GameState::Stop, None),
+            GcSimCommand::Halt => (GameState::Halt, None),
+            GcSimCommand::ForceStart => (GameState::Run, None),
+            GcSimCommand::NormalStart => match self.game_state {
+                GameState::PrepareKickoff => (GameState::Kickoff, self.operating_team),
+                _ => (GameState::Run, None),
+            },
+            GcSimCommand::KickOff { team_color } => (GameState::PrepareKickoff, Some(team_color)),
+            GcSimCommand::DirectFree { team_color } => (GameState::FreeKick, Some(team_color)),
+            GcSimCommand::Penalty { team_color } => (GameState::Penalty, Some(team_color)),
+            // No per-team game-state effect; ignored in live mode.
+            GcSimCommand::BallPlacement { .. } | GcSimCommand::YellowCard { .. } => return,
+        };
+        self.game_state = game_state;
+        self.operating_team = operating_team;
+    }
+}
+
 pub struct Executor {
     tracker: WorldTracker,
     /// Strategy host. None only if the executor was constructed without strategy
@@ -359,6 +408,9 @@ pub struct Executor {
     gc_client: GcClient,
     environment: Option<Environment>,
     manual_override: HashMap<(TeamColor, PlayerId), PlayerOverrideState>,
+    /// Manually-driven game state for the in-app "simulated GC" (live mode only;
+    /// applies to teams with `ignore_gc` on). Defaults to free play (`Run`).
+    manual_gc: ManualGc,
     /// Latest raw basestation feedback per robot, captured at intake and logged
     /// verbatim (as JSON) each frame into the `player_feedback` table.
     latest_feedback: HashMap<(TeamColor, PlayerId), PlayerFeedbackMsg>,
@@ -476,6 +528,7 @@ impl Executor {
             gc_client: GcClient::new(),
             environment: Some(environment),
             manual_override: HashMap::new(),
+            manual_gc: ManualGc::default(),
             latest_feedback: HashMap::new(),
             open_loop_detectors: HashMap::new(),
             command_tx,
@@ -1267,11 +1320,32 @@ impl Executor {
             }
             ControlMsg::Stop => {}
 
-            ControlMsg::GcCommand { .. }
-            | ControlMsg::SimulatorCmd(_)
-            | ControlMsg::SetActiveTeams { .. } => {
+            // Live mode: the in-app "simulated GC" drives a manual game state
+            // that overrides the real GC for teams with `ignore_gc` on. (In
+            // sim/headless the loops intercept `GcCommand` before this and route
+            // it to the simulator's auto-ref, so this arm is live-only.)
+            ControlMsg::GcCommand { command } => self.manual_gc.apply(command),
+
+            ControlMsg::SimulatorCmd(_) | ControlMsg::SetActiveTeams { .. } => {
                 unreachable!();
             }
+        }
+    }
+
+    /// The effective per-team GC override, combining the team's settings with the
+    /// current manually-driven game state. `override_halt` wins; otherwise
+    /// `ignore_gc` makes the team follow the manual GC (`manual_gc`, defaulting to
+    /// free play); otherwise the real GC governs.
+    fn team_gc_override(&self, settings: &TeamSpecificSettings) -> GcOverride {
+        if settings.override_halt {
+            GcOverride::Halt
+        } else if settings.ignore_gc {
+            GcOverride::IgnoreGc {
+                game_state: self.manual_gc.game_state,
+                operating_team: self.manual_gc.operating_team,
+            }
+        } else {
+            GcOverride::None
         }
     }
 
@@ -1382,8 +1456,8 @@ impl Executor {
             log::error!("Failed to broadcast world update: {}", err);
         }
 
-        let blue_gc_override = self.settings.blue_team_settings.gc_override();
-        let yellow_gc_override = self.settings.yellow_team_settings.gc_override();
+        let blue_gc_override = self.team_gc_override(&self.settings.blue_team_settings);
+        let yellow_gc_override = self.team_gc_override(&self.settings.yellow_team_settings);
         let blue_team_data = if self.team_controllers.blue_team.is_some() {
             Some(world_data.get_team_data(TeamColor::Blue, blue_gc_override))
         } else {
@@ -1556,4 +1630,85 @@ fn patch_paused_robot(
     player.raw_yaw = yaw;
     player.velocity = Vector2::zeros();
     player.angular_speed = 0.0;
+}
+
+#[cfg(test)]
+mod manual_gc_tests {
+    use super::*;
+
+    #[test]
+    fn kickoff_is_two_step() {
+        let mut gc = ManualGc::default();
+        assert_eq!(gc.game_state, GameState::Run);
+        assert_eq!(gc.operating_team, None);
+
+        gc.apply(GcSimCommand::KickOff {
+            team_color: TeamColor::Blue,
+        });
+        assert_eq!(gc.game_state, GameState::PrepareKickoff);
+        assert_eq!(gc.operating_team, Some(TeamColor::Blue));
+
+        // Continue (NormalStart) from a prepare phase activates the kickoff,
+        // keeping the operating team.
+        gc.apply(GcSimCommand::NormalStart);
+        assert_eq!(gc.game_state, GameState::Kickoff);
+        assert_eq!(gc.operating_team, Some(TeamColor::Blue));
+
+        // Continue again (ForceStart) drops to free play.
+        gc.apply(GcSimCommand::ForceStart);
+        assert_eq!(gc.game_state, GameState::Run);
+        assert_eq!(gc.operating_team, None);
+    }
+
+    #[test]
+    fn free_kick_and_penalty_are_one_shot() {
+        let mut gc = ManualGc::default();
+        gc.apply(GcSimCommand::DirectFree {
+            team_color: TeamColor::Yellow,
+        });
+        assert_eq!(gc.game_state, GameState::FreeKick);
+        assert_eq!(gc.operating_team, Some(TeamColor::Yellow));
+
+        gc.apply(GcSimCommand::Penalty {
+            team_color: TeamColor::Blue,
+        });
+        assert_eq!(gc.game_state, GameState::Penalty);
+        assert_eq!(gc.operating_team, Some(TeamColor::Blue));
+    }
+
+    #[test]
+    fn stop_and_halt() {
+        let mut gc = ManualGc::default();
+        gc.apply(GcSimCommand::Stop);
+        assert_eq!(gc.game_state, GameState::Stop);
+        assert_eq!(gc.operating_team, None);
+        gc.apply(GcSimCommand::Halt);
+        assert_eq!(gc.game_state, GameState::Halt);
+    }
+
+    #[test]
+    fn normal_start_outside_prepare_runs() {
+        let mut gc = ManualGc::default();
+        gc.apply(GcSimCommand::Stop);
+        gc.apply(GcSimCommand::NormalStart);
+        assert_eq!(gc.game_state, GameState::Run);
+        assert_eq!(gc.operating_team, None);
+    }
+
+    #[test]
+    fn ignored_commands_are_noops() {
+        let mut gc = ManualGc::default();
+        gc.apply(GcSimCommand::KickOff {
+            team_color: TeamColor::Blue,
+        });
+        let before = (gc.game_state, gc.operating_team);
+        gc.apply(GcSimCommand::YellowCard {
+            team_color: TeamColor::Yellow,
+        });
+        gc.apply(GcSimCommand::BallPlacement {
+            team_color: TeamColor::Yellow,
+            position: Vector2::zeros(),
+        });
+        assert_eq!((gc.game_state, gc.operating_team), before);
+    }
 }

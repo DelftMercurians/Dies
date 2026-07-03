@@ -295,11 +295,20 @@ pub struct TeamSpecificSettings {
 impl TeamSpecificSettings {
     /// The effective per-team override of the GC-driven game state. `override_halt`
     /// takes precedence over `ignore_gc`.
+    ///
+    /// The `IgnoreGc` variant defaults to the "no manual command yet" state
+    /// ([`GameState::Run`], no operating team). In live mode the executor
+    /// substitutes the current manually-driven game state (see
+    /// `Executor::team_gc_override`); this default preserves the standalone
+    /// free-play semantics for any other caller.
     pub fn gc_override(&self) -> crate::GcOverride {
         if self.override_halt {
             crate::GcOverride::Halt
         } else if self.ignore_gc {
-            crate::GcOverride::IgnoreGc
+            crate::GcOverride::IgnoreGc {
+                game_state: crate::GameState::Run,
+                operating_team: None,
+            }
         } else {
             crate::GcOverride::None
         }

@@ -249,7 +249,10 @@ impl Formation {
         // wall must vacate the clear corridor. See the shadow generator.
         keeper_clearing: bool,
     ) -> FormationOutput {
-        let keeper_id = world.our_keeper_id();
+        // `crate::our_keeper_id` (not `world.our_keeper_id()`) so that with the
+        // goalie disabled this is `None` and the keeper robot folds into the
+        // assignable pool as a regular field robot.
+        let keeper_id = crate::our_keeper_id(world);
 
         // Assignable = own field robots minus keeper minus reserved plan robots.
         let mut assignable: Vec<PlayerId> = world
