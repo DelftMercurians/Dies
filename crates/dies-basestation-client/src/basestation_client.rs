@@ -426,8 +426,7 @@ impl BasestationHandle {
                                                         .heading_last_measurement,
                                                     dribbler_speed: c.gen_command.dribbler_speed_i,
                                                     kick_time: c.gen_command.kick_time_i,
-                                                    robot_command: c.gen_command.robot_command
-                                                        as u8,
+                                                    robot_command: c.gen_command.robot_command.0,
                                                 }
                                             }),
                                             firmware_version: fw_versions[id],

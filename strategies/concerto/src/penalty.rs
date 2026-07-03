@@ -42,7 +42,7 @@ impl PenaltyState {
 /// this lies in OUR half on a Div-B field (9m long) — nothing here may assume
 /// the mark is near the opponent goal. Only used as a fallback origin while the
 /// ball is undetected; the live ball position always wins.
-fn opp_penalty_mark(world: &World) -> Vector2 {
+pub fn opp_penalty_mark(world: &World) -> Vector2 {
     let d = world
         .field()
         .map(|f| f.goal_line_to_penalty_mark)

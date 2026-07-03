@@ -88,22 +88,17 @@ fn release(passer: PlayerId) -> Step {
 }
 
 fn main() {
-    let goal = match std::env::var("SCENARIO_GOAL").as_deref() {
-        Ok("own") => OWN_GOAL,
-        _ => OPP_GOAL,
-    };
+    let goal = Vector2::new(2500.0, -3000.0);
     run_scenario(move || {
-        let a = PlayerId::new(4);
-        let b = PlayerId::new(0);
+        let a = PlayerId::new(3);
+        let b = PlayerId::new(4);
         Scenario::looping(move || {
             vec![
                 release(a),
-                Step::pass_forward(a, b, move |w| one_timer_geometry(w, goal, 1.0))
-                    .timeout(30.0),
+                Step::pass_forward(a, b, move |w| one_timer_geometry(w, goal, 1.0)).timeout(30.0),
                 Step::wait(3.0),
                 release(b),
-                Step::pass_forward(b, a, move |w| one_timer_geometry(w, goal, -1.0))
-                    .timeout(30.0),
+                Step::pass_forward(b, a, move |w| one_timer_geometry(w, goal, -1.0)).timeout(30.0),
                 Step::wait(3.0),
             ]
         })

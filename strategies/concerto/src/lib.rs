@@ -14,6 +14,7 @@ pub mod geometry;
 pub mod keeper;
 pub mod logo;
 pub mod matching;
+pub mod penalty;
 pub mod planner;
 
 use dies_strategy_api::prelude::*;
@@ -69,6 +70,8 @@ pub struct ConcertoStrategy {
     gained_ball_t: Option<f64>,
     /// Goalkeeper Guard/Clear state machine.
     keeper: keeper::KeeperState,
+    /// Latched penalty-taker state (aim point), reset outside the penalty family.
+    penalty: penalty::PenaltyState,
     /// Wall robot currently stepping out to clear a slow/settled ball in the
     /// apron (see `config::WALL_CLEAR_ENABLED`). While set, it is a reserved plan
     /// slot (its own body holds its wall slot via the Shadow slot-hold). The open
@@ -94,6 +97,7 @@ impl ConcertoStrategy {
             dribble_origin: None,
             gained_ball_t: None,
             keeper: keeper::KeeperState::new(),
+            penalty: penalty::PenaltyState::default(),
             wall_clearer: None,
             last_wall_ids: Vec::new(),
         }
@@ -177,16 +181,16 @@ impl Strategy for ConcertoStrategy {
         // latched at designation, released only when the restart resolves.
         // During `pre_stage` the shown `game_state`/`us_operating` already
         // reflect the predicted restart, so the window spans prep → live.
+        let penalty_family = matches!(
+            game_state,
+            GameState::PreparePenalty | GameState::Penalty | GameState::PenaltyRun
+        );
         let take_window = us_operating
-            && matches!(
-                game_state,
-                GameState::PrepareKickoff
-                    | GameState::Kickoff
-                    | GameState::FreeKick
-                    | GameState::PreparePenalty
-                    | GameState::Penalty
-                    | GameState::PenaltyRun
-            );
+            && (penalty_family
+                || matches!(
+                    game_state,
+                    GameState::PrepareKickoff | GameState::Kickoff | GameState::FreeKick
+                ));
         if !take_window {
             self.restart_kicker = None;
         } else if let Some(pin) = self.restart_kicker {
@@ -194,7 +198,11 @@ impl Strategy for ConcertoStrategy {
             // handoff — the bar then keeps it off the ball), a different own
             // robot touched first (interference/steal of the take), or the
             // pinned robot left the field (sidelined/carded → re-latch).
-            let taken = world.double_touch_barred() == Some(pin);
+            // EXCEPT during a penalty: double touch does not apply there
+            // (rules §8.2 covers only kick-off/free kick), the taker may
+            // legally re-touch a rebound, and dropping the pin would strip its
+            // `penalty_kicker` exemption mid-kick — the executor would park it.
+            let taken = !penalty_family && world.double_touch_barred() == Some(pin);
             let other_took = matches!(world.freekick_kicker(), Some(k) if k != pin);
             let on_field = world.own_players().iter().any(|p| p.id == pin);
             if taken || other_took || !on_field {
@@ -225,6 +233,35 @@ impl Strategy for ConcertoStrategy {
 
         // ── Hard stops: let the executor halt the robots ────────────────
         if matches!(game_state, GameState::Halt | GameState::Unknown) {
+            return;
+        }
+
+        // ── Penalty kicks (rules §5.3.5) ────────────────────────────────
+        // The executor enforces all penalty positioning — every robot except
+        // the taker (ours) / the keeper (theirs) is parked at the field end and
+        // clamped ≥1m behind the ball — so both branches drive only their one
+        // privileged robot and return; Formation/Planner output would be dead
+        // weight here. Covers the *predicted* `PreparePenalty` during a
+        // stoppage too (`pre_stage`), which stages taker/keeper early.
+        if !penalty_family {
+            self.penalty.reset();
+        } else {
+            self.planner.clear_plan();
+            self.driver.clear();
+            if us_operating {
+                // Ours: pin a taker (nearest non-keeper on first designation)
+                // and stage it / take the shot.
+                let anchor = world
+                    .ball_position()
+                    .unwrap_or_else(|| penalty::opp_penalty_mark(&world));
+                if let Some(id) = self.elect_kicker(&world, anchor) {
+                    penalty::update_taker(&mut self.penalty, &world, ctx, id, game_state);
+                }
+            } else if let Some(k) = world.our_keeper_id().and_then(|kid| ctx.player(kid)) {
+                // Theirs: the keeper holds the goal line until the kick is
+                // live (keeper.rs penalty gate), then guards/intercepts.
+                keeper::update(&mut self.keeper, &world, k);
+            }
             return;
         }
 
@@ -264,7 +301,8 @@ impl Strategy for ConcertoStrategy {
         let ball_present = world.ball_position().is_some();
         let we_may_act = match game_state {
             GameState::Run => true,
-            GameState::Kickoff | GameState::FreeKick | GameState::PenaltyRun => us_operating,
+            // Penalty states never reach here (dedicated branch above).
+            GameState::Kickoff | GameState::FreeKick => us_operating,
             _ => false,
         };
 
@@ -343,15 +381,13 @@ impl Strategy for ConcertoStrategy {
 
         // ── Our set-piece preparation: designate & position a kicker ─────
         // Covers states that are not yet ball-in-play but where comply() would
-        // otherwise clamp/sideline our kicker: PrepareKickoff, PreparePenalty, and
-        // the brief Penalty state before PenaltyRun. Also covers a *predicted* free
-        // kick during a stoppage (`pre_stage`): there is no prepare-variant for
-        // free kicks, so we line the taker up here instead of running live offense.
+        // otherwise clamp/sideline our kicker: PrepareKickoff, and a *predicted*
+        // free kick during a stoppage (`pre_stage`): there is no prepare-variant
+        // for free kicks, so we line the taker up here instead of running live
+        // offense. (Penalty prep lives in the dedicated penalty branch above.)
         if us_operating
-            && (matches!(
-                game_state,
-                GameState::PrepareKickoff | GameState::PreparePenalty | GameState::Penalty
-            ) || (pre_stage && game_state == GameState::FreeKick))
+            && (game_state == GameState::PrepareKickoff
+                || (pre_stage && game_state == GameState::FreeKick))
         {
             if let Some(id) = self.designate_prep_kicker(&world, ctx, game_state) {
                 reserved.push(id);
@@ -366,9 +402,10 @@ impl Strategy for ConcertoStrategy {
         //    hoofed clear by the nearest waller, but only when we win the race to
         //    it. Exit first (ball left the apron / episode resolved / geometry
         //    lapsed / another mode owns the driver), then arm. ───────────────────
-        let wall_owns =
-            config::WALL_CLEAR_ENABLED && pursuit && game_state == GameState::Run
-                && wall_owns_ball(&world);
+        let wall_owns = config::WALL_CLEAR_ENABLED
+            && pursuit
+            && game_state == GameState::Run
+            && wall_owns_ball(&world);
         if let Some(sid) = self.wall_clearer {
             if !pursuit {
                 // Offense or a stoppage owns the driver now (it was replanned or
@@ -630,13 +667,10 @@ impl ConcertoStrategy {
     /// `restart_kicker`: re-picking the nearest robot every frame flickers
     /// between near-equidistant robots and can disagree with the live election
     /// at the prep→live transition. Nearest-to-ball only picks the initial pin.
-    fn designate_prep_kicker(
-        &mut self,
-        world: &World,
-        ctx: &mut TeamContext,
-        game_state: GameState,
-    ) -> Option<PlayerId> {
-        let ball_pos = world.ball_position()?;
+    /// Resolve the pinned taker of our set piece: keep the latched pin while
+    /// its robot is on the field, otherwise elect the non-keeper nearest to
+    /// `anchor` (the ball, or the expected ball spot) and latch it.
+    fn elect_kicker(&mut self, world: &World, anchor: Vector2) -> Option<PlayerId> {
         let keeper_id = world.our_keeper_id();
         let id = match self
             .restart_kicker
@@ -649,18 +683,28 @@ impl ConcertoStrategy {
                     .iter()
                     .filter(|p| Some(p.id) != keeper_id)
                     .min_by(|a, b| {
-                        let da = (a.position - ball_pos).norm();
-                        let db = (b.position - ball_pos).norm();
+                        let da = (a.position - anchor).norm();
+                        let db = (b.position - anchor).norm();
                         da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                     })?
                     .id
             }
         };
         self.restart_kicker = Some(id);
+        Some(id)
+    }
+
+    fn designate_prep_kicker(
+        &mut self,
+        world: &World,
+        ctx: &mut TeamContext,
+        game_state: GameState,
+    ) -> Option<PlayerId> {
+        let ball_pos = world.ball_position()?;
+        let id = self.elect_kicker(world, ball_pos)?;
         let role = match game_state {
             GameState::PrepareKickoff => "kickoff_kicker",
-            GameState::FreeKick => "free_kick_kicker",
-            _ => "penalty_kicker",
+            _ => "free_kick_kicker",
         };
         // During a prepare/setup state the kicker must NOT touch the ball — it may
         // only approach. Going straight to `ball_pos` drives the robot into the
@@ -798,9 +842,8 @@ fn our_kicker_role(game_state: GameState, us_operating: bool) -> Option<&'static
     match game_state {
         GameState::Kickoff | GameState::PrepareKickoff => Some("kickoff_kicker"),
         GameState::FreeKick => Some("free_kick_kicker"),
-        GameState::Penalty | GameState::PreparePenalty | GameState::PenaltyRun => {
-            Some("penalty_kicker")
-        }
+        // Penalty states never reach the shared path — the dedicated penalty
+        // branch sets `penalty_kicker` itself.
         _ => None,
     }
 }
@@ -868,6 +911,12 @@ fn elect_wall_clearer(
         }
     }
     let (id, waller_ttb) = best?;
+    println!(
+        "elecing wall clearer {} {} {}",
+        waller_ttb,
+        opp_time_to_ball(world, ball),
+        config::WALL_CLEAR_MARGIN
+    );
     // Win the race (harass-aggressive at margin 0) or hold.
     (waller_ttb <= opp_time_to_ball(world, ball) + config::WALL_CLEAR_MARGIN).then_some(id)
 }
@@ -1033,8 +1082,8 @@ mod tests {
     #[test]
     fn clear_stays_valid_at_our_feet_but_drops_outside_the_apron() {
         let sid = PlayerId::new(2); // waller at (-2950, 0)
-        // Dead ball at the clearer's feet in the apron → finish regardless of an
-        // opponent standing right there.
+                                    // Dead ball at the clearer's feet in the apron → finish regardless of an
+                                    // opponent standing right there.
         let w = world_with_ball(
             wall_own(),
             vec![player(9, -2300.0, 0.0)],

@@ -1205,6 +1205,18 @@ impl Simulation {
                         self.update_referee_command(referee::Command::PREPARE_PENALTY_YELLOW);
                     }
                 }
+                // The referee places the ball on the penalty mark (rules §5.3.5):
+                // on the goal-to-goal line, `goal_line_to_penalty_mark` from the
+                // center of the goal the attacking team shoots at.
+                let attack_sign = self.side_assignment.attacking_direction_sign(team_color);
+                let mark_x = attack_sign
+                    * (self.config.field_geometry.field_length / 2.0
+                        - self.config.field_geometry.goal_line_to_penalty_mark);
+                self.place_ball(mark_x, 0.0);
+                // A fresh penalty starts a fresh kick procedure — a stale
+                // in-progress flag (command issued mid-kick) would skip the
+                // position check and NORMAL_START entirely.
+                self.kick_in_progress = false;
                 self.game_state = SimulationGameState::penalty(team_color);
             }
             GcSimCommand::Stop => {
@@ -1905,8 +1917,11 @@ impl Simulation {
                 }
             }
             SimulationGameState::Penalty { team_color } => {
-                // Check if positions are valid
-                if !self.check_penalty_positions(team_color) {
+                // Positions only gate the *start* of the kick (NORMAL_START).
+                // Once the kick is under way the attacker is allowed to approach
+                // and manipulate the ball, so re-running the position check
+                // would stall the timer/in-play tracking mid-kick.
+                if !self.kick_in_progress && !self.check_penalty_positions(team_color) {
                     // Stay in penalty state until positions are correct
                     game_state
                 } else {
@@ -2285,9 +2300,55 @@ impl Simulation {
             let mut keeper_found = false;
             let mut keeper_position_valid = false;
 
-            for player in self.players.iter() {
+            // One attacking robot — the kicker — is allowed to approach the ball
+            // (but not touch it) during the penalty setup (rules §5.3.5). Exempt
+            // the attacker closest to the ball from the 1m-behind check; without
+            // this exemption a legally staged kicker deadlocks the penalty state
+            // (NORMAL_START is never issued).
+            let kicker_index = self
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.team_color == attacking_team)
+                .min_by(|(_, a), (_, b)| {
+                    let da = (self
+                        .rigid_body_set
+                        .get(a.rigid_body_handle)
+                        .unwrap()
+                        .position()
+                        .translation
+                        .vector
+                        - ball_position)
+                        .norm();
+                    let db = (self
+                        .rigid_body_set
+                        .get(b.rigid_body_handle)
+                        .unwrap()
+                        .position()
+                        .translation
+                        .vector
+                        - ball_position)
+                        .norm();
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i);
+
+            for (index, player) in self.players.iter().enumerate() {
                 let rigid_body = self.rigid_body_set.get(player.rigid_body_handle).unwrap();
                 let player_position = rigid_body.position().translation.vector;
+
+                if Some(index) == kicker_index {
+                    // The kicker may approach but must not touch the ball.
+                    let touch_threshold = self.config.player_radius + BALL_RADIUS + 30.0;
+                    if (player_position - ball_position).norm() < touch_threshold {
+                        dies_core::debug_string(
+                            "RefereeMessage",
+                            RefereeMessage::PenaltyRobotPositionViolation.to_string(),
+                        );
+                        return false;
+                    }
+                    continue;
+                }
 
                 // The keeper is the robot the sim's own referee designated.
                 if player.team_color == defending_team && player.id.as_u32() == SIM_GOALKEEPER_ID {

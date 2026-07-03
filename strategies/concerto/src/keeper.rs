@@ -859,8 +859,7 @@ mod tests {
         // gate), but the held-ball clock still runs — past the deadline Clear
         // is forced anyway (observed in self-play: box_time overran 10s with
         // the keeper still guarding).
-        let rolling =
-            world_with_ball_vel(Vector2::new(-4000.0, 0.0), Vector2::new(800.0, 0.0));
+        let rolling = world_with_ball_vel(Vector2::new(-4000.0, 0.0), Vector2::new(800.0, 0.0));
         assert!(!should_clear(&rolling), "fast ball must not settle-clear");
         let mut st = KeeperState::new();
         st.box_time = config::CLEAR_PANIC_T;

@@ -148,7 +148,7 @@ impl From<PlayerMoveCmd> for glue::Radio_Command {
             },
             gen_command: glue::Radio_GenericCommand {
                 dribbler_speed_i: val.dribble_speed as i16,
-                kick_time_i: (kick_time_for_id(val.id) as f32 / 1.5) as u16,
+                kick_time_i: kick_time_for(val.id, val.kick_speed),
                 time_to_kick: 0,
                 smart_kick_couter: 0,
                 robot_command: val.robot_cmd.into(),
@@ -203,6 +203,10 @@ pub struct PlayerGlobalMoveCmd {
 /// QUICK HACK: per-robot kicker charge time (`kick_time_i`, u16 ms) tuned so
 /// each robot shoots close to 5 m/s. Robot 3 tops out at ~4.79 m/s, so it gets
 /// its max charge time. Unknown ids fall back to a sane default.
+///
+/// This is the per-player **max** charge — the charge for a full-strength kick (a
+/// commanded `kick_speed` of [`MAX_KICK_SPEED`]). [`kick_time_for`] scales it down
+/// for weaker kicks.
 fn kick_time_for_id(id: PlayerId) -> u16 {
     match id.as_u32() {
         0 => 5100,
@@ -213,6 +217,32 @@ fn kick_time_for_id(id: PlayerId) -> u16 {
         5 => 5100,
         _ => 5100,
     }
+}
+
+/// The commanded `kick_speed` (mm/s) that maps to a full-strength kick — i.e. the
+/// per-player [`kick_time_for_id`] max charge. A commanded kick speed is
+/// interpreted as a fraction of this.
+pub const MAX_KICK_SPEED: f64 = 6000.0;
+
+/// The default commanded `kick_speed` (mm/s) used when a kick is issued without an
+/// explicit speed. Equals `MAX_KICK_SPEED / 1.5`, so the default charge is
+/// `kick_time_for_id / 1.5` — the historical hard-coded kick strength.
+pub const DEFAULT_KICK_SPEED: f64 = MAX_KICK_SPEED;
+
+/// Firmware charge time (`kick_time_i`, ms) for player `id` to kick at
+/// `kick_speed` (mm/s). [`kick_time_for_id`] gives the per-player *max* charge (a
+/// full-strength kick at [`MAX_KICK_SPEED`]); the commanded speed scales it down
+/// linearly, clamped so a kick never over-charges. A non-positive `kick_speed` is
+/// the unset sentinel and falls back to [`DEFAULT_KICK_SPEED`], preserving the
+/// historical default kick strength.
+fn kick_time_for(id: PlayerId, kick_speed: f64) -> u16 {
+    let kick_speed = if kick_speed <= 0.0 {
+        DEFAULT_KICK_SPEED
+    } else {
+        kick_speed
+    };
+    let frac = (kick_speed / MAX_KICK_SPEED).clamp(0.0, 1.0);
+    (kick_time_for_id(id) as f64 * frac).round() as u16
 }
 
 impl PlayerGlobalMoveCmd {
@@ -243,7 +273,7 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
             heading_setpoint: val.heading_setpoint as f32,
             gen_command: glue::Radio_GenericCommand {
                 dribbler_speed_i: val.dribble_speed as i16,
-                kick_time_i: (kick_time_for_id(val.id) as f32 / 1.5) as u16,
+                kick_time_i: kick_time_for(val.id, val.kick_speed),
                 time_to_kick: 0,
                 smart_kick_couter: val.kick_counter,
                 robot_command: val.robot_cmd.into(),
@@ -366,6 +396,7 @@ impl From<glue::HG_Status> for SysStatus {
             glue::HG_Status::NOT_INSTALLED => SysStatus::NotInstalled,
             glue::HG_Status::STANDBY => SysStatus::Standby,
             glue::HG_Status::COOLDOWN => SysStatus::Cooldown,
+            _ => SysStatus::NoReply,
         }
     }
 }

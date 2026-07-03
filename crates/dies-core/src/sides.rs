@@ -455,7 +455,9 @@ impl PlayerCmdUntransformer {
             preferred_rotation_direction: self
                 .preferred_rotation_direction
                 .unwrap_or(RotationDirection::NoPreference),
-            kick_speed: self.kick_speed.unwrap_or(0.5),
+            // `0.0` is the "unset" sentinel — the radio conversion maps it to the
+            // default kick strength (`DEFAULT_KICK_SPEED`).
+            kick_speed: self.kick_speed.unwrap_or(0.0),
             w: self.w.unwrap_or(0.0),
         }
     }

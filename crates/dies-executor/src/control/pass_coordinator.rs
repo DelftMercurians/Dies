@@ -76,7 +76,7 @@ tunables! {
     RECEIVER_READY_DIST: f64 = 250.0;
     /// Time budget for the `Stage` phase (passer staging + receiver positioning).
     #[tunable(unit = "s", min = 1.0, max = 10.0, step = 0.5)]
-    STAGE_TIMEOUT: f64 = 4.0;
+    STAGE_TIMEOUT: f64 = 8.0;
     /// Ball displacement from its pass-start position that aborts the pass while
     /// staging — the gated strike would otherwise follow a rolling ball forever.
     #[tunable(unit = "mm", min = 100.0, max = 1500.0, step = 50.0)]
@@ -644,6 +644,7 @@ impl PassCoordinator {
                 && outgoing.norm() > 1.0
                 && incoming.angle(&outgoing).to_degrees() < ONE_TIMER_MIN_DEFLECTION()
             {
+                log::warn!("pass infeasable");
                 return Some(PassResult::Failure {
                     reason: PassFailure::InfeasibleGeometry,
                     ball_state: PassBallState::Loose { position: bp },
@@ -714,7 +715,10 @@ impl PassCoordinator {
         );
         let sctx = self.skill_ctx(ctx, passer);
         match self.strike.tick(sctx) {
-            SkillProgress::Continue(input) => (input, None),
+            SkillProgress::Continue(mut input) => {
+                input.kick_speed = Some(4000.0);
+                (input, None)
+            }
             SkillProgress::Done(_) => match self.strike.status() {
                 SkillStatus::Succeeded => {
                     // Verified departure — the ball is genuinely on its way.

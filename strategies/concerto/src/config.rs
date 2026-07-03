@@ -323,7 +323,7 @@ pub const SHADOW_MAX: usize = 3;
 /// wall coverage (not a deeper central body) is what shrinks the open angle.
 pub const SHADOW_STAGGER: f64 = 0.8;
 /// How far in front of our goal the shadow line sits.
-pub const SHADOW_STANDOFF: f64 = 1550.0;
+pub const SHADOW_STANDOFF: f64 = 1600.0;
 /// Lateral spacing between adjacent shadows in the goal-coverage wall. Kept just
 /// under a robot width (~180mm) so neighbours overlap and leave no central gap —
 /// the wall is built centre-out on the direct ball→goal line, so an even count

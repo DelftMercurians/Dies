@@ -1750,14 +1750,12 @@ dependencies = [
 
 [[package]]
 name = "glue"
-version = "0.9.3"
-source = "git+https://github.com/DelftMercurians/glue.git?tag=v0.9.3#050f413be2fc473d34c0dd1ef8fa9d2875695da7"
+version = "0.9.4"
+source = "git+https://github.com/DelftMercurians/glue.git?tag=v0.9.4#9ada9d8c93b37d65c212f3e25a64c8eddc8b5cc0"
 dependencies = [
  "bindgen",
  "chrono",
  "crc",
- "num-derive",
- "num-traits 0.2.19",
  "ring-channel",
  "serialport",
  "strum",
