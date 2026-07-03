@@ -335,6 +335,14 @@ impl Formation {
         self.last_capture = capture.cloned();
         self.last_toggles = self.toggles;
 
+        // Keep the wall orderly: map the robots serving Shadow roles onto the Shadow
+        // slots in along-curve order, so neighbours never trade places / cross paths
+        // as the wall sweeps with the ball. The cost matcher decides *who* is on the
+        // wall (and staffing still adapts to count), but not the internal slot order —
+        // that is fixed spatially here, which both disables the disorderly cross-
+        // reassignment and keeps the rigid base_s translation clean.
+        self.order_wall_slots(world, &roles);
+
         // ── Emit commands; the capture-role robot is the capturer (driven by the
         //    Driver, so it gets no positioning command). ─────────────────────────
         let mut capturer = None;
@@ -455,6 +463,45 @@ impl Formation {
     /// `field_n` = all own field robots incl. plan-reserved ones — the
     /// possession-invariant count that sizes the wall and count-gates
     /// balance/outlet, so a possession flip never changes the role set.
+    /// Reassign the robots currently serving Shadow roles to the Shadow slots in
+    /// along-curve order (leftmost robot → leftmost slot). This is an
+    /// order-preserving matching: it never makes two wall members cross, so the wall
+    /// slides as an ordered line instead of the matcher shuffling bodies between
+    /// slots. Positions change slowly, so the induced slot order is stable (a genuine
+    /// crossing just swaps two targets, which needs no motion). No-op unless the
+    /// staffed shadow count equals the emitted shadow-slot count.
+    fn order_wall_slots(&mut self, world: &World, roles: &[Role]) {
+        let pen = world.own_penalty_area();
+        let off = config::SHADOW_BOX_OFFSET;
+        // Emitted Shadow slots, keyed by their target along-curve position.
+        let mut slots: Vec<(RoleId, f64)> = roles
+            .iter()
+            .filter(|r| r.id.kind == RoleKind::Shadow)
+            .map(|r| (r.id, geometry::project_to_rect_offset(&pen, off, r.position)))
+            .collect();
+        // Robots currently assigned to a Shadow role, keyed by their own position.
+        let mut robots: Vec<(PlayerId, f64)> = self
+            .assignment
+            .iter()
+            .filter(|(_, rid)| rid.kind == RoleKind::Shadow)
+            .filter_map(|(id, _)| {
+                world
+                    .own_player(*id)
+                    .map(|p| (*id, geometry::project_to_rect_offset(&pen, off, p.position)))
+            })
+            .collect();
+        if slots.is_empty() || slots.len() != robots.len() {
+            return;
+        }
+        // Sort both by along-curve position (id as a stable tie-break so exact ties
+        // don't oscillate), then pair in order.
+        slots.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.slot.cmp(&b.0.slot)));
+        robots.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.as_u32().cmp(&b.0.as_u32())));
+        for ((id, _), (slot_id, _)) in robots.iter().zip(slots.iter()) {
+            self.assignment.insert(*id, *slot_id);
+        }
+    }
+
     fn generate_roles(
         &mut self,
         world: &World,

@@ -68,7 +68,7 @@
     "handle_ball.APPROACH_GAIN": 2.0,
     "receive.CUSHION_GAIN": 0.8,
     "handle_ball.APPROACH_HYSTERESIS": 400.0,
-    "handle_ball.REAIM_DISENGAGE": 0.0
+    "handle_ball.REAIM_DISENGAGE": 1.0
   },
   "possession_config": {
     "dribbler_offset": 111.0,

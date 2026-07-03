@@ -1,6 +1,7 @@
 //! GoToBounded skill — aggressive direct-velocity positioning inside a region.
 //!
-//! Built for the goalkeeper's guard arc. Unlike `GoToPos` (which feeds a target
+//! Built for the goalkeeper's guard arc and reused by the goal wall (which rides a
+//! rounded-rect band around the defense area). Unlike `GoToPos` (which feeds a target
 //! position through the planner + path follower), this computes the translational
 //! velocity itself — a snappy proportional drive toward the target — and bypasses
 //! the planner/follower. Containment is delegated to the player controller's
@@ -16,7 +17,7 @@ use crate::control::skill_executor::{ExecutableSkill, SkillContext, SkillProgres
 use crate::control::{PlayerControlInput, Velocity};
 
 tunables! {
-    section "GoToBounded (keeper)";
+    section "GoToBounded (keeper + wall)";
 
     /// Arrival position tolerance; must clear the path-follower deadband.
     #[tunable(unit = "mm", min = 15.0, max = 200.0, step = 5.0)]
