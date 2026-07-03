@@ -36,9 +36,16 @@ tunables! {
     /// Slow in-place rotation rate once engaged — the peel itself.
     #[tunable(unit = "rad/s", min = 0.3, max = 3.0, step = 0.1)]
     ROT_RATE: f64 = 1.3;
-    /// Speed cap while approaching, so contact stays gentle (no crash foul).
+    /// Speed cap while closing in, so contact stays gentle (no crash foul).
+    /// Applies only inside `CAP_ZONE` — the rest of the approach runs at the
+    /// controller's normal limits.
     #[tunable(unit = "mm/s", min = 200.0, max = 1500.0, step = 50.0)]
     APPROACH_SPEED_LIMIT: f64 = 700.0;
+    /// Ball distance inside which the approach speed cap applies. Outside it,
+    /// capping only makes far launches slow (a 3m launch at the cap used to
+    /// outlast the whole skill timeout).
+    #[tunable(unit = "mm", min = 100.0, max = 1500.0, step = 50.0)]
+    CAP_ZONE: f64 = 400.0;
     /// Wall margin scale while contesting (`avoid_robots = false`, walls-only
     /// ORCA). Low so we can strip a ball pinned against the boundary.
     #[tunable(min = 0.0, max = 1.0, step = 0.1)]
@@ -52,8 +59,17 @@ tunables! {
     BALL_IN_BOX_MARGIN: f64 = 30.0;
 }
 
-/// Give up after this long if the opponent hasn't lost the ball.
+/// Give up after peeling this long without the opponent losing the ball. The
+/// clock starts at *engagement*, not at the first tick — the approach phase is
+/// bounded by the planner (a possession flip or capturer switch replans), not
+/// by us. Also bounds the never-found-a-holder bail (from the first tick).
 const TIMEOUT: Duration = Duration::from_millis(3500);
+
+/// Where a held ball sits ahead of the holder's centre, along its yaw (robot
+/// radius + ball radius — same geometry the possession tracker uses). Stands in
+/// for the ball while vision has lost it (usual during a hold: the holder
+/// occludes it), because the coasted ball estimate goes stale as the holder moves.
+const DRIBBLER_OFFSET: f64 = 111.0;
 
 pub struct SnatchSkill {
     /// Where we want the ball to pop loose toward (team-relative). `None` → midfield.
@@ -62,12 +78,20 @@ pub struct SnatchSkill {
     /// The opponent we locked onto as the ball holder. Locked on first contact so
     /// we don't flip targets if two opponents are near the ball.
     target: Option<PlayerId>,
+    /// The possession tracker has confirmed the locked target as the owner
+    /// (`has_ball`) at least once. Gates the tracker-driven success below, so a
+    /// pipeline race at skill start (tracker still debouncing the acquisition)
+    /// can't read as "the holder already lost it".
+    target_confirmed: bool,
     /// Whether we've reached the contact pose and started pressing + rotating.
     engaged: bool,
-    /// World time (`t_received`, seconds) of the first tick. Sim-clock based so the
-    /// timeout is deterministic and works under faster-than-realtime sim —
-    /// `Instant`/wall-clock would fire at the wrong sim-time. See CLAUDE.md.
+    /// World time (`t_received`, seconds) of the first tick; only bounds the
+    /// never-found-a-holder bail. Sim-clock based so the timeout is deterministic
+    /// and works under faster-than-realtime sim — `Instant`/wall-clock would fire
+    /// at the wrong sim-time. See CLAUDE.md.
     started: Option<f64>,
+    /// World time we first reached the contact pose — starts the peel budget.
+    engaged_at: Option<f64>,
 }
 
 impl SnatchSkill {
@@ -76,8 +100,10 @@ impl SnatchSkill {
             release_hint,
             status: SkillStatus::Running,
             target: None,
+            target_confirmed: false,
             engaged: false,
             started: None,
+            engaged_at: None,
         }
     }
 
@@ -109,13 +135,13 @@ impl ExecutableSkill for SnatchSkill {
     }
 
     fn tick(&mut self, ctx: SkillContext<'_>) -> SkillProgress {
-        let started = *self.started.get_or_insert(ctx.world.t_received);
-        let elapsed = ctx.world.t_received - started;
+        let now = ctx.world.t_received;
+        let started = *self.started.get_or_insert(now);
 
         let Some(ball) = ctx.world.ball.as_ref() else {
             return SkillProgress::Continue(PlayerControlInput::default());
         };
-        let ball_pos = ball.position.xy();
+        let ball_est = ball.position.xy();
         let player_pos = ctx.player.position;
 
         // We came away with the ball ourselves — also a successful strip.
@@ -124,47 +150,76 @@ impl ExecutableSkill for SnatchSkill {
             return SkillProgress::success();
         }
 
-        // Identify / re-locate the holder. Lock onto the closest holding opponent
-        // the first time we see one; afterwards track that specific robot.
+        // Identify / re-locate the holder. Prefer the possession tracker's owner
+        // (`has_ball` is stamped from it for opponents too) — it matches the
+        // planner's `Steal { from }`; the local cone test only covers the
+        // couple-frame IPC skew between the strategy's decision and our first
+        // tick. Afterwards track that specific robot.
         let holder = match self.target {
             Some(id) => ctx.world.opp_players.iter().find(|p| p.id == id),
             None => ctx
                 .world
                 .opp_players
                 .iter()
-                .filter(|p| Self::opp_holds_ball(p, ball_pos))
-                .min_by(|a, b| {
-                    let da = (a.position - ball_pos).norm();
-                    let db = (b.position - ball_pos).norm();
-                    da.total_cmp(&db)
+                .find(|p| p.has_ball)
+                .or_else(|| {
+                    ctx.world
+                        .opp_players
+                        .iter()
+                        .filter(|p| Self::opp_holds_ball(p, ball_est))
+                        .min_by(|a, b| {
+                            let da = (a.position - ball_est).norm();
+                            let db = (b.position - ball_est).norm();
+                            da.total_cmp(&db)
+                        })
                 }),
         };
 
         let Some(holder) = holder else {
-            // No holder. If we'd locked one and it's no longer holding, we stripped
-            // it. If we never found one, there's nothing to snatch.
+            // No holder. If we'd locked one and it's gone from vision, we treat
+            // the strip as done. If we never found one, there's nothing to snatch.
             if self.target.is_some() {
                 self.status = SkillStatus::Succeeded;
                 return SkillProgress::success();
             }
-            if elapsed > TIMEOUT.as_secs_f64() {
+            if now - started > TIMEOUT.as_secs_f64() {
                 self.status = SkillStatus::Failed;
                 return SkillProgress::failure();
             }
             return SkillProgress::Continue(PlayerControlInput::default());
         };
         self.target = Some(holder.id);
+        if holder.has_ball {
+            self.target_confirmed = true;
+        }
 
-        // The targeted opponent lost the ball → strip succeeded.
-        if !Self::opp_holds_ball(holder, ball_pos) {
+        // The possession tracker says the target lost the ball → strip succeeded.
+        // The tracker is the single source of truth here: it is debounced
+        // (`release_frames`), coasts through occlusion, and fast-exits on a kick —
+        // an instantaneous geometric test fires spuriously on one noisy frame.
+        if self.target_confirmed && !holder.has_ball {
             self.status = SkillStatus::Succeeded;
             return SkillProgress::success();
         }
 
-        if elapsed > TIMEOUT.as_secs_f64() {
-            self.status = SkillStatus::Failed;
-            return SkillProgress::failure();
+        // Peel budget. Counted from engagement — the approach phase is the
+        // planner's to bound (possession flips and capturer switches replan).
+        if let Some(engaged_at) = self.engaged_at {
+            if now - engaged_at > TIMEOUT.as_secs_f64() {
+                self.status = SkillStatus::Failed;
+                return SkillProgress::failure();
+            }
         }
+
+        // Where the ball actually is. While occluded (usual during a hold — the
+        // holder hides it from vision) the ball estimate coasts stale as the
+        // holder moves, so use the holder's dribbler point instead. A *detected*
+        // ball wins: it is real contact information (e.g. pushed off-mouth).
+        let ball_pos = if ball.detected {
+            ball_est
+        } else {
+            holder.position + holder.yaw.to_vector() * DRIBBLER_OFFSET
+        };
 
         // `a`: unit vector from the holder through the ball (≈ the holder's facing).
         // We stand `CONTACT_DIST` beyond the ball along `a`, on the opposite side
@@ -198,13 +253,21 @@ impl ExecutableSkill for SnatchSkill {
         input.wall_care = COMMIT_WALL_CARE(); // …but stay on the field (tight margin)
         input.with_position(contact_pose);
         input.with_dribbling(DRIBBLER_SPEED());
-        input.with_speed_limit(APPROACH_SPEED_LIMIT());
 
         let to_ball = (ball_pos - player_pos).norm();
+        // Gentle contact only needs the cap near the ball; capping the whole
+        // approach made any far launch slower than the skill could afford.
+        if to_ball < CAP_ZONE() {
+            input.with_speed_limit(APPROACH_SPEED_LIMIT());
+        }
+
         let heading_err = (face - ctx.player.yaw).radians().abs();
         let in_contact = to_ball < CONTACT_DIST() + ENGAGE_TOL();
         if !self.engaged {
             self.engaged = in_contact && heading_err < ENGAGE_ANGLE();
+            if self.engaged {
+                self.engaged_at = Some(now);
+            }
         }
 
         if self.engaged {
