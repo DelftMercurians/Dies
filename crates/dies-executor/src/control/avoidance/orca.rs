@@ -279,7 +279,6 @@ impl OrcaSolver {
             if !(self.hold_ground_enabled && agent.hold_ground) {
                 return 1.0;
             }
-            return 0.0; // TODO: fix actual computation
             let rel = other.position - agent.position;
             let dist = rel.norm();
             if dist < 1.0e-6 {
