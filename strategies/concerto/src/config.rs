@@ -230,6 +230,25 @@ pub const ESCAPE_STEP: f64 = 300.0;
 /// aim point — see `geometry::best_clear_ray`.)
 pub const ESCAPE_CLEAR_AIM_Y: f64 = 250.0;
 
+// ── Penalty kick (rules §5.3.5) ──────────────────────────────────────────────
+// The taker is driven directly (not through the planner): the shot distance
+// (goal_line_to_penalty_mark, 6m Div B) exceeds [`KICKER_SHOT_RANGE`], and the
+// planner's fallbacks (kick-ahead / recycle / pass) are all illegal with every
+// teammate parked ≥1m behind the ball. The executor enforces all positioning
+// rules; concerto only stages the taker and takes the single shot.
+/// How far behind the ball (away from the opponent goal) the taker stands during
+/// `PreparePenalty` — it may approach but must NOT touch the ball before normal
+/// start. More generous than the generic 300mm prep standoff as a margin against
+/// control jitter; closing 500mm is trivially inside the 10s kick budget.
+pub const PENALTY_PREP_STANDOFF: f64 = 500.0;
+/// Aim hysteresis: the latched aim point only moves when the freshly computed
+/// best target shifts more than this along the goal line. Prevents the Strike
+/// aiming loop from re-orbiting on per-frame keeper jitter.
+pub const PENALTY_AIM_STICK: f64 = 200.0;
+/// Fallback aim (no shot window resolvable): this far inside the post, on the
+/// side farther from the keeper.
+pub const PENALTY_AIM_POST_MARGIN: f64 = 150.0;
+
 // ── Advancement hoof (ray-based, travel-calibration-free, goal-mouth cone) ───
 // The hoof scores *directions*, not landing points, so no roll-distance model
 // enters (the old resting-point scorer broke whenever kick speed or carpet

@@ -480,22 +480,9 @@ impl Planner {
         own_ahead >= 1 && own_ahead > opp_ahead
     }
 
-    /// Infer the opponent keeper: the opponent nearest its own goal (the goal we
-    /// attack). Strategies aren't told the opponent's designated keeper, but the
-    /// robot parked deepest in front of the mouth is it in practice — and if no
-    /// opponent is near the goal, the nearest one casts no central shadow anyway, so
-    /// the shot model degrades gracefully.
+    /// Infer the opponent keeper — see [`geometry::opp_keeper`].
     fn opp_keeper(world: &World) -> Option<PlayerId> {
-        let goal = world.opp_goal_center();
-        world
-            .opp_players()
-            .iter()
-            .min_by(|a, b| {
-                let da = (a.position - goal).norm();
-                let db = (b.position - goal).norm();
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|p| p.id)
+        geometry::opp_keeper(world)
     }
 
     /// Effective shadow radius for the opponent keeper in the shot model, shrunk

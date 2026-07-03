@@ -68,6 +68,24 @@ pub fn boundary_rescue_heading(
     Some(Angle::from_radians(dir.y.atan2(dir.x)))
 }
 
+/// Infer the opponent keeper: the opponent nearest its own goal (the goal we
+/// attack). Strategies aren't told the opponent's designated keeper, but the
+/// robot parked deepest in front of the mouth is it in practice — and if no
+/// opponent is near the goal, the nearest one casts no central shadow anyway, so
+/// the shot model degrades gracefully.
+pub fn opp_keeper(world: &World) -> Option<PlayerId> {
+    let goal = world.opp_goal_center();
+    world
+        .opp_players()
+        .iter()
+        .min_by(|a, b| {
+            let da = (a.position - goal).norm();
+            let db = (b.position - goal).norm();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|p| p.id)
+}
+
 /// An aim point in the opponent goal mouth plus the angular width of the open
 /// window it sits in (the shot's aiming tolerance, as seen from the ball).
 #[derive(Debug, Clone, Copy)]

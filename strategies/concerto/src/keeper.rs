@@ -199,7 +199,7 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
                 &own_others,
                 world.opp_goal_center().x,
                 world.goal_width(),
-                opp_keeper(world),
+                geometry::opp_keeper(world),
                 config::SHOT_ROBOT_RADIUS,
                 config::SHOT_KEEPER_RADIUS,
                 config::BALL_RADIUS,
@@ -541,22 +541,6 @@ fn tick_box_clock(state: &mut KeeperState, world: &World) {
     } else {
         state.box_time = 0.0;
     }
-}
-
-/// The opponent robot nearest their own goal — assumed keeper (same heuristic
-/// as the planner's `opp_keeper`; the true id isn't in the protocol). Used for
-/// the inflated keeper shadow in the clear's goal-window term.
-fn opp_keeper(world: &World) -> Option<PlayerId> {
-    let goal = world.opp_goal_center();
-    world
-        .opp_players()
-        .iter()
-        .min_by(|a, b| {
-            let da = (a.position - goal).norm();
-            let db = (b.position - goal).norm();
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|p| p.id)
 }
 
 #[cfg(test)]
