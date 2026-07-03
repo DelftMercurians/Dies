@@ -284,6 +284,26 @@ pub struct TeamSpecificSettings {
     /// testing on the real field with no GC connected, or for letting one team
     /// keep playing while the other is stopped. Defaults to false.
     pub ignore_gc: bool,
+    /// Manual override: when true, this team ignores the Game Controller and is
+    /// forced into [`GameState::Halt`], stopping all of its robots regardless of
+    /// what the GC says. Takes precedence over `ignore_gc`. Useful for stopping
+    /// one team on the field (e.g. a misbehaving/unsafe team) while the other
+    /// keeps playing. Defaults to false.
+    pub override_halt: bool,
+}
+
+impl TeamSpecificSettings {
+    /// The effective per-team override of the GC-driven game state. `override_halt`
+    /// takes precedence over `ignore_gc`.
+    pub fn gc_override(&self) -> crate::GcOverride {
+        if self.override_halt {
+            crate::GcOverride::Halt
+        } else if self.ignore_gc {
+            crate::GcOverride::IgnoreGc
+        } else {
+            crate::GcOverride::None
+        }
+    }
 }
 
 /// Settings for the executor.

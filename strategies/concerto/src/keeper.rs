@@ -209,6 +209,8 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
                 config::HOOF_MOUTH_INSET,
                 panic,
                 config::CLEAR_PANIC_SIDE_W,
+                config::CLEAR_VETO_DIST,
+                config::CLEAR_VETO_CORRIDOR,
             );
             debug::value("keeper.clear_panic", if panic { 1.0 } else { 0.0 });
             match ray {
@@ -505,14 +507,10 @@ fn clear_still_valid(world: &World, keeper: &PlayerHandle) -> bool {
     keeper_inside_front(world, keeper.position(), config::CLEAR_EXIT_MARGIN)
 }
 
-/// A stopped ball inside the penalty area is the keeper's to clear — no field
-/// robot may enter the box. Require only a small `CLEAR_BALL_MARGIN` inside the
-/// field-facing edges (front + sides) so we don't chase a ball straddling the
-/// line; the back edge is the goal line (no margin). A large margin would strand
-/// balls in the box corners where neither keeper nor field robot can reach them.
+/// A stopped ball inside the penalty area is the keeper's to clear
 fn ball_inside_box(world: &World, ball: Vector2) -> bool {
     let area = world.own_penalty_area();
-    let m = config::CLEAR_BALL_MARGIN;
+    let m = 0.0;
     ball.x >= area.min.x
         && ball.x <= area.max.x - m
         && ball.y >= area.min.y + m

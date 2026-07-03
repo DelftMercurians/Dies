@@ -335,6 +335,7 @@ impl Strategy for ConcertoStrategy {
             double_touch_robot: self.double_touch_robot,
             our_attacking_restart: us_operating
                 && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
+            our_restart_is_kickoff: us_operating && game_state == GameState::Kickoff,
             carried,
             fresh_possession: self
                 .gained_ball_t
@@ -658,26 +659,34 @@ impl Strategy for ConcertoStrategy {
                 // to bounded once inside. During keeper-clearing bounds is None (set
                 // by the generator) so the wall vacates on the planner, not the
                 // envelope. All other roles use the planned go_to as before.
+                // Collision avoidance is turned off (bounded direct lock) ONLY when
+                // it's both safe and needed: the ball must be in play (not
+                // Stop/Halt/prep — during a stoppage the tightly-spaced wall must not
+                // drive through anyone) AND the waller must already be on its arc.
+                // Off-arc (still driving in from far) also keeps avoidance on, since
+                // go_to_bounded bypasses the planner and would cut through obstacles;
+                // it hands off to the bounded lock once on the arc.
                 match cmd.bounds {
                     Some(bounds) => {
-                        let near_band = match bounds {
+                        let on_arc = match bounds {
                             MotionBounds::RoundedRect(z) => {
-                                let d = z.center
+                                let nearest = z.center
                                     + Vector2::new(
                                         (p.position().x - z.center.x)
                                             .clamp(-z.half_extents.x, z.half_extents.x),
                                         (p.position().y - z.center.y)
                                             .clamp(-z.half_extents.y, z.half_extents.y),
                                     );
-                                (p.position() - d).norm()
+                                (p.position() - nearest).norm()
                                     <= z.max_offset + config::WALL_HANDOFF_SLACK
                             }
                             _ => true,
                         };
-                        if near_band {
+                        if game_state.is_ball_in_play() && on_arc {
                             p.go_to_bounded(target, bounds).facing(cmd.face);
                         } else {
-                            p.go_to(target).facing(cmd.face).avoid_robots(false);
+                            // Stoppage or still approaching: planned drive, avoidance ON.
+                            p.go_to(target).facing(cmd.face).avoid_robots(true);
                         }
                     }
                     None => {

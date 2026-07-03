@@ -58,6 +58,29 @@ impl std::fmt::Display for TeamColor {
     }
 }
 
+/// A per-team override of the Game-Controller-driven game state, for testing.
+///
+/// The GC normally dictates each team's [`GameState`]. These overrides let the
+/// operator take a single team off the GC without affecting the other.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GcOverride {
+    /// Obey the actual Game Controller state (normal operation).
+    #[default]
+    None,
+    /// Ignore the GC; the team always plays as free play ([`GameState::Run`]).
+    IgnoreGc,
+    /// Ignore the GC; the team is always halted ([`GameState::Halt`]), stopping
+    /// all of its robots.
+    Halt,
+}
+
+impl GcOverride {
+    /// Whether this override replaces the real GC state (anything but `None`).
+    pub fn overrides_gc(self) -> bool {
+        !matches!(self, GcOverride::None)
+    }
+}
+
 /// Represents which team defends the positive x side of the field.
 ///
 /// In RoboCup SSL, the field coordinate system is fixed, but teams can be
@@ -74,15 +97,16 @@ pub enum SideAssignment {
 impl SideAssignment {
     /// Transforms world data to team-specific coordinates.
     ///
-    /// When `ignore_gc` is set, the team's game state is forced to
-    /// [`GameState::Run`] (free play) regardless of the actual Game Controller
-    /// state — a testing override that disables all GC-driven constraints
-    /// (halt/stop/kickoff positioning, rule keep-out zones) for this team.
+    /// `gc_override` lets a team ignore the Game Controller for testing:
+    /// [`GcOverride::IgnoreGc`] forces [`GameState::Run`] (free play, disabling
+    /// all GC-driven constraints), [`GcOverride::Halt`] forces
+    /// [`GameState::Halt`] (stopping the team's robots), and
+    /// [`GcOverride::None`] obeys the real GC state.
     pub fn transform_to_team_coords(
         &self,
         color: TeamColor,
         world_data: &WorldData,
-        ignore_gc: bool,
+        gc_override: GcOverride,
     ) -> TeamData {
         TeamData {
             t_received: world_data.t_received,
@@ -114,12 +138,16 @@ impl SideAssignment {
                 .map(|b| self.transform_to_team_coords_ball(color, b)),
             field_geom: world_data.field_geom.clone(),
             current_game_state: GameStateData {
-                game_state: if ignore_gc {
-                    GameState::Run
-                } else if let GameState::BallReplacement(pos) = world_data.game_state.game_state {
-                    GameState::BallReplacement(self.transform_vec2(color, &pos))
-                } else {
-                    world_data.game_state.game_state
+                game_state: match gc_override {
+                    GcOverride::Halt => GameState::Halt,
+                    GcOverride::IgnoreGc => GameState::Run,
+                    GcOverride::None => {
+                        if let GameState::BallReplacement(pos) = world_data.game_state.game_state {
+                            GameState::BallReplacement(self.transform_vec2(color, &pos))
+                        } else {
+                            world_data.game_state.game_state
+                        }
+                    }
                 },
                 us_operating: world_data.game_state.operating_team == color,
                 yellow_cards: match color {
@@ -158,13 +186,14 @@ impl SideAssignment {
                         .map(|p| p.id),
                 ),
                 // Predicted restart is never `BallReplacement`, so no coordinate
-                // flip is needed. Suppressed when GC is ignored (forced free play).
-                predicted_next_game_state: if ignore_gc {
+                // flip is needed. Suppressed when the GC is overridden (forced
+                // free play or halt), since predictions are then meaningless.
+                predicted_next_game_state: if gc_override.overrides_gc() {
                     None
                 } else {
                     world_data.game_state.predicted_next_game_state
                 },
-                predicted_us_operating: if ignore_gc {
+                predicted_us_operating: if gc_override.overrides_gc() {
                     None
                 } else {
                     world_data
@@ -460,7 +489,14 @@ impl PlayerCmdUntransformer {
             // `0.0` is the "unset" sentinel — the radio conversion maps it to the
             // default kick strength (`DEFAULT_KICK_SPEED`).
             kick_speed: self.kick_speed.unwrap_or(0.0),
-            w: self.w.unwrap_or(0.0),
+            // Same wire convention as the local command's `w` (clockwise-positive
+            // in the world frame): mirroring the side flips the sense of
+            // rotation, so the team-relative spin must carry the side sign — a
+            // raw pass-through spins the mirrored team the wrong way.
+            w: -self
+                .side_assignment
+                .attacking_direction_sign(self.team_color)
+                * self.w.unwrap_or(0.0),
         }
     }
 

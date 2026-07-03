@@ -98,6 +98,10 @@ pub struct PlanInputs {
     /// True during our in-play kickoff/free kick, where the kicker must release the
     /// ball forward (not dribble) to bring it into play and respect double-touch.
     pub our_attacking_restart: bool,
+    /// True when that attacking restart is specifically a KICKOFF (vs a free kick).
+    /// A kickoff with no clear shot deflects off a distant side opponent; a free
+    /// kick instead makes a clean forward advance. See the `is_kicker` branch.
+    pub our_restart_is_kickoff: bool,
     /// Linear distance the ball has been carried from the contact point this
     /// possession (for the excessive-dribbling cap). 0 if we don't hold the ball.
     pub carried: f64,
@@ -218,27 +222,35 @@ impl Planner {
                     self.contested_finish(world, ball_pos, opp_goal, carrier_pos)
                         .unwrap_or_else(|| self.contest_escape(world, ball_pos, carrier_pos))
                 } else if is_kicker {
-                    // Restart: the kicker must release (never dribble — double-touch),
-                    // and a `Strike` is a strike-through (reflex kick), never a hold,
-                    // so it can't double-touch while aiming.
+                    // Restart: the kicker always RELEASES with a strike-through — a
+                    // reflex `Strike`, never a hold-and-aim (that would double-touch).
                     //
-                    // Direct shot first, on a deliberately GENEROUS gate (far below
-                    // SHOT_MIN_ANGLE, which could never fire from the kickoff spot):
-                    // the failure distribution of a restart shot is benign — a wall
-                    // deflection out is our free kick, a miss wide a harmless
-                    // goal-line restart for them — so unless the opponent has staged
-                    // a competent wall (keeper + 2 well-placed bots, the only way to
-                    // close the mouth), we shoot. The range gate keeps us from
-                    // striking at goal from our own half, where the ball arrives dead.
-                    let kicker_shot = shot_raw
+                    // Shoot directly only when the goal is *actually* clear (the
+                    // open-play gate, not the retired Div-B sliver gamble) and the
+                    // shot lane isn't fired straight into a close opponent. With no
+                    // clear shot:
+                    //   - kickoff: deflect off a distant opponent off to the side (the
+                    //     ball runs out for our restart), else a safe forward hoof;
+                    //   - free kick: a clean forward advance — a kick-ahead down an
+                    //     open lane, else the goal-mouth hoof; both aim toward their
+                    //     half, never back toward our goal.
+                    // Every candidate aim passes the close-opponent veto.
+                    let clear_shot = shot_raw
                         .filter(|s| s.angle >= config::KICKER_SHOT_MIN_ANGLE)
-                        .filter(|_| (carrier_pos - opp_goal).norm() <= config::KICKER_SHOT_RANGE);
-                    // Else release forward: kick at a supporter if one is well
-                    // placed, else hoof into the back-line cone.
-                    let target = kicker_shot.map(|s| s.target).unwrap_or_else(|| {
-                        self.best_kickahead_target(world, id, inputs)
-                            .map(|(_, t, _)| t)
-                            .unwrap_or_else(|| self.release_target(world, id, inputs))
+                        .filter(|_| (carrier_pos - opp_goal).norm() <= config::KICKER_SHOT_RANGE)
+                        .filter(|s| !self.fires_into_close_opp(world, ball_pos, s.target))
+                        .map(|s| s.target);
+
+                    let target = clear_shot.unwrap_or_else(|| {
+                        if inputs.our_restart_is_kickoff {
+                            self.kickoff_deflect_target(world, ball_pos)
+                                .unwrap_or_else(|| self.release_target(world, id, inputs))
+                        } else {
+                            self.best_kickahead_target(world, id, inputs)
+                                .map(|(_, t, _)| t)
+                                .filter(|t| !self.fires_into_close_opp(world, ball_pos, *t))
+                                .unwrap_or_else(|| self.release_target(world, id, inputs))
+                        }
                     });
                     Waypoint::Handle {
                         action: BallAction::Strike {
@@ -660,6 +672,50 @@ impl Planner {
         }
     }
 
+    /// Universal restart-aim safety veto: would striking from `ball` toward
+    /// `target` fire the ball straight into a nearby opponent? Reach and corridor
+    /// widen in our own half, where a blocked restart is most dangerous. Applied to
+    /// every restart aim (direct shot, kickoff deflection, forward advance).
+    fn fires_into_close_opp(&self, world: &World, ball: Vector2, target: Vector2) -> bool {
+        let mul = if ball.x < 0.0 {
+            config::CLOSE_OPP_VETO_OWN_HALF_MUL
+        } else {
+            1.0
+        };
+        geometry::fires_into_close_opponent(
+            ball,
+            target,
+            world.opp_players(),
+            config::CLOSE_OPP_VETO_DIST * mul,
+            config::CLOSE_OPP_VETO_CORRIDOR * mul,
+        )
+    }
+
+    /// Kickoff with no clear shot: aim at a distant opponent off to the side so the
+    /// ball deflects off it and runs out of play — an opponent last-touch gives us
+    /// the restart deep in their half. Picks the opponent furthest off centre among
+    /// those downfield ([`config::KICKOFF_DEFLECT_MIN_X`]), distant, and to the
+    /// side, whose lane from the ball is clean (close-opponent veto). Returns `None`
+    /// (caller falls back to a safe forward hoof) when no target qualifies. No
+    /// deflection physics is modelled — we just aim at the opponent.
+    fn kickoff_deflect_target(&self, world: &World, ball: Vector2) -> Option<Vector2> {
+        world
+            .opp_players()
+            .iter()
+            .filter(|o| o.position.x >= config::KICKOFF_DEFLECT_MIN_X)
+            .filter(|o| (o.position - ball).norm() >= config::KICKOFF_DEFLECT_MIN_DIST)
+            .filter(|o| o.position.y.abs() >= config::KICKOFF_DEFLECT_MIN_LATERAL)
+            .filter(|o| !self.fires_into_close_opp(world, ball, o.position))
+            .max_by(|a, b| {
+                a.position
+                    .y
+                    .abs()
+                    .partial_cmp(&b.position.y.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|o| o.position)
+    }
+
     /// Last-resort release target (restart with nothing on, or a carrier at the
     /// dribble cap with no hoof): the goal-mouth-cone hoof, falling back to a
     /// goal-biased point when even the cone is degenerate.
@@ -985,6 +1041,7 @@ mod tests {
             keeper_id: Some(PlayerId::new(1)),
             double_touch_robot: None,
             our_attacking_restart: false,
+            our_restart_is_kickoff: false,
             carried: 0.0,
             fresh_possession: false,
             now: 0.0,
@@ -1337,16 +1394,15 @@ mod tests {
     }
 
     #[test]
-    fn attacking_restart_kicker_shoots_at_open_mouth() {
-        // Div-B: a restart kicker in range with only a keeper guarding the mouth
-        // strikes directly at an open post sliver — the generous KICKER_SHOT gate,
-        // far below SHOT_MIN_ANGLE (which can never fire from this distance).
+    fn attacking_restart_kicker_shoots_when_goal_clear() {
+        // A restart kicker in range with a genuinely clear mouth (no opponent
+        // guarding it) strikes directly at goal — the shot gate is now the same
+        // "actually clear" standard as open play, not the retired sliver gamble.
         let own = vec![
             player(1, -4000.0, 0.0), // keeper
             player(2, -1000.0, 0.0), // kicker with the ball (5500mm from goal)
         ];
-        let opp = vec![player(9, 4400.0, 0.0)]; // opp keeper on its line
-        let world = world_with(own, opp, 1);
+        let world = world_with(own, vec![], 1); // empty mouth
         let mut planner = Planner::new();
         let mut inp = inputs();
         inp.our_attacking_restart = true;
@@ -1359,10 +1415,10 @@ mod tests {
                 action: BallAction::Strike { target, .. },
                 ..
             } => {
-                let half_mouth = world.goal_width() / 2.0;
                 assert!(
-                    target.y.abs() < half_mouth && target.y.abs() > 250.0,
-                    "restart strike should aim at a post sliver past the keeper, got {target:?}"
+                    (target.x - world.field_length() / 2.0).abs() < 1e-6
+                        && target.y.abs() < world.goal_width() / 2.0,
+                    "clear mouth: restart strike should aim into the goal, got {target:?}"
                 );
             }
             other => panic!("expected a direct restart Strike, got {other:?}"),
@@ -1370,23 +1426,19 @@ mod tests {
     }
 
     #[test]
-    fn attacking_restart_kicker_defers_to_staged_wall() {
-        // Div-B: keeper + two well-placed wall bots close the whole mouth (the
-        // "competent wall"), so the direct-shot gate must NOT fire — the kicker
-        // releases into the back-line cone away from the mouth instead.
+    fn attacking_restart_freekick_advances_when_not_clear() {
+        // A free kick with a keeper guarding the mouth (only sub-gate post slivers
+        // open) must NOT take the hopeful shot: it advances the ball forward toward
+        // their half instead — the goal-mouth hoof exits through their back line.
         let own = vec![
             player(1, -4000.0, 0.0), // keeper
             player(2, -1000.0, 0.0), // kicker with the ball
         ];
-        let opp = vec![
-            player(9, 4400.0, 0.0), // opp keeper (deepest → inferred keeper)
-            player(8, 3800.0, 300.0),
-            player(7, 3800.0, -300.0),
-        ];
+        let opp = vec![player(9, 4400.0, 0.0)]; // lone keeper closing the mouth
         let world = world_with(own, opp, 1);
         let mut planner = Planner::new();
         let mut inp = inputs();
-        inp.our_attacking_restart = true;
+        inp.our_attacking_restart = true; // free kick (not kickoff)
 
         let plan = planner
             .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
@@ -1397,11 +1449,47 @@ mod tests {
                 ..
             } => {
                 assert!(
-                    target.y.abs() > world.goal_width() / 2.0,
-                    "walled mouth: release must aim away from the goal, got {target:?}"
+                    (target.x - world.field_length() / 2.0).abs() < 1e-6,
+                    "no clear shot: free kick must advance forward through their \
+                     back line, got {target:?}"
                 );
             }
-            other => panic!("expected a release Strike, got {other:?}"),
+            other => panic!("expected a forward-advance Strike, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn attacking_restart_kickoff_deflects_off_side_opponent() {
+        // A kickoff with no clear shot aims at a distant opponent off to the side,
+        // so the ball deflects off it and runs out for our restart.
+        let own = vec![
+            player(1, -4000.0, 0.0), // keeper
+            player(2, -1000.0, 0.0), // kicker with the ball
+        ];
+        let opp = vec![
+            player(9, 4400.0, 0.0),    // opp keeper closing the mouth
+            player(8, 1500.0, 2000.0), // distant opponent off to the side
+        ];
+        let world = world_with(own, opp, 1);
+        let mut planner = Planner::new();
+        let mut inp = inputs();
+        inp.our_attacking_restart = true;
+        inp.our_restart_is_kickoff = true;
+
+        let plan = planner
+            .replan(&world, &Possession::We(PlayerId::new(2)), None, &inp)
+            .expect("should produce a plan");
+        match &plan.waypoints[0] {
+            Waypoint::Handle {
+                action: BallAction::Strike { target, .. },
+                ..
+            } => {
+                assert!(
+                    (*target - Vector2::new(1500.0, 2000.0)).norm() < 1e-6,
+                    "kickoff should aim at the distant side opponent, got {target:?}"
+                );
+            }
+            other => panic!("expected a deflection Strike, got {other:?}"),
         }
     }
 

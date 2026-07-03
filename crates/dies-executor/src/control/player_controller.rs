@@ -529,11 +529,14 @@ impl PlayerController {
             // robot actually ended up at rather than a stale latched value.
             self.held_heading = Some(self.last_yaw);
         } else if input.angular_velocity.is_some() {
-            // Caller is commanding a raw angular velocity (a spin). The firmware
-            // ignores `w` when a heading setpoint is present, so we must release
-            // heading control (NaN) to let the spin through. `self.w` is set from
-            // `input.angular_velocity` further below. Keep the hold heading fresh
-            // so releasing the spin later resumes holding near the current yaw.
+            // Caller is commanding a raw angular velocity (a spin). The radio
+            // global command has no field for one — the wire conversion
+            // (`From<PlayerGlobalMoveCmd> for Radio_GlobalCommand`) emulates the
+            // spin from `heading_setpoint == NaN` + `w` by synthesizing a
+            // rotating heading-setpoint lead. So: release heading control (NaN)
+            // and pass the spin via `self.w` (set further below); the simulator
+            // consumes `w` directly. Keep the hold heading fresh so releasing
+            // the spin later resumes holding near the current yaw.
             self.target_z = f64::NAN;
             self.w = 0.0;
             self.held_heading = Some(self.last_yaw);

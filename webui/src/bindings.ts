@@ -693,6 +693,14 @@ export interface TeamSpecificSettings {
 	 * keep playing while the other is stopped. Defaults to false.
 	 */
 	ignore_gc: boolean;
+	/**
+	 * Manual override: when true, this team ignores the Game Controller and is
+	 * forced into [`GameState::Halt`], stopping all of its robots regardless of
+	 * what the GC says. Takes precedence over `ignore_gc`. Useful for stopping
+	 * one team on the field (e.g. a misbehaving/unsafe team) while the other
+	 * keeps playing. Defaults to false.
+	 */
+	override_halt: boolean;
 }
 
 /**

@@ -193,12 +193,12 @@ impl TeamMap {
         &mut self,
         world_data: &dies_core::WorldData,
         manual_override: HashMap<(TeamColor, PlayerId), PlayerControlInput>,
-        blue_ignore_gc: bool,
-        yellow_ignore_gc: bool,
+        blue_gc_override: dies_core::GcOverride,
+        yellow_gc_override: dies_core::GcOverride,
     ) {
         // Update blue team controller if active
         if let Some(controller) = &mut self.blue_team {
-            let team_data = world_data.get_team_data(TeamColor::Blue, blue_ignore_gc);
+            let team_data = world_data.get_team_data(TeamColor::Blue, blue_gc_override);
             controller.update(
                 TeamColor::Blue,
                 world_data.side_assignment,
@@ -218,7 +218,7 @@ impl TeamMap {
 
         // Update yellow team controller if active
         if let Some(controller) = &mut self.yellow_team {
-            let team_data = world_data.get_team_data(TeamColor::Yellow, yellow_ignore_gc);
+            let team_data = world_data.get_team_data(TeamColor::Yellow, yellow_gc_override);
             controller.update(
                 TeamColor::Yellow,
                 world_data.side_assignment,
@@ -1382,15 +1382,15 @@ impl Executor {
             log::error!("Failed to broadcast world update: {}", err);
         }
 
-        let blue_ignore_gc = self.settings.blue_team_settings.ignore_gc;
-        let yellow_ignore_gc = self.settings.yellow_team_settings.ignore_gc;
+        let blue_gc_override = self.settings.blue_team_settings.gc_override();
+        let yellow_gc_override = self.settings.yellow_team_settings.gc_override();
         let blue_team_data = if self.team_controllers.blue_team.is_some() {
-            Some(world_data.get_team_data(TeamColor::Blue, blue_ignore_gc))
+            Some(world_data.get_team_data(TeamColor::Blue, blue_gc_override))
         } else {
             None
         };
         let yellow_team_data = if self.team_controllers.yellow_team.is_some() {
-            Some(world_data.get_team_data(TeamColor::Yellow, yellow_ignore_gc))
+            Some(world_data.get_team_data(TeamColor::Yellow, yellow_gc_override))
         } else {
             None
         };
@@ -1441,8 +1441,8 @@ impl Executor {
         self.team_controllers.update(
             &world_data,
             manual_override,
-            blue_ignore_gc,
-            yellow_ignore_gc,
+            blue_gc_override,
+            yellow_gc_override,
         );
 
         // Feed this tick's velocity setpoints to the tracker for command

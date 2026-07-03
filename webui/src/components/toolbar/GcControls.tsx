@@ -1,5 +1,5 @@
 import React from "react";
-import { Hand, Play, RectangleVertical, ShieldOff } from "lucide-react";
+import { Hand, OctagonX, Play, RectangleVertical, ShieldOff } from "lucide-react";
 
 import {
   useExecutorSettings,
@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils";
  *    team play as if in free play regardless of the actual GC state. Continue
  *    resumes the right way — a prepared kick-off/penalty needs a normal start,
  *    anything else just force-starts open play.
+ *  - Override-halt per-team toggles (sim + live) — force a team into HALT
+ *    regardless of the GC, stopping all its robots. Takes precedence over
+ *    ignore-GC.
  */
 const GcControls: React.FC = () => {
   const { data: backendState } = useStatus();
@@ -62,6 +65,30 @@ const GcControls: React.FC = () => {
             yellow_team_settings: {
               ...settings.yellow_team_settings,
               ignore_gc: value,
+            },
+          },
+    );
+  };
+
+  const blueHalt = settings?.blue_team_settings.override_halt ?? false;
+  const yellowHalt = settings?.yellow_team_settings.override_halt ?? false;
+
+  const toggleHalt = (team: "blue" | "yellow", value: boolean) => {
+    if (!settings) return;
+    updateSettings(
+      team === "blue"
+        ? {
+            ...settings,
+            blue_team_settings: {
+              ...settings.blue_team_settings,
+              override_halt: value,
+            },
+          }
+        : {
+            ...settings,
+            yellow_team_settings: {
+              ...settings.yellow_team_settings,
+              override_halt: value,
             },
           },
     );
@@ -198,6 +225,61 @@ const GcControls: React.FC = () => {
             )}
           >
             <ShieldOff className="w-3 h-3" />Y
+          </button>
+        </SimpleTooltip>
+      </div>
+
+      {/* Override-halt per-team override (sim + live): when on, the team is
+          forced to HALT regardless of GC state — stops all its robots. Takes
+          precedence over ignore-GC. */}
+      <div className="inline-flex items-center border border-border-muted h-7 bg-bg-surface">
+        <SimpleTooltip
+          title={
+            blueHalt
+              ? "Blue is force-HALTED (ignoring GC) — click to release"
+              : "Force-halt blue (ignore GC, stop all its robots)"
+          }
+          className="h-full"
+        >
+          <button
+            onClick={() => toggleHalt("blue", !blueHalt)}
+            disabled={!settings}
+            className={cn(
+              "h-full px-2 flex items-center gap-1 text-[10px] font-semibold tracking-wide transition-colors",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              blueHalt
+                ? "bg-accent-red/20 text-accent-red"
+                : "text-text-muted hover:text-accent-red hover:bg-accent-red/10",
+            )}
+          >
+            <OctagonX className="w-3 h-3" />B
+          </button>
+        </SimpleTooltip>
+
+        <div className="w-px h-full bg-border-subtle" />
+
+        <SimpleTooltip
+          title={
+            yellowHalt
+              ? "Yellow is force-HALTED (ignoring GC) — click to release"
+              : "Force-halt yellow (ignore GC, stop all its robots)"
+          }
+          className="h-full"
+        >
+          <button
+            onClick={() => toggleHalt("yellow", !yellowHalt)}
+            disabled={!settings}
+            className={cn(
+              "h-full px-2 flex items-center gap-1 text-[10px] font-semibold tracking-wide transition-colors",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan focus-visible:z-10",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              yellowHalt
+                ? "bg-accent-red/20 text-accent-red"
+                : "text-text-muted hover:text-accent-red hover:bg-accent-red/10",
+            )}
+          >
+            <OctagonX className="w-3 h-3" />Y
           </button>
         </SimpleTooltip>
       </div>

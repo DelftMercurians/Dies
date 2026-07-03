@@ -177,24 +177,49 @@ pub const SHOT_KEEPER_BIAS: f64 = 0.35;
 /// angular gate scales with distance for free: ~0.10 rad is a ~130mm gap at 1.3m
 /// but needs a ~400mm gap at 4m.
 pub const SHOT_MIN_ANGLE: f64 = 0.10;
-// ── Restart kicker direct shot (Div-B) ──────────────────────────────────────
-// The restart kicker (our kickoff / free kick) historically only *released* the
-// ball forward — it never shot, even from a free kick at the opponent box. Against
-// lower-tier keepers a direct restart shot is a high-EV play with a benign failure
-// distribution: a wall deflection out is our free kick, a miss wide is a harmless
-// goal-line restart for them, and only a clean save loses anything. So the gate is
-// deliberately GENEROUS — far below [`SHOT_MIN_ANGLE`]: from the kickoff spot
-// (4500mm) the whole 1m mouth subtends only ~0.21 rad and even a lone centred
-// keeper leaves just ~0.04 rad open, so the normal gate could never fire there.
-// A window survives keeper + one wall bot almost always; only a staged 2+ bot wall
-// closes the mouth completely — exactly the "competent wall" we defer to.
-/// Minimum open-window width (radians) for the restart kicker's direct shot.
-/// ~0.015 rad ≈ a 70mm sliver from the kickoff spot.
-pub const KICKER_SHOT_MIN_ANGLE: f64 = 0.015;
+// ── Restart kicker aiming (kickoff / free kick) ──────────────────────────────
+// A restart kicker (our kickoff / free kick) always RELEASES with a strike-
+// through (a reflex `Strike`, never a hold-and-aim — that would double-touch).
+// It shoots directly only when the goal is *actually* clear, held to the same
+// standard as an open-play shot ([`SHOT_MIN_ANGLE`]). The old Div-B "benign
+// sliver" gamble — shoot at a ~70mm window from the kickoff spot and hope for a
+// wall deflection — is retired: with no clear shot a kickoff instead deflects off
+// a distant side opponent (below) and a free kick makes a clean forward advance,
+// both strictly better than a hopeful sliver that usually just concedes possession.
+/// Minimum open-window width (radians) for the restart kicker's direct shot — the
+/// goal must be genuinely clear, the same gate as an open-play shot.
+pub const KICKER_SHOT_MIN_ANGLE: f64 = SHOT_MIN_ANGLE;
 /// Maximum distance to the opponent goal for the restart shot — a coarse reach
 /// gate so we don't strike at goal from our own half (the ball would arrive dead).
 /// Covers the kickoff spot (4500mm) with margin.
 pub const KICKER_SHOT_RANGE: f64 = 5600.0;
+
+// ── Never fire a restart into a close opponent ───────────────────────────────
+// A universal veto on any restart aim (direct shot / kickoff deflection / forward
+// advance) whose ray drives the ball almost immediately into a nearby opponent —
+// worst of all in our own half, where a blocked restart hands them a shot on our
+// goal. Reach and corridor are widened when the ball is in our half.
+/// An opponent within this range of the ball, ahead on the aim ray, vetoes the aim.
+pub const CLOSE_OPP_VETO_DIST: f64 = 1200.0;
+/// Perpendicular half-width (mm) of the veto corridor around the aim ray.
+pub const CLOSE_OPP_VETO_CORRIDOR: f64 = 400.0;
+/// Multiplier on the veto reach and corridor when the ball is in our own half.
+pub const CLOSE_OPP_VETO_OWN_HALF_MUL: f64 = 1.5;
+
+// ── Kickoff deflection ───────────────────────────────────────────────────────
+// With no clear shot from the kickoff spot (the mouth is never clear from centre),
+// aim at a distant opponent off to the side: the ball deflects off it and most
+// likely runs out of play, and an opponent last-touch gives us the restart deep in
+// their half. No deflection physics is modelled — we simply aim at a suitable far,
+// wide opponent, and the close-opponent veto keeps the lane to it clean.
+/// A deflection target must be at least this far downfield (team-relative x) —
+/// keeps the deflection in their half, never bounced back toward our goal.
+pub const KICKOFF_DEFLECT_MIN_X: f64 = 500.0;
+/// A deflection target must be at least this far from the ball ("distant").
+pub const KICKOFF_DEFLECT_MIN_DIST: f64 = 2000.0;
+/// A deflection target must be at least this far off centre ("to the side"), so
+/// the deflection runs toward a touchline rather than back into central play.
+pub const KICKOFF_DEFLECT_MIN_LATERAL: f64 = 800.0;
 /// A kick-ahead target teammate must be at least this far forward of the carrier.
 pub const SUPPORTER_FWD_MARGIN: f64 = 400.0;
 /// Corridor width for the carrier→supporter lane-openness check.
@@ -772,6 +797,13 @@ pub const CLEAR_PANIC_T: f64 = 6.0;
 /// a blocked sideways ray deflects laterally, and a clean sideways exit over
 /// the touch line is only a throw-in (no foul counter, never aimless).
 pub const CLEAR_PANIC_SIDE_W: f64 = 0.3;
+/// Hard "never clear into a nearby opponent" veto for the keeper — the strongest
+/// application of the close-opponent rule (a rebound off an opponent at the
+/// keeper's feet goes into our OWN goal). Wider than the restart veto
+/// ([`CLOSE_OPP_VETO_DIST`] / [`CLOSE_OPP_VETO_CORRIDOR`]): a vetoed ray makes the
+/// keeper hold (or, in panic, pick any lane that misses the opponent).
+pub const CLEAR_VETO_DIST: f64 = 1500.0;
+pub const CLEAR_VETO_CORRIDOR: f64 = 550.0;
 /// Bonus for a clear ray exiting through an *open* opponent goal-mouth window
 /// (an untouched clear scores). Sized against openness ∈ [0,1] and the panic
 /// side term so an open goal-bound ray always outranks an open sideways one.
@@ -853,11 +885,11 @@ impl Default for StanceConfig {
             forward_reserve: 2.0,
             // Keep the dedicated rest defender at every count (gate effectively
             // off): the single biggest fix against being countered short-handed.
-            balance_min_bots: 1.0,
+            balance_min_bots: 0.0,
             // Div-B conservative: soften the forward push further (peer-level
             // default was 0.9) — fewer bodies committed, the permanent outlet
             // (un-scaled by this) carries the forward presence instead.
-            aggression: 0.7,
+            aggression: 0.9,
             sec_per_importance: SEC_PER_IMPORTANCE,
             recalc_cooldown: RECALC_COOLDOWN,
             recalc_bg_period: RECALC_BG_PERIOD,

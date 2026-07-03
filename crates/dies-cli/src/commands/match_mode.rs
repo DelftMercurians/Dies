@@ -90,12 +90,15 @@ fn force_safe_settings(settings_file: &PathBuf) -> Result<()> {
     settings.tracker_settings.field_mask = FieldMask::default();
     settings.blue_team_settings.ignore_gc = false;
     settings.yellow_team_settings.ignore_gc = false;
+    settings.blue_team_settings.override_halt = false;
+    settings.yellow_team_settings.override_halt = false;
     let json =
         serde_json::to_string_pretty(&settings).context("Failed to serialize executor settings")?;
     std::fs::write(settings_file, json)
         .with_context(|| format!("Failed to write {}", settings_file.display()))?;
     println!("✓ field mask cleared (full field)");
     println!("✓ GC ignore off (both teams)");
+    println!("✓ override-halt off (both teams)");
     Ok(())
 }
 

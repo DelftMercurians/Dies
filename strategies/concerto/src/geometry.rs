@@ -459,6 +459,11 @@ const CLEAR_PANIC_FAN_LO: f64 = 30.0 * std::f64::consts::PI / 180.0;
 const CLEAR_PANIC_FAN_HI: f64 = 80.0 * std::f64::consts::PI / 180.0;
 const CLEAR_PANIC_FAN_STEP: f64 = 10.0 * std::f64::consts::PI / 180.0;
 
+/// Score sink for a clear ray that fires into a nearby opponent — larger than any
+/// clean ray's score, so a vetoed ray is chosen only when every candidate is
+/// vetoed (a forced panic clear with the keeper fully surrounded).
+const CLEAR_VETO_PENALTY: f64 = 1.0e6;
+
 /// Pick the keeper's clear ray by scoring candidates against ALL robots — the
 /// opponents *and* our own field players (`own_others`, keeper excluded). The
 /// own-robot term is the point of this scorer: the old fixed-target clear was
@@ -494,6 +499,8 @@ pub fn best_clear_ray(
     mouth_inset: f64,
     panic: bool,
     panic_side_w: f64,
+    veto_reach: f64,
+    veto_corridor: f64,
 ) -> Option<ClearRay> {
     // Open goal-mouth windows (their-keeper shadow inflated, as for a shot).
     let gaps = goal_free_gaps(
@@ -579,8 +586,20 @@ pub fn best_clear_ray(
     candidates
         .into_iter()
         .map(|target| {
-            let openness = near_openness(target);
-            (target, openness, score(target, openness))
+            // Hard "never clear into a nearby opponent" veto — applied hardest at
+            // the keeper: a ball fired into an opponent at our keeper's feet
+            // rebounds toward our OWN goal, the worst outcome on the field. A
+            // vetoed ray reports zero near-openness (so a non-panic keeper HOLDS
+            // rather than fire it) and sinks below every clean ray (so even a
+            // forced panic clear takes any lane that misses the opponent, e.g. a
+            // sideways fan ray, and only fires into one when fully surrounded).
+            let vetoed = fires_into_close_opponent(ball, target, opponents, veto_reach, veto_corridor);
+            let openness = if vetoed { 0.0 } else { near_openness(target) };
+            let mut s = score(target, openness);
+            if vetoed {
+                s -= CLEAR_VETO_PENALTY;
+            }
+            (target, openness, s)
         })
         .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
         .map(|(target, openness, _)| ClearRay { target, openness })
@@ -918,6 +937,35 @@ fn lane_openness_pts_iter(
     }
     // 0 when on the line, 1 when at/over the corridor edge.
     smoothstep(0.0, corridor, min_perp)
+}
+
+/// True if aiming from `ball` toward `target` would drive the ball almost
+/// immediately into an opponent: one within `reach` of the ball, ahead along the
+/// aim ray, and within `corridor` perpendicular of it. The universal restart-aim
+/// veto — a restart must never be fired straight into a nearby presser (worst in
+/// our own half, where the blocked ball becomes their shot on our goal).
+pub fn fires_into_close_opponent(
+    ball: Vector2,
+    target: Vector2,
+    opponents: &[PlayerState],
+    reach: f64,
+    corridor: f64,
+) -> bool {
+    let dir = target - ball;
+    let len = dir.norm();
+    if len < 1e-6 {
+        return false;
+    }
+    let dir = dir / len;
+    opponents.iter().any(|o| {
+        let to_o = o.position - ball;
+        let along = to_o.dot(&dir);
+        if along <= 0.0 || along > reach {
+            return false; // behind the ball, or beyond the "close" reach
+        }
+        let perp = (to_o.x * dir.y - to_o.y * dir.x).abs();
+        perp < corridor
+    })
 }
 
 /// Push `p` laterally out of the stadium of half-width `half_width` around the
@@ -1600,7 +1648,7 @@ mod tests {
     ) -> ClearRay {
         best_clear_ray(
             ball, opponents, own_others, 4500.0, 1000.0, None, 110.0, 280.0, 21.5, 300.0, 3000.0,
-            0.5, 150.0, panic, 0.3,
+            0.5, 150.0, panic, 0.3, 1500.0, 550.0,
         )
         .expect("clear geometry from our box is never degenerate")
     }
@@ -1680,6 +1728,52 @@ mod tests {
         assert!(
             r.openness > 0.9,
             "a 6m-downfield blocker must not gate the fire: {}",
+            r.openness
+        );
+    }
+
+    #[test]
+    fn clear_ray_vetoes_firing_into_nearby_opponent() {
+        // Hardest close-opponent rule: an opponent right in front of the keeper's
+        // ball sits in every goal-bound mouth-cone ray (the cone is only ±~2° from
+        // our box). Firing there rebounds into our OWN goal — so the veto collapses
+        // near-openness and the keeper HOLDS (not-panic) rather than fire.
+        let ball = Vector2::new(-4000.0, 0.0);
+        let close_opp = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(-3400.0, 0.0), // 600mm dead ahead, on the goal ray
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let r = clear_ray(ball, &[], std::slice::from_ref(&close_opp), false);
+        assert!(
+            r.openness < 0.01,
+            "a nearby opponent on the ray must veto the fire (hold): {}",
+            r.openness
+        );
+    }
+
+    #[test]
+    fn clear_ray_panic_steers_around_nearby_opponent() {
+        // Same nearby opponent, but the held-ball deadline is up: the keeper MUST
+        // clear. It must still pick a lane that misses the opponent — a strongly
+        // sideways fan ray whose near lane is clean — never fire into its feet.
+        let ball = Vector2::new(-4000.0, 0.0);
+        let close_opp = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(-3400.0, 0.0),
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let r = clear_ray(ball, &[], std::slice::from_ref(&close_opp), true);
+        let dir = (r.target - ball).normalize();
+        assert!(
+            dir.y.abs() > 0.7,
+            "panic clear must steer sideways around the opponent: dir {dir:?}"
+        );
+        assert!(
+            r.openness > 0.9,
+            "the chosen sideways lane must be clean: {}",
             r.openness
         );
     }

@@ -264,13 +264,49 @@ impl PlayerGlobalMoveCmd {
     }
 }
 
+/// Setpoint lead used to emulate a raw spin over the radio (rad). Large enough
+/// that the firmware's heading P-controller saturates its rate cap (so the spin
+/// runs at the commanded rate, set via `max_yaw_rate`), comfortably below π so
+/// the shortest-path direction is never ambiguous.
+const SPIN_LEAD: f64 = 1.5;
+
 impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
     fn from(val: PlayerGlobalMoveCmd) -> Self {
+        // The radio global command has NO field for a raw angular velocity — the
+        // firmware only takes a heading setpoint plus a yaw-rate cap. A spin
+        // (`w` with heading released to NaN, e.g. the snatch peel) is emulated
+        // here, at the exact boundary where `w` would otherwise be dropped: hold
+        // a setpoint `SPIN_LEAD` ahead of the *measured* yaw in the spin
+        // direction and cap the rate at |w|, so the heading controller chases a
+        // receding setpoint at the commanded rate. Re-anchoring on the measured
+        // yaw every frame means the lead never winds up — a physically stalled
+        // robot keeps a constant pull instead of accumulating error. The
+        // simulator is unaffected: it consumes `PlayerGlobalMoveCmd` directly
+        // and applies `w` itself. `w` is wire-convention: clockwise-positive.
+        let spin_ccw = -val.w;
+        let spinning = val.heading_setpoint.is_nan() && spin_ccw != 0.0;
+        let (heading_setpoint, max_yaw_rate, rotation_direction) = if spinning {
+            (
+                Angle::from_radians(val.last_heading + SPIN_LEAD.copysign(spin_ccw)).radians(),
+                spin_ccw.abs(),
+                if spin_ccw > 0.0 {
+                    RotationDirection::CounterClockwise
+                } else {
+                    RotationDirection::Clockwise
+                },
+            )
+        } else {
+            (
+                val.heading_setpoint,
+                val.max_yaw_rate,
+                val.preferred_rotation_direction,
+            )
+        };
         glue::Radio_GlobalCommand {
             global_speed_x: val.global_x as f32,
             global_speed_y: val.global_y as f32,
             heading_last_measurement: val.last_heading as f32,
-            heading_setpoint: val.heading_setpoint as f32,
+            heading_setpoint: heading_setpoint as f32,
             gen_command: glue::Radio_GenericCommand {
                 dribbler_speed_i: val.dribble_speed as i16,
                 kick_time_i: kick_time_for(val.id, val.kick_speed),
@@ -278,8 +314,8 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
                 smart_kick_couter: val.kick_counter,
                 robot_command: val.robot_cmd.into(),
             },
-            max_yaw_rate: (val.max_yaw_rate * 10.0) as u16,
-            preferred_rotation_direction: val.preferred_rotation_direction.as_i8(),
+            max_yaw_rate: (max_yaw_rate * 10.0) as u16,
+            preferred_rotation_direction: rotation_direction.as_i8(),
             _pad: 0,
         }
     }
@@ -752,5 +788,51 @@ mod tests {
         assert_eq!(none, glue::Radio_RobotCommand::NONE_MAGNET);
         assert_eq!(arm, glue::Radio_RobotCommand::ARM_COUNTER_KICK_MAGNET);
         assert_eq!(reflex, glue::Radio_RobotCommand::ARM_REFLEX_KICK_MAGNET);
+    }
+
+    /// A spin (heading released to NaN + nonzero `w`) must be emulated on the
+    /// wire as a rotating heading-setpoint lead — the radio global command has
+    /// no angular-velocity field, so without this the spin silently does
+    /// nothing on real robots (the snatch-peel bug, 2026-07-03).
+    #[test]
+    fn spin_is_emulated_as_heading_lead_on_the_wire() {
+        let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(1));
+        cmd.last_heading = 0.5;
+        cmd.w = -1.3; // wire convention is CW-positive → this is a CCW spin
+        let wire: glue::Radio_GlobalCommand = cmd.into();
+        // Setpoint leads the measured yaw by SPIN_LEAD in the CCW direction.
+        assert!((wire.heading_setpoint - (0.5 + SPIN_LEAD) as f32).abs() < 1e-6);
+        // Rate cap carries the commanded spin rate (wire scale ×10).
+        assert_eq!(wire.max_yaw_rate, 13);
+        assert_eq!(wire.preferred_rotation_direction, 1); // CCW
+
+        // Opposite spin leads the other way, wrapped into (-π, π].
+        let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(1));
+        cmd.last_heading = -3.0;
+        cmd.w = 2.0; // CW
+        let wire: glue::Radio_GlobalCommand = cmd.into();
+        let expected = Angle::from_radians(-3.0 - SPIN_LEAD).radians() as f32;
+        assert!((wire.heading_setpoint - expected).abs() < 1e-6);
+        assert_eq!(wire.preferred_rotation_direction, -1); // CW
+    }
+
+    /// No spin commanded: NaN heading (no heading command) passes through
+    /// untouched, as does an explicit setpoint — the emulation must not touch
+    /// the normal paths.
+    #[test]
+    fn non_spin_commands_pass_through_unchanged() {
+        // Idle: NaN heading, w = 0 → NaN stays NaN ("no heading command").
+        let cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(1));
+        let wire: glue::Radio_GlobalCommand = cmd.into();
+        assert!(wire.heading_setpoint.is_nan());
+
+        // Normal heading control: setpoint + PID `w` → setpoint wins, untouched.
+        let mut cmd = PlayerGlobalMoveCmd::zero(PlayerId::new(1));
+        cmd.heading_setpoint = 1.0;
+        cmd.w = 0.7; // yaw PID output rides along; must not trigger emulation
+        cmd.max_yaw_rate = 5.0;
+        let wire: glue::Radio_GlobalCommand = cmd.into();
+        assert!((wire.heading_setpoint - 1.0).abs() < 1e-6);
+        assert_eq!(wire.max_yaw_rate, 50);
     }
 }

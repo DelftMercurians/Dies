@@ -662,9 +662,9 @@ impl WorldData {
         }
     }
 
-    pub fn get_team_data(&self, color: TeamColor, ignore_gc: bool) -> TeamData {
+    pub fn get_team_data(&self, color: TeamColor, gc_override: crate::GcOverride) -> TeamData {
         self.side_assignment
-            .transform_to_team_coords(color, self, ignore_gc)
+            .transform_to_team_coords(color, self, gc_override)
     }
 }
 
@@ -1305,7 +1305,7 @@ mod tests {
     fn sidelined_robot_forks_out_of_own_players() {
         let mut wd = mock_world_data();
         wd.blue_team[0].sideline = Some(SidelineReason::RadioLost);
-        let td = wd.get_team_data(TeamColor::Blue, false);
+        let td = wd.get_team_data(TeamColor::Blue, crate::GcOverride::None);
         // Radio-lost robot leaves the roster but stays present as sidelined.
         assert!(td.own_players.is_empty());
         assert_eq!(td.sidelined_players.len(), 1);
