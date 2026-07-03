@@ -292,7 +292,7 @@ impl BasestationHandle {
                 {
                     // Pull in any pending packets; a read error means the link
                     // dropped (USB unplug, base station power-cycle, ...).
-                    let mut connected = bs.read_and_parse(Some(&mut debug)).is_ok();
+                    let mut connected = bs.read_and_parse(None).is_ok();
 
                     if !connected {
                         // Link is (or has just gone) down. Instead of killing the
