@@ -298,7 +298,7 @@ pub const SHADOW_MAX: usize = 3;
 /// wall coverage (not a deeper central body) is what shrinks the open angle.
 pub const SHADOW_STAGGER: f64 = 0.8;
 /// How far in front of our goal the shadow line sits.
-pub const SHADOW_STANDOFF: f64 = 1500.0;
+pub const SHADOW_STANDOFF: f64 = 1550.0;
 /// Lateral spacing between adjacent shadows in the goal-coverage wall. Kept just
 /// under a robot width (~180mm) so neighbours overlap and leave no central gap —
 /// the wall is built centre-out on the direct ball→goal line, so an even count
@@ -673,7 +673,7 @@ pub const CLEAR_EXIT_MARGIN: f64 = 20.0;
 /// opponent a free kick back at OUR kick position (2 of today's 11 aimless
 /// resets were keeper clears). Inside the mouth (goal half-width 500) but off
 /// centre, so an untouched clear scores or forces the keeper to play it.
-pub const CLEAR_AIM_Y: f64 = 250.0;
+pub const CLEAR_AIM_Y: f64 = 2500.0;
 
 // ── Planner: in-field clamping ───────────────────────────────────────────────
 /// Margin (mm) by which a kick-ahead pass/cross lead target is kept inside the

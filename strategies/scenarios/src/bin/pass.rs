@@ -46,8 +46,8 @@ fn release(passer: PlayerId) -> Step {
 
 fn main() {
     run_scenario(|| {
-        let a = PlayerId::new(4);
-        let b = PlayerId::new(0);
+        let a = PlayerId::new(3);
+        let b = PlayerId::new(2);
         Scenario::looping(move || {
             vec![
                 release(a),
