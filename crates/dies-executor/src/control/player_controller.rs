@@ -290,9 +290,14 @@ impl PlayerController {
         if let Some(fan_speed) = input.fan_speed {
             self.fan_speed = fan_speed;
         }
-        if let Some(kick_speed) = input.kick_speed {
-            self.kick_speed = kick_speed;
-        }
+        // `kick_speed` is per-command, not sticky: it reverts to the default
+        // sentinel (`0.0`, which the radio layer maps to `DEFAULT_KICK_SPEED`) on
+        // any frame the active skill doesn't request a specific speed. This keeps
+        // one skill's kick strength from leaking into the next: every kick-arming
+        // skill re-asserts `kick_speed` each frame the kicker is held, so nothing
+        // relies on inherited state, and a plain (non-setting) skill kicks at the
+        // default rather than whatever the previous skill left behind.
+        self.kick_speed = input.kick_speed.unwrap_or(0.0);
 
         if state.handicaps.len() > 0 {
             player_context.debug_string(
