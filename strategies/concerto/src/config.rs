@@ -223,6 +223,12 @@ pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
 /// while keeping the ball (the keep-possession escape). Short — it only needs to
 /// move the opponent out from between us and goal, after which we replan normally.
 pub const ESCAPE_STEP: f64 = 300.0;
+/// |y| of the pressed contest-escape clear's aim point on the opponent goal
+/// line, on the ball's flank side — inside the mouth (goal half-width 500) but
+/// off centre, so a full-length roll-out is a goal or a keeper touch, never a
+/// Div-B aimless-kick reset. (The keeper's own clear no longer uses a fixed
+/// aim point — see `geometry::best_clear_ray`.)
+pub const ESCAPE_CLEAR_AIM_Y: f64 = 250.0;
 
 // ── Advancement hoof (ray-based, travel-calibration-free, goal-mouth cone) ───
 // The hoof scores *directions*, not landing points, so no roll-distance model
@@ -506,32 +512,45 @@ pub const OUTLET_Y_FRAC: f64 = 0.55;
 /// discounted Mark (≤4, deliberate: forward presence over man-marking) so that
 /// body holds high instead of collapsing all the way home.
 pub const IMP_OUTLET: f64 = 5.0;
-// ── Wall reflex strike ────────────────────────────────────────────────────────
-// A ball rolled/kicked into our wall used to elect an *outside* capturer that
-// stern-chased the ball into the wall corridor — crowding it, splitting the wall
-// (via contest suppression) or stalling the game. Instead, the wall robot the
-// ball is arriving at performs a one-touch reflex strike straight forward
-// through the free ball (`Strike { acquire_first: false }` — never holds it),
-// then slots back into its wall position. While it strikes, its shadow slot is
-// held by its own body (see SHADOW_HOLD_*) so no backfill body is pulled across
-// the field, and the open capture role is suppressed so nobody chases the ball
-// into the wall.
-/// Master switch for the wall reflex strike. `false` restores the old behaviour
-/// (open capture election for every loose ball) exactly.
-pub const WALL_STRIKE_ENABLED: bool = true;
-/// Minimum ball speed (mm/s) to arm a wall strike — below this the ball is not
-/// an incoming delivery and normal capture handles it.
-pub const WALL_STRIKE_MIN_SPEED: f64 = 500.0;
-/// Hysteresis exit: once engaged, a ball still moving above this keeps the
-/// approach-geometry validity checks active; at/below it the ball has (nearly)
-/// died and the striker finishes the poke-clear if the ball rests within reach.
-pub const WALL_STRIKE_EXIT_SPEED: f64 = 300.0;
-/// Max perpendicular distance (mm) from a wall robot to the ball's line of
-/// travel for that robot to be the striker — it only ever steps, never chases.
-pub const WALL_STRIKE_REACH: f64 = 700.0;
-/// Max seconds until the ball's closest approach for a strike to arm; beyond
-/// this the ball is too far out and interception/capture logic applies.
-pub const WALL_STRIKE_MAX_TTC: f64 = 1.5;
+// ── Wall clear ──────────────────────────────────────────────────────────────
+// A ball loose in front of our wall (the "apron" — near our goal, outside the
+// keeper's box) is the wall's to deal with, and the wall alone: while the ball
+// is in the apron the open capture role is suppressed *unconditionally* so no
+// outside capturer stern-chases it into the corridor (crowding the wall,
+// splitting it, or stalling the game). A *fast* ball is blocked by the standing
+// wall — nobody steps out. A *slow / settled* ball is cleared: the wall robot
+// nearest it (by redirect_time) steps out and hoofs it straight forward
+// (`Strike { acquire_first: false }` — never holds it), but only when we win the
+// race to the ball against the closest opponent (else we hold and defend the
+// wall — losing the race would open a gap AND hand them a dead ball). While it
+// clears, its shadow slot is held by its own body (see SHADOW_HOLD_*) so no
+// backfill body is pulled across the field.
+/// Master switch for the wall clear. `false` restores pure open-capture
+/// behaviour (every loose ball, including in the apron, goes to the capturer).
+pub const WALL_CLEAR_ENABLED: bool = true;
+/// Max ball speed (mm/s) to elect a clearer — at/below this the ball is settled
+/// or gently rolling and worth stepping out for; a faster ball is a delivery/shot
+/// and is blocked by the standing wall, never chased out of formation.
+pub const WALL_CLEAR_MAX_SPEED: f64 = 500.0;
+/// Race slack (seconds of redirect_time): commit to the clear iff the nearest
+/// waller's time-to-ball ≤ closest opponent's + this. 0 = go on a coin-flip
+/// (harass); negative = only when clearly ahead; positive = more aggressive.
+/// Tune on the real field.
+pub const WALL_CLEAR_MARGIN: f64 = 0.0;
+/// Hysteresis (mirror of CAPTURE_COMMIT): once committed, abort only if the
+/// opponent is winning the race by more than this, so a marginally-closer
+/// opponent mid-approach doesn't flicker the wall gap open.
+pub const WALL_CLEAR_COMMIT: f64 = 0.4;
+/// Apron depth (mm): the ball is in the wall's zone when it is within this of the
+/// own goal line (`ball.x < -field_length/2 + this`). Covers the wall standoff
+/// (SHADOW_STANDOFF) plus a reach margin.
+pub const WALL_CLEAR_APRON_DEPTH: f64 = 2600.0;
+/// Apron lateral half-width (mm): balls wider than this (near our backline
+/// corners) are out of the wall's zone. ≈ penalty_area half-width + a margin.
+pub const WALL_CLEAR_APRON_HALF_WIDTH: f64 = 1600.0;
+/// Max distance (mm) from the clearer to the ball for an armed clear to stay
+/// valid — a grown reach so approach jitter doesn't drop the episode.
+pub const WALL_CLEAR_REACH: f64 = 900.0;
 /// Slot-hold: a reserved plan robot (e.g. the wall striker working at its own
 /// post, or a carrier standing in the wall) fades the importance of a Shadow
 /// slot it is physically covering — `imp *= smoothstep(NEAR, FAR, dist)` — so
@@ -666,14 +685,61 @@ pub const CLEAR_BALL_MARGIN: f64 = 50.0;
 /// goal. The side/goal-line edges are unconstrained so the keeper can reach a
 /// ball in the box corners.
 pub const CLEAR_EXIT_MARGIN: f64 = 20.0;
-/// |y| of the clear aim point ON THE OPPONENT GOAL LINE, taken on the ball's
-/// flank side. Clears are full-power strikes that roll the length of the field,
-/// so under the Div-B aimless-kick rule they must be goal-bound like the hoof:
-/// a wing clear through midfield that rolls out wide of their goal hands the
-/// opponent a free kick back at OUR kick position (2 of today's 11 aimless
-/// resets were keeper clears). Inside the mouth (goal half-width 500) but off
-/// centre, so an untouched clear scores or forces the keeper to play it.
-pub const CLEAR_AIM_Y: f64 = 2500.0;
+// The clear is aimed by scoring rays (see `geometry::best_clear_ray`), not a
+// fixed target: candidates in the opponent GOAL-MOUTH cone (Div-B aimless-safe,
+// same rationale as the hoof), with openness measured against ALL robots — own
+// wall included, which is what the old fixed-target clear kicked straight into.
+// The wall simultaneously vacates a corridor (see `CLEAR_CORRIDOR_HALF_WIDTH`),
+// the keeper holds a pre-strike pose until a ray is actually open, and a panic
+// deadline tied to the Keeper-Held-Ball rule guarantees the ball always leaves.
+/// Half-width (mm) of the corridor (ball → opponent goal centre) the wall
+/// vacates while the keeper clears. Must cover the keeper's whole goal-bound
+/// mouth cone at the wall's standoff (~±90mm at 1.7m) plus robot + ball radii
+/// and execution margin, so any mouth-bound ray clears the parted wall.
+pub const CLEAR_CORRIDOR_HALF_WIDTH: f64 = 450.0;
+/// Minimum lane openness ([0,1], see `geometry::lane_openness`) of the chosen
+/// ray for the keeper to commit to the strike; below it the keeper holds its
+/// pre-strike pose and waits for the wall to part.
+pub const CLEAR_FIRE_OPENNESS: f64 = 0.7;
+/// Hysteresis on the fire gate: once striking, keep striking unless openness
+/// falls this far below [`CLEAR_FIRE_OPENNESS`] (a wall robot transiting the
+/// corridor must not flip the keeper back into hold mid-approach).
+pub const CLEAR_FIRE_HYSTERESIS: f64 = 0.2;
+/// Corridor width (mm) for the clear-ray openness term. Tighter than the hoof's
+/// (600): the clear only needs the ball to physically miss bodies, and the
+/// corridor the wall vacates is itself only 450mm each side.
+pub const CLEAR_RAY_CORRIDOR: f64 = 300.0;
+/// Range (mm from the ball) over which clear-ray openness is measured. Only
+/// near blockers matter to the fire gate: a robot well downfield on the ray is
+/// a rule-safe en-route touch (defuses aimless), not a bounce-back-at-our-goal
+/// risk, and must not keep the keeper holding. Sized to cover our half's
+/// congestion around the box (wall + pressing opponents).
+pub const CLEAR_OPEN_RANGE: f64 = 3000.0;
+/// Ball-in-our-box time (s, world clock) after which the keeper stops waiting
+/// for a clean ray and blasts the least-bad one. The Keeper-Held-Ball rule
+/// (Div B) is a foul-counter foul at 10s of ball-in-defense-area; 6s leaves
+/// ample margin for the approach + strike + ball exit. An aimless/throw-in
+/// outcome (no foul counter) always beats the held-ball foul.
+pub const CLEAR_PANIC_T: f64 = 6.0;
+/// Panic-mode bonus per unit of |ray dir y| — prefer sideways shots when
+/// nothing is clean: a blocked central ray ricochets back toward our goal,
+/// a blocked sideways ray deflects laterally, and a clean sideways exit over
+/// the touch line is only a throw-in (no foul counter, never aimless).
+pub const CLEAR_PANIC_SIDE_W: f64 = 0.3;
+/// Bonus for a clear ray exiting through an *open* opponent goal-mouth window
+/// (an untouched clear scores). Sized against openness ∈ [0,1] and the panic
+/// side term so an open goal-bound ray always outranks an open sideways one.
+pub const CLEAR_GOAL_W: f64 = 0.5;
+/// How far behind the ball (mm, along the chosen ray) the keeper holds its
+/// pre-strike pose while waiting for the corridor to open.
+pub const CLEAR_HOLD_STANDOFF: f64 = 250.0;
+/// Radius (mm) of the keeper's work disc around the ball that the wall also
+/// vacates while clearing. The forward corridor only frees the strike ray; the
+/// keeper must additionally swing *around* the ball to line up (acquire side is
+/// `Fastest`), and for a box-corner ball the wall shadows bunch right at the
+/// keepout line next to it — observed in self-play as the keeper hovering
+/// ~180mm short of a corner ball for 4s, boxed in by its own teammates.
+pub const CLEAR_BALL_CLEARANCE: f64 = 700.0;
 
 // ── Planner: in-field clamping ───────────────────────────────────────────────
 /// Margin (mm) by which a kick-ahead pass/cross lead target is kept inside the

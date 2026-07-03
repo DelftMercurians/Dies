@@ -422,6 +422,152 @@ pub fn hoof_ray_target(
         .map(|(y, _)| Vector2::new(opp_goal_x, y))
 }
 
+/// A scored keeper-clear ray: the point to strike through and how open the
+/// near portion of its lane is (the caller's hold-vs-fire gate).
+#[derive(Debug, Clone, Copy)]
+pub struct ClearRay {
+    pub target: Vector2,
+    pub openness: f64,
+}
+
+/// Length of a panic-fan ray's aim target past the ball. Only the heading
+/// matters to the strike; this just has to be long enough to be directionally
+/// stable.
+const CLEAR_PANIC_RAY_LEN: f64 = 5000.0;
+
+/// Panic-fan geometry: rays swept from this angle off straight-downfield (+x)
+/// out to nearly lateral, on both sides, in `CLEAR_PANIC_FAN_STEP` increments.
+const CLEAR_PANIC_FAN_LO: f64 = 30.0 * std::f64::consts::PI / 180.0;
+const CLEAR_PANIC_FAN_HI: f64 = 80.0 * std::f64::consts::PI / 180.0;
+const CLEAR_PANIC_FAN_STEP: f64 = 10.0 * std::f64::consts::PI / 180.0;
+
+/// Pick the keeper's clear ray by scoring candidates against ALL robots — the
+/// opponents *and* our own field players (`own_others`, keeper excluded). The
+/// own-robot term is the point of this scorer: the old fixed-target clear was
+/// blind to our own wall parked on the ball→goal ray and blasted into its backs.
+///
+/// Candidates are the Div-B-safe goal-mouth cone (sweep + open-window midpoints,
+/// as in [`hoof_ray_target`]); with `panic` set — the Keeper-Held-Ball deadline
+/// looming — a wide lateral fan is added and a sideways-preference term
+/// (`panic_side_w · |dir.y|`) joins the score: a blocked central ray ricochets
+/// back toward our goal, a blocked sideways ray deflects laterally, and a clean
+/// sideways exit over the touch line is only a throw-in (no foul counter, never
+/// aimless).
+///
+/// Openness is measured over the first `open_range` mm of the ray only: a
+/// blocker well downfield is a rule-safe en-route touch (defuses aimless), not a
+/// bounce-back risk, and must not keep the keeper holding forever. The returned
+/// [`ClearRay::openness`] is that near-lane openness, so the caller can gate
+/// hold-vs-fire on it; the goal-window bonus and side term only rank candidates.
+#[allow(clippy::too_many_arguments)]
+pub fn best_clear_ray(
+    ball: Vector2,
+    opponents: &[PlayerState],
+    own_others: &[Vector2],
+    opp_goal_x: f64,
+    goal_width: f64,
+    opp_keeper_id: Option<PlayerId>,
+    robot_radius: f64,
+    keeper_radius: f64,
+    ball_radius: f64,
+    ray_corridor: f64,
+    open_range: f64,
+    goal_w: f64,
+    mouth_inset: f64,
+    panic: bool,
+    panic_side_w: f64,
+) -> Option<ClearRay> {
+    // Open goal-mouth windows (their-keeper shadow inflated, as for a shot).
+    let gaps = goal_free_gaps(
+        ball,
+        opp_goal_x,
+        goal_width,
+        opponents,
+        opp_keeper_id,
+        robot_radius,
+        keeper_radius,
+        ball_radius,
+    )
+    .map(|(free, _)| free)
+    .unwrap_or_default();
+
+    let near_openness = |target: Vector2| -> f64 {
+        let full = target - ball;
+        let len = full.norm();
+        if len < 1e-6 {
+            return 0.0;
+        }
+        let near_end = ball + full * (open_range.min(len) / len);
+        lane_openness(ball, near_end, opponents, ray_corridor).min(lane_openness_pts(
+            ball,
+            near_end,
+            own_others,
+            ray_corridor,
+        ))
+    };
+
+    let score = |target: Vector2, openness: f64| -> f64 {
+        let dir = (target - ball).try_normalize(1e-6).unwrap_or(Vector2::x());
+        // Goal-window bonus: does the ray exit the opponent goal line inside an
+        // open mouth window? (Panic-fan rays point sideways and never do.)
+        let in_mouth = if dir.x > 1e-6 {
+            let exit_y = ball.y + dir.y / dir.x * (opp_goal_x - ball.x);
+            gaps.iter().any(|&(lo, hi)| exit_y > lo && exit_y < hi)
+        } else {
+            false
+        };
+        let goal_term = if in_mouth { goal_w } else { 0.0 };
+        let side_term = if panic {
+            panic_side_w * dir.y.abs()
+        } else {
+            0.0
+        };
+        goal_term + openness + side_term
+    };
+
+    // Primary candidates: the mouth cone (posts inset as execution margin) —
+    // a fine sweep plus every open window's midpoint, as in `hoof_ray_target`.
+    let mut candidates: Vec<Vector2> = Vec::new();
+    let depth = opp_goal_x - ball.x;
+    if depth > mouth_inset {
+        let y_lim = (goal_width / 2.0 - mouth_inset).max(1.0);
+        let a_lo = (-y_lim - ball.y).atan2(depth);
+        let a_hi = (y_lim - ball.y).atan2(depth);
+        let steps = ((a_hi - a_lo) / 1.5_f64.to_radians()).ceil().max(1.0) as usize;
+        for i in 0..=steps {
+            let theta = a_lo + (a_hi - a_lo) * (i as f64) / (steps as f64);
+            candidates.push(Vector2::new(opp_goal_x, ball.y + theta.tan() * depth));
+        }
+        for &(g_lo, g_hi) in &gaps {
+            candidates.push(Vector2::new(
+                opp_goal_x,
+                (0.5 * (g_lo + g_hi)).clamp(-y_lim, y_lim),
+            ));
+        }
+    }
+
+    // Panic fan: strongly lateral rays on both sides.
+    if panic {
+        let mut theta = CLEAR_PANIC_FAN_LO;
+        while theta <= CLEAR_PANIC_FAN_HI + 1e-9 {
+            for sign in [-1.0, 1.0] {
+                let dir = Vector2::new(theta.cos(), sign * theta.sin());
+                candidates.push(ball + dir * CLEAR_PANIC_RAY_LEN);
+            }
+            theta += CLEAR_PANIC_FAN_STEP;
+        }
+    }
+
+    candidates
+        .into_iter()
+        .map(|target| {
+            let openness = near_openness(target);
+            (target, openness, score(target, openness))
+        })
+        .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(target, openness, _)| ClearRay { target, openness })
+}
+
 /// Pick an open, forward support/outlet position on one flank.
 ///
 /// Static flank points leave supporters stranded behind opponents, so the ball
@@ -714,14 +860,29 @@ const LANE_CONTEST_RADIUS: f64 = 250.0;
 /// 1 if no opponent is near the segment, decaying toward 0 as the nearest in-corridor
 /// opponent approaches the line.
 pub fn lane_openness(from: Vector2, to: Vector2, opponents: &[PlayerState], corridor: f64) -> f64 {
+    lane_openness_pts_iter(from, to, opponents.iter().map(|o| o.position), corridor)
+}
+
+/// [`lane_openness`] over bare positions — used where the blockers aren't
+/// opponents (e.g. our own wall in the keeper's clear-ray scorer).
+pub fn lane_openness_pts(from: Vector2, to: Vector2, blockers: &[Vector2], corridor: f64) -> f64 {
+    lane_openness_pts_iter(from, to, blockers.iter().copied(), corridor)
+}
+
+fn lane_openness_pts_iter(
+    from: Vector2,
+    to: Vector2,
+    blockers: impl Iterator<Item = Vector2>,
+    corridor: f64,
+) -> f64 {
     let dir = to - from;
     let len = dir.norm();
     if len < 1e-6 {
         return 1.0;
     }
     let mut min_perp = f64::INFINITY;
-    for opp in opponents {
-        let to_opp = opp.position - from;
+    for pos in blockers {
+        let to_opp = pos - from;
         // Skip on-ball contesters at the lane origin: they block the first few
         // hundred mm of every lane equally and say nothing about downfield clarity.
         if to_opp.norm() < LANE_CONTEST_RADIUS {
@@ -739,6 +900,60 @@ pub fn lane_openness(from: Vector2, to: Vector2, opponents: &[PlayerState], corr
     }
     // 0 when on the line, 1 when at/over the corridor edge.
     smoothstep(0.0, corridor, min_perp)
+}
+
+/// Push `p` laterally out of the stadium of half-width `half_width` around the
+/// segment `a→b` (to the side of the axis it is already on; on-axis breaks
+/// toward +normal deterministically). Points already outside are returned
+/// unchanged. Used by the wall to vacate the keeper's clear corridor.
+pub fn project_out_of_corridor(p: Vector2, a: Vector2, b: Vector2, half_width: f64) -> Vector2 {
+    let ab = b - a;
+    let len2 = ab.norm_squared();
+    if len2 < 1e-9 {
+        return p;
+    }
+    let t = ((p - a).dot(&ab) / len2).clamp(0.0, 1.0);
+    let closest = a + ab * t;
+    let off = p - closest;
+    if off.norm() >= half_width {
+        return p;
+    }
+    let axis = ab / len2.sqrt();
+    let n = Vector2::new(-axis.y, axis.x);
+    let side = if off.dot(&n) >= 0.0 { 1.0 } else { -1.0 };
+    closest + n * (half_width * side)
+}
+
+/// Push `p` out of the keeper's clear "keyhole": the work disc of `disc_radius`
+/// around `ball` (room to swing around the ball and line up from any side —
+/// for a box-corner ball the wall otherwise bunches at the keepout line right
+/// next to it and boxes the keeper out of its own approach) union the corridor
+/// stadium toward `goal` (the strike ray). Corridor first, then disc: a radial
+/// push from the ball scales a point's lateral offset to any line through the
+/// ball by ≥1, so escaping the disc never re-enters the corridor. A point
+/// exactly on the ball breaks perpendicular to the axis.
+pub fn project_out_of_keyhole(
+    p: Vector2,
+    ball: Vector2,
+    goal: Vector2,
+    disc_radius: f64,
+    corridor_half_width: f64,
+) -> Vector2 {
+    let p = project_out_of_corridor(p, ball, goal, corridor_half_width);
+    let off = p - ball;
+    let d = off.norm();
+    if d >= disc_radius {
+        return p;
+    }
+    let dir = if d > 1e-6 {
+        off / d
+    } else {
+        let axis = (goal - ball)
+            .try_normalize(1e-6)
+            .unwrap_or(Vector2::new(1.0, 0.0));
+        Vector2::new(-axis.y, axis.x)
+    };
+    ball + dir * disc_radius
 }
 
 /// The point a radial `standoff` in front of our goal along the ball→goal-centre
@@ -1257,6 +1472,162 @@ mod tests {
             (dir.norm() - 1.0).abs() < 1e-6,
             "escape should be a unit vector"
         );
+    }
+
+    /// `best_clear_ray` with production-shaped params: Div-B geometry, ball in
+    /// our box, no opponents unless given.
+    fn clear_ray(
+        ball: Vector2,
+        own_others: &[Vector2],
+        opponents: &[PlayerState],
+        panic: bool,
+    ) -> ClearRay {
+        best_clear_ray(
+            ball, opponents, own_others, 4500.0, 1000.0, None, 110.0, 280.0, 21.5, 300.0, 3000.0,
+            0.5, 150.0, panic, 0.3,
+        )
+        .expect("clear geometry from our box is never degenerate")
+    }
+
+    #[test]
+    fn clear_ray_sees_own_wall_as_blocker() {
+        // THE bug this scorer exists for: our own anchor parked on the
+        // ball→opp-goal ray. Every goal-bound ray passes within a few mm of it
+        // (the mouth cone is ±~2° from our box), so openness must collapse —
+        // the keeper holds instead of blasting into the wall's back.
+        let ball = Vector2::new(-4000.0, 0.0);
+        let wall = [Vector2::new(-3350.0, 0.0)]; // anchor: box edge + margin
+        let blocked = clear_ray(ball, &wall, &[], false);
+        assert!(
+            blocked.openness < 0.2,
+            "own wall on the ray must tank openness: {}",
+            blocked.openness
+        );
+        // Wall stepped out of the corridor (the formation's vacate move) →
+        // the same ray is open and the target is goal-bound (inside the mouth).
+        let parted = [Vector2::new(-3350.0, 600.0)];
+        let open = clear_ray(ball, &parted, &[], false);
+        assert!(
+            open.openness > 0.9,
+            "parted wall must leave the lane open: {}",
+            open.openness
+        );
+        assert!(
+            (open.target.x - 4500.0).abs() < 1e-6 && open.target.y.abs() < 500.0,
+            "primary clear must be goal-bound: {:?}",
+            open.target
+        );
+    }
+
+    #[test]
+    fn clear_ray_panic_prefers_open_sideways_over_blocked_central() {
+        // Panic with the central lane still blocked: a sideways ray deflects
+        // laterally (worst case throw-in), a central one ricochets back at our
+        // goal — the side fan must win.
+        let ball = Vector2::new(-4000.0, 0.0);
+        let wall = [Vector2::new(-3350.0, 0.0)];
+        let r = clear_ray(ball, &wall, &[], true);
+        let dir = (r.target - ball).normalize();
+        assert!(
+            dir.y.abs() > 0.7,
+            "blocked centre in panic must go sideways: dir {dir:?}"
+        );
+        assert!(r.openness > 0.9, "chosen side lane is open: {}", r.openness);
+    }
+
+    #[test]
+    fn clear_ray_panic_still_takes_an_open_goal_ray() {
+        // Panic alone must not force a sideways ball: with the corridor open,
+        // the goal-window bonus outranks the side-preference term.
+        let ball = Vector2::new(-4000.0, 0.0);
+        let r = clear_ray(ball, &[], &[], true);
+        assert!(
+            (r.target.x - 4500.0).abs() < 1e-6 && r.target.y.abs() < 500.0,
+            "open goal ray must win in panic too: {:?}",
+            r.target
+        );
+    }
+
+    #[test]
+    fn clear_ray_ignores_downfield_blockers() {
+        // An opponent deep in their half sitting on the goal-bound ray is a
+        // rule-safe en-route touch, not a bounce-back risk: it must not hold
+        // the keeper's fire gate hostage (openness is near-range only).
+        let ball = Vector2::new(-4000.0, 0.0);
+        let deep_opp = PlayerState::new(
+            PlayerId::new(9),
+            Vector2::new(2000.0, 0.0), // 6m downfield, dead on the ray
+            Vector2::new(0.0, 0.0),
+            Angle::from_radians(0.0),
+        );
+        let r = clear_ray(ball, &[], std::slice::from_ref(&deep_opp), false);
+        assert!(
+            r.openness > 0.9,
+            "a 6m-downfield blocker must not gate the fire: {}",
+            r.openness
+        );
+    }
+
+    #[test]
+    fn project_out_of_corridor_moves_only_intruders() {
+        let a = Vector2::new(-4000.0, 0.0);
+        let b = Vector2::new(4500.0, 0.0);
+        // On the axis: pushed out to exactly half-width (deterministic +n side).
+        let on_axis = project_out_of_corridor(Vector2::new(-3350.0, 0.0), a, b, 450.0);
+        assert!((on_axis.y.abs() - 450.0).abs() < 1e-6, "{on_axis:?}");
+        assert!(
+            (on_axis.x - -3350.0).abs() < 1e-6,
+            "x preserved: {on_axis:?}"
+        );
+        // Inside, off-axis: pushed to its own side.
+        let below = project_out_of_corridor(Vector2::new(-3000.0, -100.0), a, b, 450.0);
+        assert!((below.y - -450.0).abs() < 1e-6, "keeps its side: {below:?}");
+        // Already outside: untouched.
+        let out = Vector2::new(-3000.0, 800.0);
+        assert_eq!(project_out_of_corridor(out, a, b, 450.0), out);
+        // Beyond the segment's cap: stadium distance applies, not infinite axis —
+        // a point 300mm behind the cap is inside and gets pushed to the cap
+        // circle; one 600mm behind is already outside and stays put.
+        let behind = Vector2::new(-4300.0, 0.0);
+        let pushed = project_out_of_corridor(behind, a, b, 450.0);
+        assert!(
+            ((pushed - a).norm() - 450.0).abs() < 1e-6,
+            "cap-circle distance: {pushed:?}"
+        );
+        let far_behind = Vector2::new(-4600.0, 0.0);
+        assert_eq!(project_out_of_corridor(far_behind, a, b, 450.0), far_behind);
+    }
+
+    #[test]
+    fn keyhole_clears_the_keeper_work_disc() {
+        // The keyhole = corridor + work disc around the ball. A robot crowding
+        // the ball from BEHIND (the box-corner stall: teammates bunched at the
+        // keepout line next to the ball, outside the forward corridor's reach)
+        // must be pushed to the disc radius; corridor intruders still leave the
+        // corridor AND the disc; far bystanders are untouched.
+        let ball = Vector2::new(-4260.0, 940.0);
+        let goal = Vector2::new(4500.0, 0.0);
+        let (disc, corr) = (700.0, 450.0);
+        // Behind/beside the ball, outside the corridor, inside the disc.
+        let crowding = Vector2::new(-4100.0, 1100.0);
+        let p = project_out_of_keyhole(crowding, ball, goal, disc, corr);
+        assert!(
+            ((p - ball).norm() - disc).abs() < 1e-6,
+            "pushed to the disc rim: {p:?}"
+        );
+        // On the strike ray near the ball: must clear BOTH corridor and disc.
+        let on_ray = ball + (goal - ball).normalize() * 300.0;
+        let p = project_out_of_keyhole(on_ray, ball, goal, disc, corr);
+        let seg_d = {
+            let ab = goal - ball;
+            let t = ((p - ball).dot(&ab) / ab.norm_squared()).clamp(0.0, 1.0);
+            (p - (ball + ab * t)).norm()
+        };
+        assert!((p - ball).norm() >= disc - 1e-6, "out of the disc: {p:?}");
+        assert!(seg_d >= corr - 1e-6, "out of the corridor: {p:?}");
+        // Far bystander: untouched.
+        let far = Vector2::new(-2000.0, -1500.0);
+        assert_eq!(project_out_of_keyhole(far, ball, goal, disc, corr), far);
     }
 
     #[test]

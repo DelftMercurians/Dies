@@ -6,8 +6,13 @@
 //!   When a fast ball is incoming on a path that crosses the goal mouth, the
 //!   keeper instead sits on the shot line (see [`shot_intercept`]) so it is in
 //!   the ball's path whichever corner the shot is aimed at.
-//! - **Clear**: when a ball settles inside our defense area, pick it up and kick
-//!   it out toward the opponent half (off the centre line), then return to Guard.
+//! - **Clear**: when a ball settles inside our defense area, kick it out through
+//!   the most open ray, scored against ALL robots — our own wall included, which
+//!   simultaneously vacates a clear corridor (see `Formation`). The keeper holds
+//!   a pre-strike pose until a ray is open enough; past a panic deadline tied to
+//!   the Keeper-Held-Ball rule it fires the least-bad ray, preferring sideways
+//!   exits (a blocked central ray ricochets back at our goal; a clean sideways
+//!   exit is only a throw-in). Then returns to Guard.
 //!
 //! In Guard the keeper uses the [`go_to_bounded`](PlayerHandle::go_to_bounded)
 //! skill: aggressive direct-velocity control with the planner and ORCA bypassed,
@@ -19,6 +24,7 @@ use dies_strategy_api::prelude::*;
 use dies_strategy_api::World;
 
 use crate::config;
+use crate::geometry;
 
 /// Keeper behaviour mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,6 +38,16 @@ enum KeeperMode {
 /// Persistent keeper state across frames.
 pub struct KeeperState {
     mode: KeeperMode,
+    /// Continuous ball-in-our-box time (s, world clock — accumulated `world.dt`,
+    /// never wall clock). Tracks the Keeper-Held-Ball rule's clock (Div B: 10s of
+    /// ball in the defense area is a foul-counter foul), so it runs whenever the
+    /// ball is in the box and in play — regardless of mode; the ball may roll
+    /// around the box for seconds before it settles and Clear engages.
+    box_time: f64,
+    /// Fire latch for the clear: once the openness gate passes we commit to the
+    /// strike, and only a drop below the hysteresis band flips back to hold —
+    /// a wall robot transiting the corridor must not abort a strike mid-approach.
+    firing: bool,
 }
 
 impl Default for KeeperState {
@@ -44,7 +60,15 @@ impl KeeperState {
     pub fn new() -> Self {
         Self {
             mode: KeeperMode::Guard,
+            box_time: 0.0,
+            firing: false,
         }
+    }
+
+    /// Whether the keeper is actively clearing a settled ball out of our box.
+    /// The formation reads this (one frame stale) to vacate the clear corridor.
+    pub fn is_clearing(&self) -> bool {
+        self.mode == KeeperMode::Clear
     }
 }
 
@@ -95,6 +119,9 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
     keeper.set_role("goalkeeper");
     draw_guard_arc(world);
 
+    tick_box_clock(state, world);
+    debug::value("keeper.box_time", state.box_time);
+
     // ── Penalty defense (rules §5.3.6) ──────────────────────────────────
     // Until the penalty kick is taken, the keeper must stand *on the goal line*
     // between the posts — not on its guard arc. `Penalty` flips to `PenaltyRun`
@@ -115,16 +142,25 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
     // ── Mode transitions ────────────────────────────────────────────────
     match state.mode {
         KeeperMode::Guard => {
-            if should_clear(world) {
+            if should_clear(world) || panic_clear_required(state, world) {
                 state.mode = KeeperMode::Clear;
+                state.firing = false;
             }
         }
         KeeperMode::Clear => {
             if !clear_still_valid(world, keeper) {
                 state.mode = KeeperMode::Guard;
+                state.firing = false;
             }
         }
     }
+    debug::string(
+        "keeper.mode",
+        match state.mode {
+            KeeperMode::Guard => "guard",
+            KeeperMode::Clear => "clear",
+        },
+    );
 
     // ── Act ─────────────────────────────────────────────────────────────
     match state.mode {
@@ -145,18 +181,64 @@ pub fn update(state: &mut KeeperState, world: &World, keeper: &mut PlayerHandle)
         }
         KeeperMode::Clear => {
             let ball = world.ball_position().unwrap_or_else(|| keeper.position());
-            let target = clear_target(world, ball);
-            let heading = facing_angle(ball, target);
-            let _ = keeper.strike_through(target);
-            // if keeper.has_ball() {
-            // } else {
-            //     // Acquire via the unified ball-handling skill (Hold mode); the
-            //     // reflex_shoot above takes over once the breakbeam trips.
-            //     let _ = keeper.handle_ball(
-            //         BallAction::Hold { heading },
-            //         AcquirePosition::Heading(heading),
-            //     );
-            // }
+            // Our own field robots are blockers too — the wall parked on the
+            // clear line is exactly what the old fixed-target clear kicked into.
+            let own_others: Vec<Vector2> = world
+                .own_players()
+                .iter()
+                .filter(|p| p.id != keeper.id())
+                .map(|p| p.position)
+                .collect();
+            // Past the panic deadline the Keeper-Held-Ball foul looms: widen the
+            // candidate set (sideways fan) and fire the least-bad ray regardless
+            // of openness — any exit beats the held-ball free kick + foul count.
+            let panic = state.box_time >= config::CLEAR_PANIC_T;
+            let ray = geometry::best_clear_ray(
+                ball,
+                world.opp_players(),
+                &own_others,
+                world.opp_goal_center().x,
+                world.goal_width(),
+                opp_keeper(world),
+                config::SHOT_ROBOT_RADIUS,
+                config::SHOT_KEEPER_RADIUS,
+                config::BALL_RADIUS,
+                config::CLEAR_RAY_CORRIDOR,
+                config::CLEAR_OPEN_RANGE,
+                config::CLEAR_GOAL_W,
+                config::HOOF_MOUTH_INSET,
+                panic,
+                config::CLEAR_PANIC_SIDE_W,
+            );
+            debug::value("keeper.clear_panic", if panic { 1.0 } else { 0.0 });
+            match ray {
+                Some(r) => {
+                    debug::value("keeper.clear_openness", r.openness);
+                    debug::cross("keeper.clear_target", r.target);
+                    let gate = if state.firing {
+                        config::CLEAR_FIRE_OPENNESS - config::CLEAR_FIRE_HYSTERESIS
+                    } else {
+                        config::CLEAR_FIRE_OPENNESS
+                    };
+                    state.firing = panic || r.openness >= gate;
+                    if state.firing {
+                        let _ = keeper.strike_through(r.target);
+                    } else {
+                        // Hold: pre-strike pose behind the ball on the chosen
+                        // ray, waiting for the wall to part. No dribbler (v1).
+                        let dir = (r.target - ball)
+                            .try_normalize(1.0e-6)
+                            .unwrap_or(Vector2::new(1.0, 0.0));
+                        keeper
+                            .go_to(ball - dir * config::CLEAR_HOLD_STANDOFF)
+                            .facing(ball);
+                    }
+                }
+                // Degenerate geometry (no candidates) — old behavior: goalward.
+                None => {
+                    let _ = keeper.strike_through(world.opp_goal_center());
+                }
+            }
         }
     }
 }
@@ -390,6 +472,21 @@ fn should_clear(world: &World) -> bool {
     speed < config::CLEAR_SPEED_LIMIT && ball_inside_box(world, ball)
 }
 
+/// Past the panic deadline the ball must leave the box even if it never
+/// "settled": a ball bouncing around our box keeps the Keeper-Held-Ball clock
+/// running while [`should_clear`]'s speed/margin gates never fire — observed in
+/// self-play as `box_time` overrunning 10s with the keeper still in Guard. Any
+/// in-box, in-play ball past the deadline forces Clear (the reflex strike
+/// handles a moving ball).
+fn panic_clear_required(state: &KeeperState, world: &World) -> bool {
+    state.box_time >= config::CLEAR_PANIC_T
+        && world.is_ball_in_play()
+        && world
+            .ball_position()
+            .map(|b| world.own_penalty_area().contains(b))
+            .unwrap_or(false)
+}
+
 /// Whether an in-progress Clear should continue. Aborts back to Guard if the ball
 /// has left the box, the keeper charges out the front edge, or play is interrupted.
 fn clear_still_valid(world: &World, keeper: &PlayerHandle) -> bool {
@@ -431,21 +528,35 @@ fn keeper_inside_front(world: &World, pos: Vector2, margin: f64) -> bool {
     pos.x <= area.max.x - margin
 }
 
-/// Clearing target: the opponent goal mouth on the ball's flank side. A clear is
-/// a full-power strike that rolls the length of the field, so under the Div-B
-/// aimless-kick rule it must be goal-bound like the hoof — a wing clear that
-/// crosses halfway and rolls out wide of their goal hands the opponent a free
-/// kick back at OUR kick position. Inside the mouth an untouched clear scores or
-/// forces their keeper to play it.
-fn clear_target(world: &World, ball: Vector2) -> Vector2 {
-    let side = if ball.y >= 0.0 { 1.0 } else { -1.0 };
-    Vector2::new(world.opp_goal_center().x, side * config::CLEAR_AIM_Y)
+/// Advance/reset the Keeper-Held-Ball clock: accumulate `world.dt` (world time,
+/// never wall clock — FTR determinism) while the ball is inside our box during
+/// play; reset the moment it leaves or play stops.
+fn tick_box_clock(state: &mut KeeperState, world: &World) {
+    let ball_in_box = world
+        .ball_position()
+        .map(|b| world.own_penalty_area().contains(b))
+        .unwrap_or(false);
+    if world.is_ball_in_play() && ball_in_box {
+        state.box_time += world.dt();
+    } else {
+        state.box_time = 0.0;
+    }
 }
 
-/// Heading from `from` toward `to`.
-fn facing_angle(from: Vector2, to: Vector2) -> Angle {
-    let d = to - from;
-    Angle::from_radians(d.y.atan2(d.x))
+/// The opponent robot nearest their own goal — assumed keeper (same heuristic
+/// as the planner's `opp_keeper`; the true id isn't in the protocol). Used for
+/// the inflated keeper shadow in the clear's goal-window term.
+fn opp_keeper(world: &World) -> Option<PlayerId> {
+    let goal = world.opp_goal_center();
+    world
+        .opp_players()
+        .iter()
+        .min_by(|a, b| {
+            let da = (a.position - goal).norm();
+            let db = (b.position - goal).norm();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|p| p.id)
 }
 
 #[cfg(test)]
@@ -759,23 +870,53 @@ mod tests {
     }
 
     #[test]
-    fn clear_target_is_goal_bound_on_ball_side() {
-        // The clear must aim inside the opponent goal mouth (off-centre on the
-        // ball's flank), so a full-length roll-out can't be a Div-B aimless kick.
-        let w = world_with_ball(Vector2::new(-4000.0, 300.0));
-        let target = clear_target(&w, Vector2::new(-4000.0, 300.0));
+    fn panic_forces_clear_on_an_unsettled_ball() {
+        // A ball bouncing around our box never satisfies should_clear (speed
+        // gate), but the held-ball clock still runs — past the deadline Clear
+        // is forced anyway (observed in self-play: box_time overran 10s with
+        // the keeper still guarding).
+        let rolling =
+            world_with_ball_vel(Vector2::new(-4000.0, 0.0), Vector2::new(800.0, 0.0));
+        assert!(!should_clear(&rolling), "fast ball must not settle-clear");
+        let mut st = KeeperState::new();
+        st.box_time = config::CLEAR_PANIC_T;
+        assert!(panic_clear_required(&st, &rolling));
+        st.box_time = config::CLEAR_PANIC_T - 1.0;
+        assert!(!panic_clear_required(&st, &rolling));
+        // Out of the box: never forced, whatever the (stale) clock says.
+        st.box_time = config::CLEAR_PANIC_T + 5.0;
+        let outside = world_with_ball(Vector2::new(0.0, 0.0));
+        assert!(!panic_clear_required(&st, &outside));
+    }
+
+    #[test]
+    fn box_clock_accumulates_in_box_and_resets_outside() {
+        // The Keeper-Held-Ball clock runs on ball-in-box time during play —
+        // regardless of keeper mode — and resets the moment the ball leaves.
+        let mut st = KeeperState::new();
+        let inside = world_with_ball(Vector2::new(-4000.0, 0.0));
+        for _ in 0..10 {
+            tick_box_clock(&mut st, &inside);
+        }
         assert!(
-            (target.x - w.opp_goal_center().x).abs() < 1e-6,
-            "goal-bound: {target:?}"
+            (st.box_time - 10.0 * inside.dt()).abs() < 1e-9,
+            "10 frames in the box: {}",
+            st.box_time
         );
-        assert!(
-            (target.y - config::CLEAR_AIM_Y).abs() < 1e-6 && target.y.abs() < w.goal_width() / 2.0,
-            "inside the mouth on the ball side: {target:?}"
-        );
-        let neg = clear_target(&w, Vector2::new(-4000.0, -300.0));
-        assert!(
-            (neg.y + config::CLEAR_AIM_Y).abs() < 1e-6,
-            "mirror: {neg:?}"
-        );
+        // A rolling ball still in the box keeps the clock running (the rule
+        // doesn't wait for it to settle).
+        let rolling = world_with_ball_vel(Vector2::new(-4000.0, 200.0), Vector2::new(500.0, 0.0));
+        tick_box_clock(&mut st, &rolling);
+        assert!(st.box_time > 10.0 * inside.dt());
+        // Ball out of the box → reset.
+        let outside = world_with_ball(Vector2::new(0.0, 0.0));
+        tick_box_clock(&mut st, &outside);
+        assert_eq!(st.box_time, 0.0);
+        // Ball missing (undetected) → reset, not stale accumulation.
+        tick_box_clock(&mut st, &inside);
+        let mut snap = inside.raw_snapshot().clone();
+        snap.ball = None;
+        tick_box_clock(&mut st, &World::new(snap));
+        assert_eq!(st.box_time, 0.0);
     }
 }

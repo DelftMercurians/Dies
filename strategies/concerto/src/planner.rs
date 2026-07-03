@@ -638,7 +638,7 @@ impl Planner {
             // capture hold while pressed). Goal-bound so a full-length roll-out is
             // a goal or a keeper touch, never a Div-B aimless-kick reset.
             let sign = if ball_pos.y >= 0.0 { 1.0 } else { -1.0 };
-            let target = Vector2::new(world.opp_goal_center().x, sign * config::CLEAR_AIM_Y);
+            let target = Vector2::new(world.opp_goal_center().x, sign * config::ESCAPE_CLEAR_AIM_Y);
             Waypoint::Handle {
                 action: BallAction::Strike {
                     target,
@@ -1084,7 +1084,7 @@ mod tests {
             } => {
                 assert!((target.x - world.opp_goal_center().x).abs() < 1.0);
                 assert!(
-                    (target.y - config::CLEAR_AIM_Y).abs() < 1.0,
+                    (target.y - config::ESCAPE_CLEAR_AIM_Y).abs() < 1.0,
                     "ball at +y → aim +y side of mouth: {target:?}"
                 );
                 assert!(

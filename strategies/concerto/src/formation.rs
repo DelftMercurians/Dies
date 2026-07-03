@@ -228,6 +228,10 @@ impl Formation {
         plan_ctx: &PlanContext,
         capture: Option<&CaptureRole>,
         now: f64,
+        // The keeper is clearing a settled ball out of our box (one frame stale
+        // — read from the keeper state before its own update; harmless): the
+        // wall must vacate the clear corridor. See the shadow generator.
+        keeper_clearing: bool,
     ) -> FormationOutput {
         let keeper_id = world.our_keeper_id();
 
@@ -271,6 +275,7 @@ impl Formation {
             assignable.len(),
             field_n,
             &staffed_shadow_slots,
+            keeper_clearing,
         );
         // Slot-hold: a reserved plan robot standing in/near a wall slot IS that
         // slot's coverage (the wall reflex striker working at its own post, or a
@@ -441,6 +446,7 @@ impl Formation {
         n: usize,
         field_n: usize,
         staffed_shadow_slots: &[u16],
+        keeper_clearing: bool,
     ) -> Vec<Role> {
         let mut roles: Vec<Role> = Vec::new();
         let own_goal = world.own_goal_center();
@@ -605,13 +611,37 @@ impl Formation {
                 } else {
                     0.5 + 0.5 * ball_threat
                 };
-                let position = if is_anchor {
+                let mut position = if is_anchor {
                     geometry::goal_ray_point(ball, own_goal, anchor_standoff)
                 } else if compact_pair && staffed_shadow_slots.contains(&(i as u16)) {
                     compact_positions[i]
                 } else {
                     pos
                 };
+                // Keeper clearing a settled ball out of our box: the wall would
+                // otherwise stand exactly on the clear line (the anchor sits on
+                // the ball→goal ray ~150–550mm in front of an in-box ball) and
+                // eat the strike, and for a box-corner ball the shadows bunch at
+                // the keepout line right next to it, boxing the keeper out of
+                // its own approach. Vacate a keyhole: the keeper's work disc
+                // around the ball ([`CLEAR_BALL_CLEARANCE`]) plus the fixed
+                // corridor ball→opp-goal-centre (every goal-bound ray the keeper
+                // can pick fits inside it) — each slot stepping to the side it
+                // is already on, so the wall splits into two flanking groups
+                // (rebound coverage). Anchor included: full vacate. Slot IDs are
+                // untouched, so matching stability is unaffected, and the wall
+                // snaps back the frame the clear ends.
+                //
+                // [`CLEAR_BALL_CLEARANCE`]: config::CLEAR_BALL_CLEARANCE
+                if keeper_clearing {
+                    position = geometry::project_out_of_keyhole(
+                        position,
+                        ball,
+                        world.opp_goal_center(),
+                        config::CLEAR_BALL_CLEARANCE,
+                        config::CLEAR_CORRIDOR_HALF_WIDTH,
+                    );
+                }
                 roles.push(Role {
                     id: RoleId {
                         kind: RoleKind::Shadow,
@@ -1170,7 +1200,7 @@ mod tests {
 
         let mut f = Formation::new();
         let reserved = vec![PlayerId::new(5)];
-        let out = f.update(&world, &reserved, &PlanContext::default(), None, 0.0);
+        let out = f.update(&world, &reserved, &PlanContext::default(), None, 0.0, false);
 
         // Assignable = ids {2,3,4} (exclude keeper 1 and reserved 5).
         let mut assigned: Vec<u32> = out.commands.iter().map(|c| c.id.as_u32()).collect();
@@ -1199,7 +1229,7 @@ mod tests {
         let mut f = Formation::new();
 
         let marks = |rs: &[Role]| rs.iter().filter(|r| r.id.kind == RoleKind::Mark).count();
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[]);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[], false);
         let engaged = f.generate_roles(
             &world,
             &PlanContext {
@@ -1211,6 +1241,7 @@ mod tests {
             3,
             3,
             &[],
+            false,
         );
         assert_eq!(marks(&plain), 2);
         assert_eq!(marks(&engaged), 1);
@@ -1231,7 +1262,7 @@ mod tests {
         let world = world_with(own, opp, 1);
         let mut f = Formation::new();
 
-        let on = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[]);
+        let on = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[], false);
         assert!(on.iter().any(|r| r.id.kind == RoleKind::Shadow));
         assert!(on.iter().any(|r| r.id.kind == RoleKind::Mark));
         assert!(on.iter().any(|r| r.id.kind == RoleKind::Support));
@@ -1245,7 +1276,7 @@ mod tests {
             balance: false,
             outlet: false,
         });
-        let off = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[]);
+        let off = f.generate_roles(&world, &PlanContext::default(), None, 3, 3, &[], false);
         // Only the Spread floor survives — one role per assignable robot, so
         // nobody is left roleless when the whole catalog is switched off.
         assert!(off.iter().all(|r| r.id.kind == RoleKind::Spread));
@@ -1263,7 +1294,7 @@ mod tests {
         let world = world_with(own, opp, 1);
         let mut f = Formation::new();
 
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], false);
         let supp = f.generate_roles(
             &world,
             &PlanContext {
@@ -1275,6 +1306,7 @@ mod tests {
             4,
             4,
             &[],
+            false,
         );
 
         // BallContest only re-weights importance, never the role set.
@@ -1330,7 +1362,7 @@ mod tests {
             ball_contest: None,
         });
         let mut f = Formation::new();
-        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], false);
 
         // The box-runner is the central Support slot (slot == SUPPORT_COUNT).
         let runners: Vec<&Role> = roles
@@ -1411,7 +1443,7 @@ mod tests {
             ball_contest: None,
         });
         let mut f = Formation::new();
-        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
+        let roles = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], false);
         let runner = roles
             .iter()
             .find(|r| r.id.kind == RoleKind::Support && r.id.slot as usize == config::SUPPORT_COUNT)
@@ -1439,10 +1471,10 @@ mod tests {
         let world = world_with(own, opp, 1);
 
         let mut f = Formation::new();
-        let _ = f.update(&world, &[], &PlanContext::default(), None, 0.0);
+        let _ = f.update(&world, &[], &PlanContext::default(), None, 0.0, false);
         let snapshot = f.assignment.clone();
         // A tick later, within cooldown, no trigger → assignment unchanged.
-        let _ = f.update(&world, &[], &PlanContext::default(), None, 0.05);
+        let _ = f.update(&world, &[], &PlanContext::default(), None, 0.05, false);
         assert_eq!(f.assignment, snapshot);
     }
 
@@ -1491,7 +1523,14 @@ mod tests {
             ineligible: Vec::new(),
             pinned: None,
         };
-        let out = f.update(&world, &[], &PlanContext::default(), Some(&capture), 0.0);
+        let out = f.update(
+            &world,
+            &[],
+            &PlanContext::default(),
+            Some(&capture),
+            0.0,
+            false,
+        );
 
         let capturer = out.capturer.expect("a near robot should take the ball");
         assert_ne!(
@@ -1545,7 +1584,14 @@ mod tests {
             ineligible: vec![PlayerId::new(3)],
             pinned: Some(PlayerId::new(3)),
         };
-        let out = f.update(&world, &[], &PlanContext::default(), Some(&capture), 0.0);
+        let out = f.update(
+            &world,
+            &[],
+            &PlanContext::default(),
+            Some(&capture),
+            0.0,
+            false,
+        );
 
         assert_eq!(
             out.capturer,
@@ -1583,8 +1629,8 @@ mod tests {
             ids
         };
         // Pursuit: 4 assignable. Offense: carrier reserved → 3. field_n = 4 both.
-        let pursuit = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[]);
-        let offense = f.generate_roles(&world, &PlanContext::default(), None, 3, 4, &[]);
+        let pursuit = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], false);
+        let offense = f.generate_roles(&world, &PlanContext::default(), None, 3, 4, &[], false);
         assert_eq!(
             shadows(&pursuit),
             shadows(&offense),
@@ -1641,7 +1687,7 @@ mod tests {
 
         // Opponent right on the ball we "hold" → floor fully faded, no outlet.
         let contested = mk_world(vec![player(11, -300.0, 0.0)]);
-        let rs = f.generate_roles(&contested, &PlanContext::default(), None, 4, 4, &[]);
+        let rs = f.generate_roles(&contested, &PlanContext::default(), None, 4, 4, &[], false);
         assert_eq!(
             outlet_imp(&rs),
             None,
@@ -1650,7 +1696,7 @@ mod tests {
 
         // Same ball, opponent far away → the Div-B permanent outlet stands.
         let clear = mk_world(vec![player(11, 3000.0, 2000.0)]);
-        let rs = f.generate_roles(&clear, &PlanContext::default(), None, 4, 4, &[]);
+        let rs = f.generate_roles(&clear, &PlanContext::default(), None, 4, 4, &[], false);
         let imp = outlet_imp(&rs).expect("uncontested possession keeps the outlet");
         assert!(
             (imp - config::IMP_OUTLET).abs() < 1e-9,
@@ -1675,7 +1721,7 @@ mod tests {
         // Uncompacted (no staffing info): the wing sits on the outer arc —
         // (-2950, -170) for a centered ball (the wall line is perpendicular to
         // the shot ray, so the offset is straight -y here).
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[]);
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[], false);
         let wing = shadow(&plain, 0);
         assert!(
             (wing - Vector2::new(-2950.0, -170.0)).norm() < 1e-6,
@@ -1684,7 +1730,7 @@ mod tests {
 
         // Anchor + exactly one staffed wing → the wing snaps onto the anchor's
         // wall line, SHADOW_SPACING beside it; the anchor itself is untouched.
-        let compact = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1]);
+        let compact = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1], false);
         let anchor = shadow(&compact, 1);
         let wing = shadow(&compact, 0);
         assert!(
@@ -1709,8 +1755,8 @@ mod tests {
         ];
         let world = world_with(own, vec![], 1);
         let mut f = Formation::new();
-        f.update(&world, &[], &PlanContext::default(), None, 0.0);
-        let out = f.update(&world, &[], &PlanContext::default(), None, 0.0);
+        f.update(&world, &[], &PlanContext::default(), None, 0.0, false);
+        let out = f.update(&world, &[], &PlanContext::default(), None, 0.0, false);
 
         let targets: Vec<Vector2> = out
             .commands
@@ -1758,7 +1804,7 @@ mod tests {
             ball_contest: None,
         });
         let mut f = Formation::new();
-        let rs = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1]);
+        let rs = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1], false);
         let expected = geometry::shadow_arc(
             ball,
             world.own_goal_center(),
@@ -1772,6 +1818,107 @@ mod tests {
                 (r.position - want).norm() < 1e-6,
                 "slot {} must stay in the contiguous set-piece wall",
                 r.id.slot
+            );
+        }
+    }
+
+    #[test]
+    fn wall_vacates_the_clear_corridor_while_keeper_clears() {
+        // Ball settled in our box, keeper clearing: every shadow slot (anchor
+        // included — full vacate) must be clear of the stadium around the
+        // ball→opp-goal-centre segment, so the keeper's goal-bound strike has a
+        // free lane. Without the flag the anchor sits ON that ray (dist ≈ 0) —
+        // the kicked-into-our-own-wall bug this corridor exists to fix.
+        let ball = Vector2::new(-4000.0, 0.0);
+        let own = vec![
+            player(1, -4400.0, 0.0), // keeper
+            player(2, -3300.0, 100.0),
+            player(3, -3300.0, -300.0),
+            player(4, -2500.0, 400.0),
+            player(5, -1000.0, 0.0),
+        ];
+        let mut snap = world_with(own, vec![], 1).raw_snapshot().clone();
+        snap.ball.as_mut().unwrap().position = ball;
+        let world = World::new(snap);
+        let goal = world.opp_goal_center();
+
+        let seg_dist = |p: Vector2| {
+            let ab = goal - ball;
+            let t = ((p - ball).dot(&ab) / ab.norm_squared()).clamp(0.0, 1.0);
+            (p - (ball + ab * t)).norm()
+        };
+
+        let mut f = Formation::new();
+        let held = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], false);
+        let anchor_dist = held
+            .iter()
+            .filter(|r| r.id.kind == RoleKind::Shadow)
+            .map(|r| seg_dist(r.position))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            anchor_dist < config::CLEAR_CORRIDOR_HALF_WIDTH,
+            "baseline: without the flag the wall stands in the corridor ({anchor_dist:.0}mm)"
+        );
+
+        let mut f = Formation::new();
+        let cleared = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], true);
+        let shadows: Vec<&Role> = cleared
+            .iter()
+            .filter(|r| r.id.kind == RoleKind::Shadow)
+            .collect();
+        assert!(!shadows.is_empty(), "the wall itself must not disappear");
+        for r in &shadows {
+            let d = seg_dist(r.position);
+            assert!(
+                d >= config::CLEAR_CORRIDOR_HALF_WIDTH - 1.0,
+                "shadow slot {} still in the corridor: {:.0}mm at {:?}",
+                r.id.slot,
+                d,
+                r.position
+            );
+            // And clear of the keeper's work disc around the ball (the keyhole's
+            // round end): the keeper needs room to swing around the ball.
+            let db = (r.position - ball).norm();
+            assert!(
+                db >= config::CLEAR_BALL_CLEARANCE - 1.0,
+                "shadow slot {} inside the keeper's work disc: {:.0}mm from ball",
+                r.id.slot,
+                db
+            );
+        }
+        // Cardinality is untouched — vacating moves slots, never deletes them.
+        let count = |rs: &[Role]| rs.iter().filter(|r| r.id.kind == RoleKind::Shadow).count();
+        assert_eq!(count(&held), count(&cleared));
+    }
+
+    #[test]
+    fn wall_vacates_keeper_work_disc_for_a_corner_ball() {
+        // A ball in the box corner (the self-play stall: keeper hovered 180mm
+        // short for 4s, boxed out by its own wall bunched at the keepout line
+        // BEHIND the ball, where the forward corridor alone doesn't reach).
+        // Every shadow must leave the full work disc around the ball.
+        let ball = Vector2::new(-4260.0, 940.0); // deep box corner (box y edge 1000)
+        let own = vec![
+            player(1, -4400.0, 0.0), // keeper
+            player(2, -4100.0, 1100.0),
+            player(3, -3900.0, 1080.0),
+            player(4, -3450.0, 550.0),
+            player(5, -1000.0, 0.0),
+        ];
+        let mut snap = world_with(own, vec![], 1).raw_snapshot().clone();
+        snap.ball.as_mut().unwrap().position = ball;
+        let world = World::new(snap);
+
+        let mut f = Formation::new();
+        let cleared = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], true);
+        for r in cleared.iter().filter(|r| r.id.kind == RoleKind::Shadow) {
+            let db = (r.position - ball).norm();
+            assert!(
+                db >= config::CLEAR_BALL_CLEARANCE - 1.0,
+                "shadow slot {} crowds the corner ball: {:.0}mm at {:?}",
+                r.id.slot,
+                db,
+                r.position
             );
         }
     }
