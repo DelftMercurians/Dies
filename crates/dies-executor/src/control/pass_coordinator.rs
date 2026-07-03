@@ -130,6 +130,15 @@ tunables! {
     /// it if the strategy never re-tasks the robot.
     #[tunable(unit = "s", min = 0.5, max = 5.0, step = 0.5)]
     HANDOVER_TIMEOUT: f64 = 2.0;
+    /// One-timer feasibility bar: minimum `angle(incoming, outgoing)` for a
+    /// `forward_to` pass, where `incoming = intercept − ball` and `outgoing =
+    /// forward − intercept`. The receiver faces the OUTGOING direction, so the
+    /// ball reaches the kicker face only when this angle is large: 180° is a
+    /// head-on return (ideal), 90° the physical limit (ball parallel to the
+    /// face). Geometry below the bar fails the pass (`InfeasibleGeometry`)
+    /// while still staging — before the strike can release.
+    #[tunable(unit = "deg", min = 90.0, max = 180.0, step = 5.0)]
+    ONE_TIMER_MIN_DEFLECTION: f64 = 120.0;
 }
 
 /// Distance (mm) at which an opponent is considered to control the ball.
@@ -621,6 +630,25 @@ impl PassCoordinator {
                 reason: PassFailure::BallLost,
                 ball_state: PassBallState::WithOpponent,
             });
+        }
+        // One-timer feasibility (pre-commit only — this guard runs before the
+        // release barrier): the receiver faces the OUTGOING direction, so the
+        // incoming ball reaches the kicker face only when angle(incoming,
+        // outgoing) is large (180° = head-on, <90° = ball arrives behind the
+        // mouth). Reject bad geometry while the ball hasn't moved yet.
+        if let Some(forward) = self.forward_to {
+            let intercept = self.intercept_point.unwrap_or(bp);
+            let incoming = intercept - bp;
+            let outgoing = forward - intercept;
+            if incoming.norm() > 1.0
+                && outgoing.norm() > 1.0
+                && incoming.angle(&outgoing).to_degrees() < ONE_TIMER_MIN_DEFLECTION()
+            {
+                return Some(PassResult::Failure {
+                    reason: PassFailure::InfeasibleGeometry,
+                    ball_state: PassBallState::Loose { position: bp },
+                });
+            }
         }
         if self.phase_elapsed > timeout {
             return Some(PassResult::Failure {
@@ -1128,9 +1156,10 @@ impl PassCoordinator {
         );
 
         // One-timer overlays: the redirect line and the deflection angle between
-        // the incoming pass and the outgoing shot. The coordinator trusts the
-        // strategy's geometry — this is observability only (a deep angle means
-        // the ball will likely glance off the shell instead of one-timing).
+        // the incoming pass and the outgoing shot. Convention: 180° = head-on
+        // return (ideal); below ~90° the ball arrives behind the kicker face and
+        // can only glance off the shell. Geometry under ONE_TIMER_MIN_DEFLECTION
+        // is rejected by the Stage guard before the strike can release.
         if let Some(forward) = self.forward_to {
             dies_core::debug_line(
                 tc.key(format!("{pair}.forward")),
@@ -1719,15 +1748,17 @@ mod tests {
 
     // ── one-timer (forward_to) mode ──────────────────────────────────────────
 
-    /// Down-axis forward target: the deflection continues along +x.
-    const FORWARD: Vector2 = Vector2::new(4000.0, 0.0);
+    /// Feasible forward target for a pass BALL(0,0) → RECEIVER_POS(2000,0):
+    /// outgoing (−1500, 1300) makes angle(incoming, outgoing) ≈ 139° — the ball
+    /// arrives head-on-ish at the kicker face, above ONE_TIMER_MIN_DEFLECTION.
+    const FORWARD: Vector2 = Vector2::new(500.0, 1300.0);
 
     #[test]
     fn one_timer_receiver_waits_armed_facing_forward() {
         // A hinted one-timer whose receiver is still traveling: the pass stays
         // gated in Stage, and the receiver must already hold the reflex armed
-        // and face the FORWARD target (not the passer), so no rotation eats
-        // into the flight later.
+        // and face the FORWARD target, so no rotation eats into the flight
+        // later.
         let hint = Vector2::new(2000.0, 0.0);
         let tc = team_ctx();
         let mut c = PassCoordinator::new(
@@ -1736,7 +1767,8 @@ mod tests {
             Some(hint),
             Some(FORWARD),
         );
-        let far_receiver = player(1, Vector2::new(2000.0, 1500.0), 0.0);
+        let receiver_pos = Vector2::new(2000.0, 1500.0);
+        let far_receiver = player(1, receiver_pos, 0.0);
         let w = world_at(vec![player(0, STAGED, 0.0), far_receiver], Some(BALL), 0.0);
         let out = c.tick(&ctx(&w, &tc));
         assert_eq!(c.phase(), PassPhase::Stage);
@@ -1744,11 +1776,47 @@ mod tests {
             matches!(out.receiver_input.kicker, KickerControlInput::ReflexKick),
             "one-timer receiver must hold the reflex armed while staging"
         );
-        // Facing the forward target: receiver at (2000,1500), FORWARD at
-        // (4000,0) → yaw well below zero (down-right), never toward the passer
-        // (which would be ~180°).
+        // Faces the forward target exactly (the reflex skill aims the mouth at
+        // the outgoing direction from wherever the robot currently is).
         let yaw = out.receiver_input.yaw.expect("receiver yaw commanded");
-        assert!(yaw.radians() < 0.0 && yaw.radians() > -std::f64::consts::FRAC_PI_2);
+        let expected = Angle::from_vector(FORWARD - receiver_pos);
+        assert!((yaw - expected).radians().abs() < 1e-6);
+    }
+
+    #[test]
+    fn one_timer_infeasible_geometry_fails_before_release() {
+        // The OLD inverted convention: forward target dead ahead along the pass
+        // line — angle(incoming, outgoing) = 0°, the ball would arrive at the
+        // receiver's back. Must fail while staging, before the strike commits,
+        // even though the receiver is already at the hint (which would
+        // otherwise ungate the strike on this very tick).
+        let hint = Vector2::new(2000.0, 0.0);
+        let tc = team_ctx();
+        let mut c = PassCoordinator::new(
+            PlayerId::new(0),
+            PlayerId::new(1),
+            Some(hint),
+            Some(Vector2::new(4000.0, 0.0)),
+        );
+        let w = world_at(
+            vec![player(0, STAGED, 0.0), player(1, hint, 0.0)],
+            Some(BALL),
+            0.0,
+        );
+        let out = c.tick(&ctx(&w, &tc));
+        assert_eq!(out.status, SkillStatus::Failed);
+        assert!(c.is_done(), "gate must fail the pass before Release");
+        assert!(
+            !matches!(out.passer_input.kicker, KickerControlInput::ReflexKick),
+            "rejected pass must never arm the reflex"
+        );
+        assert!(matches!(
+            c.result(),
+            Some(PassResult::Failure {
+                reason: PassFailure::InfeasibleGeometry,
+                ..
+            })
+        ));
     }
 
     /// Drive a one-timer pass through a real departure into `Flight`.
@@ -1799,12 +1867,13 @@ mod tests {
             &tc,
         ));
         assert_eq!(out.status, SkillStatus::Running);
-        // Reflex fired: ball speeding away past the receiver — this is 1.2×
-        // past the intercept along the pass line, which without the endgame
-        // gate would have been declared ReceiverMissed. It must be the
-        // verified deflection instead.
+        // Reflex fired: ball speeding away from the receiver along the OUTGOING
+        // direction (toward FORWARD) — 400 mm out at 2500 mm/s. The receiver
+        // skill verifies the deflection; the off-pass-line motion must not be
+        // read as a miss.
+        let dir = (FORWARD - RECEIVER_POS).normalize();
         let out = c.tick(&ctx(
-            &mk(Vector2::new(2400.0, 0.0), Vector2::new(2500.0, 0.0), 0.85),
+            &mk(RECEIVER_POS + dir * 400.0, dir * 2500.0, 0.85),
             &tc,
         ));
         assert_eq!(out.status, SkillStatus::Succeeded);

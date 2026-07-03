@@ -48,6 +48,11 @@ pub use dies_strategy_runner::run_strategy;
 /// is "roughly the far goal" on a standard field.
 pub const OPP_GOAL: Vector2 = Vector2::new(4500.0, 0.0);
 
+/// Our own goal centre in team-relative coordinates (−x toward our side).
+/// Useful for half-field testing where shooting at the near goal is more
+/// convenient than the regulation direction.
+pub const OWN_GOAL: Vector2 = Vector2::new(-4500.0, 0.0);
+
 /// Number of frames a step tolerates a *stale* terminal status before honoring
 /// it. A discrete skill the same robot just finished still reports `Succeeded`
 /// for a frame or two after a new command is issued; without this guard the next
@@ -187,30 +192,43 @@ impl Step {
     }
 
     /// Like [`Step::pass`] but as a **one-timer**: the receiver redirects the
-    /// arriving ball toward `forward_to` via the pre-armed reflex kick instead
-    /// of catching it. Succeeds on the typed `PassResult::Success` whether the
-    /// deflection fired or the reflex dudded into a catch (the distinction is
-    /// logged).
+    /// arriving ball toward a forward target via the pre-armed reflex kick
+    /// instead of catching it. Succeeds on the typed `PassResult::Success`
+    /// whether the deflection fired or the reflex dudded into a catch (the
+    /// distinction is logged).
+    ///
+    /// `geometry` returns `(target_hint, forward_to)` from the live world —
+    /// return `None` while the world isn't ready (e.g. no ball) and the step
+    /// waits. The first `Some` is **latched** for the lifetime of the step, so
+    /// the intercept hint is derived from where the ball actually settled this
+    /// loop but doesn't chase it once the pass is underway. Keep the geometry
+    /// feasible: the receiver faces the forward target, so `angle(ball→hint,
+    /// hint→forward)` must stay above the coordinator's
+    /// `ONE_TIMER_MIN_DEFLECTION` bar (180° = head-on return, ideal) or the
+    /// pass fails fast with `InfeasibleGeometry`.
     pub fn pass_forward(
         passer: PlayerId,
         receiver: PlayerId,
-        target_hint: Option<Vector2>,
-        forward_to: Vector2,
+        mut geometry: impl FnMut(&World) -> Option<(Vector2, Vector2)> + Send + 'static,
     ) -> Self {
         let mut armed = false;
         let mut frames: u32 = 0;
+        let mut latched: Option<(Vector2, Vector2)> = None;
         let mut step = Step::new(
             format!("one-timer {passer}->{receiver}"),
             "Pass",
             move |ctx| {
+                if latched.is_none() {
+                    latched = geometry(ctx.world());
+                }
+                let Some((hint, forward_to)) = latched else {
+                    return StepOutcome::Running;
+                };
                 frames += 1;
                 // Issue the pass into both slots (committed on the builder's drop).
-                let builder = ctx.pass(passer, receiver).forward_to(forward_to);
-                if let Some(hint) = target_hint {
-                    builder.target_hint(hint);
-                } else {
-                    drop(builder);
-                }
+                ctx.pass(passer, receiver)
+                    .target_hint(hint)
+                    .forward_to(forward_to);
                 if ctx
                     .player_ref(passer)
                     .map(|p| p.skill_status() == SkillStatus::Running)
@@ -403,6 +421,6 @@ pub fn run_scenario(factory: impl FnOnce() -> Scenario + Send + 'static) {
 
 /// Prelude for scenario binaries.
 pub mod prelude {
-    pub use crate::{run_scenario, Scenario, Step, StepOutcome, OPP_GOAL};
+    pub use crate::{run_scenario, Scenario, Step, StepOutcome, OPP_GOAL, OWN_GOAL};
     pub use dies_strategy_api::prelude::*;
 }

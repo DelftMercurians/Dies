@@ -169,10 +169,15 @@ pub enum SkillCommand {
     ///   dribbler). `Some(point)` = **one-timer**: the receiver waits with the
     ///   firmware reflex kick pre-armed, facing `point`, and redirects the ball
     ///   toward it the instant it trips the breakbeam — zero handling latency.
-    ///   The coordinator TRUSTS the strategy to request sane deflection geometry
-    ///   (the incoming ball must still reach the mouth while the robot faces the
-    ///   outgoing direction — keep the deflection angle shallow, roughly ≲60°);
-    ///   it only emits the angle as a debug value.
+    ///   Geometry convention: the deflection angle is `angle(incoming, outgoing)`
+    ///   where `incoming = intercept − ball` and `outgoing = forward_to −
+    ///   intercept`. Since the robot faces the OUTGOING direction, the incoming
+    ///   ball reaches the kicker face only when this angle is large: 180° is a
+    ///   head-on return (ideal), 90° is the physical limit (ball parallel to the
+    ///   face), below that the ball arrives behind the mouth. The coordinator
+    ///   enforces this pre-commit: while staging, geometry below the
+    ///   `ONE_TIMER_MIN_DEFLECTION` tunable fails the pass with
+    ///   [`PassFailure::InfeasibleGeometry`] before the strike can release.
     ///
     /// **Completion** (joint - both robots report the same status):
     /// - `Succeeded` when the receiver holds SECURE possession (sustained fused
@@ -358,6 +363,13 @@ pub enum PassFailure {
     /// never departed) or the drive-through had to bail. The ball is still loose
     /// near the passer; the strategy re-decides — the receiver never chases.
     KickFailed,
+    /// One-timer geometry rejected before commit: the requested deflection
+    /// (`angle(incoming, outgoing)`, see `forward_to` on [`SkillCommand::Pass`])
+    /// is below the coordinator's `ONE_TIMER_MIN_DEFLECTION` tunable — the
+    /// incoming pass would arrive behind the kicker face and could never trip
+    /// the breakbeam. Failed while staging, before the strike releases; the
+    /// ball never moves.
+    InfeasibleGeometry,
     /// The ball was kicked but the receiver could not reach the intercept point
     /// (trajectory diverged beyond the capture window).
     ReceiverMissed,

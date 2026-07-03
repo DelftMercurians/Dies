@@ -456,11 +456,13 @@ fn map_pass_failure(reason: PassFailure) -> FailReason {
         PassFailure::ReceiverMissed | PassFailure::Intercepted | PassFailure::StoppedShort => {
             FailReason::PossessionLost
         }
-        // The pass never really got going (passer lost it, or a side dropped out).
+        // The pass never really got going (passer lost it, a side dropped out,
+        // or the one-timer geometry was rejected pre-commit).
         PassFailure::BallLost
         | PassFailure::PartnerLeft
         | PassFailure::Cancelled
-        | PassFailure::KickFailed => FailReason::SkillFailed,
+        | PassFailure::KickFailed
+        | PassFailure::InfeasibleGeometry => FailReason::SkillFailed,
     }
 }
 
