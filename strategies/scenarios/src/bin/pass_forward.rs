@@ -42,13 +42,29 @@ const HINT_BACKOFF: f64 = 2200.0;
 /// this keeps the deflection ~165° (head-on) and clears the passer by ~0.7 m.
 const HINT_LATERAL: f64 = 1000.0;
 
+/// Margin (mm) kept between the receive hint and the field boundary, so the
+/// receiver parks a robot-radius (~90 mm) clear of the touch/goal lines rather
+/// than straddling them.
+const FIELD_MARGIN: f64 = 190.0;
+
+/// Clamp `pos` into the field playing area (minus [`FIELD_MARGIN`]). Falls back
+/// to the regulation half-extents when live field geometry isn't available yet.
+fn clamp_to_field(world: &World, pos: Vector2) -> Vector2 {
+    let hx = world.field_length() / 2.0 - FIELD_MARGIN;
+    let hy = world.field_width() / 2.0 - FIELD_MARGIN;
+    Vector2::new(pos.x.clamp(-hx, hx), pos.y.clamp(-hy, hy))
+}
+
 /// One-timer geometry from the live ball: hint backed off the ball→goal line
-/// on side `side` (±1), forwarding to `goal`. `None` until the ball is seen.
+/// on side `side` (±1), forwarding to `goal`. The hint is constrained to the
+/// field so the receiver never parks off the pitch (near a corner the raw
+/// backoff+lateral offset easily crosses a touchline). `None` until the ball
+/// is seen.
 fn one_timer_geometry(world: &World, goal: Vector2, side: f64) -> Option<(Vector2, Vector2)> {
     let ball = world.ball_position()?;
     let u = (goal - ball).try_normalize(1.0)?;
     let perp = Vector2::new(-u.y, u.x);
-    let hint = ball - u * HINT_BACKOFF + perp * (side * HINT_LATERAL);
+    let hint = clamp_to_field(world, ball - u * HINT_BACKOFF + perp * (side * HINT_LATERAL));
     Some((hint, goal))
 }
 

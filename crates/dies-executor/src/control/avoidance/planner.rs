@@ -32,6 +32,9 @@ const GRID_MARGIN: f64 = 1500.0;
 /// Safety cap on A* node expansions; a blown budget falls back to a straight
 /// line (ORCA still protects the robot).
 const MAX_EXPANSIONS: usize = 20_000;
+/// Max distance a target may be nudged to escape a wall / defense area before
+/// we treat it as genuinely interior and keep the straight-line fallback [mm].
+const TARGET_SNAP_MAX: f64 = 100.0;
 
 pub struct GlobalPlanner {
     grid_resolution: f64,
@@ -91,6 +94,23 @@ impl GlobalPlanner {
     ) -> Vec<Vector2> {
         let shapes: Vec<ObstacleShape> = obstacles.as_planner_shapes(self.clearance).collect();
         let step = self.grid_resolution * 0.5;
+
+        // 0. If the target sits just inside a wall or defense area, nudge it to
+        //    the nearest reachable point so we plan/steer to a valid setpoint
+        //    instead of pressing against the boundary. Only shallow penetrations
+        //    are corrected; a deeply-interior target keeps the fallback below.
+        let target = match obstacles.snap_out_of_static(target, ego_radius, TARGET_SNAP_MAX) {
+            Some(snapped) => {
+                ctx.debug_string("plan.snapped", format!("{:.0}mm", (snapped - target).norm()));
+                ctx.debug_cross_colored("plan.snap_target", snapped, DebugColor::Blue);
+                snapped
+            }
+            None => {
+                ctx.debug_remove("plan.snapped");
+                ctx.debug_remove("plan.snap_target");
+                target
+            }
+        };
 
         // 1. Line-of-sight fast path: direct shot is clear → straight to target.
         if segment_clear(start, target, &shapes, ego_radius, step) {

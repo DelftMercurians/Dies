@@ -401,6 +401,60 @@ impl ObstacleSet {
         true
     }
 
+    /// If `target` sits just inside a **wall** or **defense area** by only a
+    /// small margin, project it out to the nearest point that clears
+    /// `ego_radius` and return that point. Moving robots and the ball are
+    /// deliberately ignored — ORCA handles those reactively, and snapping out of
+    /// a disc that moves next frame is pointless.
+    ///
+    /// Only shallow penetrations are corrected: `max_snap` caps how far *inside*
+    /// the physical obstacle the target may be — a target buried deeper than
+    /// `max_snap` mm is genuinely interior and returns `None` so the caller keeps
+    /// its `no_path` fallback. (The resulting nudge is larger than the
+    /// penetration, since it also has to back the robot's radius clear of the
+    /// edge.) Returns `None` (no change) when the target already clears these
+    /// shapes.
+    pub fn snap_out_of_static(
+        &self,
+        target: Vector2,
+        ego_radius: f64,
+        max_snap: f64,
+    ) -> Option<Vector2> {
+        const EPS: f64 = 1.0;
+        let relevant =
+            |k: ObstacleKind| matches!(k, ObstacleKind::Wall | ObstacleKind::DefenseArea);
+        let mut p = target;
+        // A handful of iterations: one push can leave the target inside a
+        // neighbouring wall/defense box (e.g. a defense-area corner), and box
+        // gradients are piecewise so a single step needn't fully clear.
+        for _ in 0..4 {
+            // Most-penetrated relevant shape (smallest clearance below the
+            // ego radius), with its outward gradient.
+            let mut worst: Option<(f64, Vector2)> = None;
+            for s in &self.statics {
+                if !relevant(s.kind) {
+                    continue;
+                }
+                let (c, g) = s.shape.clearance(p);
+                if c < ego_radius && worst.map_or(true, |(wc, _)| c < wc) {
+                    worst = Some((c, g));
+                }
+            }
+            let Some((clearance, grad)) = worst else {
+                // Clear of all walls / defense areas.
+                return (p != target).then_some(p);
+            };
+            // Depth of `p` inside the physical shape (0 if it's already outside
+            // the edge but merely within the robot radius of it). Only shallow
+            // penetrations qualify for a snap.
+            if (-clearance).max(0.0) > max_snap {
+                return None;
+            }
+            p += grad * (ego_radius - clearance + EPS);
+        }
+        None // didn't converge within the iteration budget
+    }
+
     /// Frozen view for the planner: dynamic agents become keep-out discs at
     /// their current position (inflated by `clearance`) alongside the static
     /// shapes. The planner treats the whole world as solid geometry and tests
@@ -573,5 +627,81 @@ mod tests {
                 .count()
                 > 1
         );
+    }
+
+    /// Build a set with a single box obstacle of the given kind centred at the
+    /// origin, spanning `±half` on each axis.
+    fn box_set(kind: ObstacleKind, half: f64) -> ObstacleSet {
+        ObstacleSet {
+            statics: vec![StaticObstacle::new(
+                ObstacleShape::Box {
+                    min: Vector2::new(-half, -half),
+                    max: Vector2::new(half, half),
+                },
+                kind,
+            )],
+            agents: Vec::new(),
+        }
+    }
+
+    const EGO: f64 = 90.0;
+    const SNAP: f64 = 100.0;
+
+    #[test]
+    fn snap_shallow_penetration_clears_ego_radius() {
+        let set = box_set(ObstacleKind::DefenseArea, 300.0);
+        // 40 mm inside the +x face.
+        let target = Vector2::new(260.0, 0.0);
+        let snapped = set.snap_out_of_static(target, EGO, SNAP).expect("should snap");
+        // Pushed out along +x, now clearing the ego radius.
+        assert!(snapped.x > target.x);
+        assert!((snapped.y - target.y).abs() < 1e-9);
+        assert!(set.clearance_at(snapped) >= EGO);
+    }
+
+    #[test]
+    fn deep_penetration_is_left_alone() {
+        let set = box_set(ObstacleKind::DefenseArea, 300.0);
+        // 150 mm inside the +x face — deeper than SNAP.
+        let target = Vector2::new(150.0, 0.0);
+        assert!(set.snap_out_of_static(target, EGO, SNAP).is_none());
+    }
+
+    #[test]
+    fn clear_target_is_unchanged() {
+        let set = box_set(ObstacleKind::Wall, 300.0);
+        let target = Vector2::new(1000.0, 0.0); // well outside
+        assert!(set.snap_out_of_static(target, EGO, SNAP).is_none());
+    }
+
+    #[test]
+    fn ball_and_robots_are_ignored() {
+        // A ball keep-out disc and an opponent agent both covering the target,
+        // but no wall / defense area → snap declines (ORCA's job).
+        let set = ObstacleSet {
+            statics: vec![StaticObstacle::new(
+                ObstacleShape::Circle {
+                    center: Vector2::new(0.0, 0.0),
+                    radius: 300.0,
+                },
+                ObstacleKind::Ball,
+            )],
+            agents: vec![DynamicAgent {
+                is_own: false,
+                position: Vector2::new(0.0, 0.0),
+                velocity: Vector2::zeros(),
+                radius: 90.0,
+            }],
+        };
+        assert!(set.snap_out_of_static(Vector2::new(20.0, 0.0), EGO, SNAP).is_none());
+    }
+
+    #[test]
+    fn snap_escapes_a_defense_box_corner() {
+        // Just inside a corner: both faces bind, needs more than one step.
+        let set = box_set(ObstacleKind::DefenseArea, 300.0);
+        let target = Vector2::new(280.0, 280.0);
+        let snapped = set.snap_out_of_static(target, EGO, SNAP).expect("should snap");
+        assert!(set.clearance_at(snapped) >= EGO);
     }
 }
