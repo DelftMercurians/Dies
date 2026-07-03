@@ -561,13 +561,10 @@ impl Strategy for ConcertoStrategy {
                     }
                 }
                 // Shadows (the wall, anchor included) hold their line: they must
-                // not be shoved aside by an attacker driving at the wall. Safe to
-                // leave on while the wall relocates — the executor's closing-speed
-                // attribution restores full avoidance toward any opponent the
-                // robot itself approaches.
+                // not be shoved aside by an attacker driving at the wall.
                 p.go_to(target)
                     .facing(cmd.face)
-                    .avoid_robots(cmd.role == "shadow");
+                    .avoid_robots(cmd.role != "shadow");
                 p.set_role(cmd.role);
             }
         }
