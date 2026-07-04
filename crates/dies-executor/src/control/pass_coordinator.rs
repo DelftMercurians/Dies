@@ -324,7 +324,7 @@ impl PassCoordinator {
             strike: HandleBallSkill::new(
                 BallAction::Strike {
                     target: Vector2::zeros(),
-                    acquire_first: false,
+                    acquire_first: true,
                 },
                 AcquirePosition::Default,
                 true,

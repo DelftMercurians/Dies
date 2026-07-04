@@ -641,6 +641,39 @@ impl Formation {
             });
         }
 
+        let opp_freekick =
+            !world.us_operating() && matches!(world.game_state(), GameState::FreeKick);
+        if opp_freekick {
+            let r = 1000.0;
+            // Kicker = opponent nearest the (centred) ball; track its heading, but
+            // only when it aims toward our half. Otherwise rest on the halfway line.
+            let aim = world
+                .closest_opp_player_to(ball)
+                .map(|k| k.heading.to_vector())
+                .and_then(|d| {
+                    let n = d.norm();
+                    (n > 1e-6).then(|| d / n)
+                })
+                .unwrap_or_else(|| Vector2::new(-1.0, 0.0));
+            // Point where the shot line crosses the guard's circle (ball ≈ centre),
+            // clamped onto our side of the halfway line while staying on the arc.
+            let mut pos = world
+                .closest_opp_player_to(ball)
+                .map(|p| p.position)
+                .unwrap_or(Vector2::zeros())
+                + aim * r;
+            roles.push(Role {
+                id: RoleId {
+                    kind: RoleKind::Spread,
+                    slot: 0,
+                },
+                position: pos,
+                importance: config::IMP_KICKOFF_GUARD,
+                face: ball,
+                bounds: None,
+            });
+        }
+
         // 1. Shadow / goal coverage. Fix A: always emit `SHADOW_MAX` shadows as a
         //    fixed-width wall; importance is staggered center-out (the central
         //    shadow on the ball→goal ray is most valuable, the wings fade) and
@@ -727,14 +760,13 @@ impl Formation {
                             } else {
                                 config::SHADOW_BOX_OFFSET
                             };
-                            let member_s =
-                                geometry::project_to_rect_offset(&pen, off, pl.position);
+                            let member_s = geometry::project_to_rect_offset(&pen, off, pl.position);
                             let target_s = prev + slot_offset(rid.slot);
                             max_lag = max_lag.max((member_s - target_s).abs());
                         }
                     }
-                    let pace = (1.0 - max_lag / config::WALL_LAG_TOL)
-                        .clamp(config::PACE_FLOOR, 1.0);
+                    let pace =
+                        (1.0 - max_lag / config::WALL_LAG_TOL).clamp(config::PACE_FLOOR, 1.0);
                     let max_step = config::WALL_SLEW_RATE * world.dt();
                     let delta = (desired_s - prev).clamp(-max_step, max_step);
                     prev + pace * delta

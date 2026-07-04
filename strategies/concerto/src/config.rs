@@ -59,7 +59,7 @@ pub const FORWARD_OK_BAR: f64 = 0.50;
 /// Div-B conservative mode: 0.0 — passes are the dominant self-inflicted turnover
 /// source against lower-tier opponents, so the carrier always shoots, carries, or
 /// hoofs. Restore 1.0 for peer-level play.
-pub const PASS_SUCCESS_BASE: f64 = 0.0;
+pub const PASS_SUCCESS_BASE: f64 = 0.8;
 /// How far behind the ball (toward our own half) the recycle pivot sits, on the
 /// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
 /// where an extra central body would invite the defence to collapse the shot zone.
@@ -162,11 +162,11 @@ pub const FINISH_CONTEST_OUR_DIST: f64 = 750.0;
 pub const BALL_RADIUS: f64 = 21.5;
 /// Effective radius (mm) of a field opponent when projecting its goal-line shadow.
 /// Robot radius (~90mm) plus a little slack for position noise.
-pub const SHOT_ROBOT_RADIUS: f64 = 110.0;
+pub const SHOT_ROBOT_RADIUS: f64 = 90.0;
 /// Effective radius (mm) of the opponent *keeper* shadow. Inflated well beyond a
 /// field robot: the keeper actively dives/slides to cover during the ball's flight,
 /// so it blocks far more of the mouth than its static footprint suggests.
-pub const SHOT_KEEPER_RADIUS: f64 = 280.0;
+pub const SHOT_KEEPER_RADIUS: f64 = 150.0;
 // Keeper-charge-aware shot model. The inflated keeper shadow above assumes the
 // keeper sits on its line and can dive/slide across the mouth during the ball's
 // flight. That stops being true once the keeper has *committed forward* off its
@@ -196,7 +196,7 @@ pub const SHOT_KEEPER_BIAS: f64 = 0.35;
 /// direct shot. Below this we fall through to the kick-ahead / pass logic. The
 /// angular gate scales with distance for free: ~0.10 rad is a ~130mm gap at 1.3m
 /// but needs a ~400mm gap at 4m.
-pub const SHOT_MIN_ANGLE: f64 = 0.10;
+pub const SHOT_MIN_ANGLE: f64 = 0.03;
 // ── Restart kicker aiming (kickoff / free kick) ──────────────────────────────
 // A restart kicker (our kickoff / free kick) always RELEASES with a strike-
 // through (a reflex `Strike`, never a hold-and-aim — that would double-touch).
@@ -225,10 +225,10 @@ pub const KICKER_SHOT_RANGE: f64 = 5600.0;
 // comfortable margin is fine; the *openness* scoring in `clean_advance` is what
 // prefers the roomiest lane. This veto only forbids actually hitting a robot.
 /// An opponent within this range of the ball, ahead on the aim ray, vetoes the aim.
-pub const CLOSE_OPP_VETO_DIST: f64 = 1200.0;
+pub const CLOSE_OPP_VETO_DIST: f64 = 500.0;
 /// Perpendicular half-width (mm) of the veto corridor — collision-sized
 /// (ball 21 + robot 90 + ~190 aim/tracking margin), NOT a danger bubble.
-pub const CLOSE_OPP_VETO_CORRIDOR: f64 = 300.0;
+pub const CLOSE_OPP_VETO_CORRIDOR: f64 = 100.0;
 /// Multiplier on the veto reach and corridor when the ball is in our own half.
 pub const CLOSE_OPP_VETO_OWN_HALF_MUL: f64 = 1.3;
 
@@ -250,7 +250,7 @@ pub const ADVANCE_FAN_STEPS: usize = 24;
 pub const ADVANCE_REACH: f64 = 2500.0;
 /// A heading whose ray leaves the field sooner than this (mm) is rejected — it
 /// would put the ball out almost immediately (e.g. straight at a near touchline).
-pub const ADVANCE_MIN_TRAVEL: f64 = 1200.0;
+pub const ADVANCE_MIN_TRAVEL: f64 = 500.0;
 /// Corridor (mm) for the lane-openness score of each candidate heading.
 pub const ADVANCE_CORRIDOR: f64 = 500.0;
 /// Forward-progress tiebreak weight: added as `w · dir.x` (dir.x ∈ [0,1]) to the

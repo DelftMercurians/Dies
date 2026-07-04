@@ -228,15 +228,8 @@ impl Planner {
                     && world.ball_contest().is_none()
                     && self.numerical_break(world, id, carrier_pos, inputs);
 
-                let waypoint = if world.ball_contest().is_some() {
-                    // An opponent is physically pinning the ball we nominally hold.
-                    // In the attacking strike zone, finish first-time — striking the
-                    // contested ball goalward beats trying to keep it and losing the
-                    // 50/50. Otherwise don't advance toward goal (that drives into the
-                    // presser — the old `correction_target` deadlock): break contact.
-                    self.contested_finish(world, ball_pos, opp_goal, carrier_pos)
-                        .unwrap_or_else(|| self.contest_escape(world, ball_pos, carrier_pos))
-                } else if let (true, Some(aim)) = (in_range, shot) {
+                let waypoint = if let (true, Some(aim)) = (in_range, shot) {
+                    // println!("posession finish: Open-goal shot");
                     // A real aimed shot is on: finish FIRST-TIME with a reflex
                     // `Strike` — one uninterrupted approach → contact → kick episode.
                     // The orbit-to-aim `Shoot` is retired: its kick gate refused any
@@ -318,69 +311,35 @@ impl Planner {
                     };
 
                     match forward {
-                        Some((Some(receiver), target_area, quality)) => {
-                            // A weak forward pass is recycled when a safe outlet
-                            // exists — unless we're on a fast break, where we commit
-                            // the forward ball even if its static lane reads weak
-                            // (the defence is still recovering, so the lane is more
-                            // open than the snapshot suggests).
-                            if !fast_break && quality < config::FORWARD_OK_BAR {
-                                recycle_or_finish().unwrap_or(Waypoint::Pass {
-                                    passer: id,
-                                    receiver,
-                                    target_area,
-                                    forward_to: None,
-                                })
-                            } else {
-                                Waypoint::Pass {
-                                    passer: id,
-                                    receiver,
-                                    target_area,
-                                    forward_to: None,
-                                }
-                            }
-                        }
+                        Some((Some(receiver), target_area, quality)) => Waypoint::Pass {
+                            passer: id,
+                            receiver,
+                            target_area,
+                            forward_to: None,
+                        },
                         // About to hoof into open space: recycle instead if we can —
                         // but on a fast break, drive the ball forward into the space
                         // behind their line rather than laying it back.
                         Some((None, target, _)) => {
-                            if fast_break {
-                                kickahead =
-                                    self.kickahead_receiver(world, id, ball_pos, target, inputs);
-                                hoof(target)
-                            } else if let Some(w) = recycle_or_finish() {
-                                w
-                            } else {
-                                // Open-space hoof: steer off a close marker in the
-                                // lane (never blast the ball into it).
-                                let target = self.safe_release(world, ball_pos, target);
-                                kickahead =
-                                    self.kickahead_receiver(world, id, ball_pos, target, inputs);
-                                hoof(target)
-                            }
+                            // println!("posession finish: About to hoof into open space");
+                            let target = shot_raw
+                                .map(|s| s.target)
+                                .unwrap_or(world.opp_goal_center());
+
+                            // hoof(self.safe_release(world, carrier_pos, target))
+                            hoof(target)
                         }
                         // Nothing forward at all: strike if in range, else recycle,
                         // else a short corrective dribble (under the carry cap), else
                         // release.
                         None => {
-                            if let Some(w) = recycle_or_finish() {
-                                w
-                            } else if inputs.carried < config::DRIBBLE_CORRECTION_LIMIT {
-                                let to = self.correction_target(carrier_pos, opp_goal, world);
-                                Waypoint::Handle {
-                                    action: BallAction::Carry {
-                                        to,
-                                        heading: goalward_heading(to, opp_goal),
-                                    },
-                                    rescue: false,
-                                }
-                            } else {
-                                let target = self
-                                    .safe_release(world, ball_pos, self.release_target(world, id, inputs));
-                                kickahead =
-                                    self.kickahead_receiver(world, id, ball_pos, target, inputs);
-                                hoof(target)
-                            }
+                            // println!("posession finish: Nothing forward at all");
+                            let target = shot_raw
+                                .map(|s| s.target)
+                                .unwrap_or(world.opp_goal_center());
+
+                            // hoof(self.safe_release(world, carrier_pos, target))
+                            hoof(target)
                         }
                     }
                 };
@@ -403,7 +362,39 @@ impl Planner {
                     .own_player(robot)
                     .map(|p| p.position)
                     .unwrap_or(ball_pos);
-                let waypoint = if on_boundary && !inputs.our_attacking_restart {
+                let shot_raw = geometry::best_shot(
+                    ball_pos,
+                    opp_goal.x,
+                    world.goal_width(),
+                    world.opp_players(),
+                    Self::opp_keeper(world),
+                    config::SHOT_ROBOT_RADIUS,
+                    Self::keeper_shot_radius(world),
+                    config::BALL_RADIUS,
+                    config::SHOT_KEEPER_BIAS,
+                );
+                let shot = shot_raw.filter(|s| s.angle >= config::SHOT_MIN_ANGLE);
+                let in_range = (actor_pos - opp_goal).norm() < config::SHOOT_RANGE;
+
+                let waypoint = if let (true, Some(aim)) = (in_range, shot) {
+                    // println!("loose finish: Open-goal shot");
+                    // A real aimed shot is on: finish FIRST-TIME with a reflex
+                    // `Strike` — one uninterrupted approach → contact → kick episode.
+                    // The orbit-to-aim `Shoot` is retired: its kick gate refused any
+                    // marginally-covered corridor and orbited indefinitely (the
+                    // dithering observed in the finishing battery), and its capture
+                    // hold made the action flip with every breakbeam flicker (the
+                    // capturing→shooting→capturing churn that deadlocked HandleBall's
+                    // possession-blind Hold). The window midpoint is still the target;
+                    // decisiveness beats the last few degrees of aim.
+                    Waypoint::Handle {
+                        action: BallAction::Strike {
+                            target: aim.target,
+                            acquire_first: false,
+                        },
+                        rescue: false,
+                    }
+                } else if on_boundary && !inputs.our_attacking_restart {
                     // A ball pinned on a line must be scooped inward, never struck
                     // (a strike would kick it out). `rescue` biases the approach
                     // inward; the driver computes the live approach heading.
@@ -430,20 +421,92 @@ impl Planner {
                         },
                         rescue: false,
                     }
+                } else if let Some(w) = self.corner_one_timer(world, robot, inputs) {
+                    // Corner one-timer: deep and wide of the box with no shot
+                    // window, cross to a teammate at the box edge for a reflex
+                    // redirect into goal — the one pass whitelisted past the
+                    // Div-B kill-switch. Pre-empts the strike-finish fallback
+                    // (a near-zero-angle blast) when the geometry is on.
+                    w
                 } else {
-                    // Strike the loose ball directly: decide the release target NOW
-                    // (from the ball position) and run one uninterrupted HandleBall
-                    // strike-through episode. The old capture-then-swap (Hold, then
-                    // replan to the real action on the possession flip) made the
-                    // action track the flickering breakbeam — the churn that
-                    // deadlocked the possession-blind Hold stage. The We-branch uses
-                    // the same target ladder, so a mid-strike possession flip
-                    // re-emits an equivalent Strike (a no-op live swap).
-                    self.contested_finish(world, ball_pos, opp_goal, actor_pos)
-                        .unwrap_or_else(|| Waypoint::Handle {
-                            action: self.strike_release(world, robot, ball_pos, inputs),
+                    // // Strike the loose ball directly: decide the release target NOW
+                    // // (from the ball position) and run one uninterrupted HandleBall
+                    // // strike-through episode. The old capture-then-swap (Hold, then
+                    // // replan to the real action on the possession flip) made the
+                    // // action track the flickering breakbeam — the churn that
+                    // // deadlocked the possession-blind Hold stage. The We-branch uses
+                    // // the same target ladder, so a mid-strike possession flip
+                    // // re-emits an equivalent Strike (a no-op live swap).
+                    // self.contested_finish(world, ball_pos, opp_goal, actor_pos)
+                    //     .unwrap_or_else(|| Waypoint::Handle {
+                    //         action: self.strike_release(world, robot, ball_pos, inputs),
+                    //         rescue: false,
+                    //     })
+
+                    let mut kickahead: Option<PlayerId> = None;
+
+                    let forward = self.best_kickahead_target(world, robot, inputs);
+                    let as_pass = |(receiver, target_area): (PlayerId, Vector2)| Waypoint::Pass {
+                        passer: robot,
+                        receiver,
+                        target_area,
+                        forward_to: None,
+                    };
+                    let hoof = |target: Vector2| Waypoint::Handle {
+                        action: BallAction::Strike {
+                            target,
+                            acquire_first: false,
+                        },
+                        rescue: false,
+                    };
+                    let carrier_pos = world
+                        .own_player(robot)
+                        .map(|p| p.position)
+                        .unwrap_or(ball_pos);
+                    let strike_zone = carrier_pos.x > 0.0
+                        && (carrier_pos - opp_goal).norm() < config::STRIKE_FINISH_RANGE;
+                    let finish = || {
+                        let target = self.finish_strike_target(world, ball_pos, opp_goal);
+                        Waypoint::Handle {
+                            action: BallAction::Strike {
+                                target,
+                                acquire_first: false,
+                            },
                             rescue: false,
-                        })
+                        }
+                    };
+                    match forward {
+                        Some((Some(receiver), target_area, quality)) => Waypoint::Pass {
+                            passer: robot,
+                            receiver,
+                            target_area,
+                            forward_to: None,
+                        },
+                        // About to hoof into open space: recycle instead if we can —
+                        // but on a fast break, drive the ball forward into the space
+                        // behind their line rather than laying it back.
+                        Some((None, target, _)) => {
+                            // println!("loose finish: About to hoof into open space");
+                            let target = shot_raw
+                                .map(|s| s.target)
+                                .unwrap_or(world.opp_goal_center());
+
+                            // hoof(self.safe_release(world, carrier_pos, target))
+                            hoof(target)
+                        }
+                        // Nothing forward at all: strike if in range, else recycle,
+                        // else a short corrective dribble (under the carry cap), else
+                        // release.
+                        None => {
+                            // println!("loose finish: Nothing forward at all");
+                            let target = shot_raw
+                                .map(|s| s.target)
+                                .unwrap_or(world.opp_goal_center());
+
+                            // hoof(self.safe_release(world, carrier_pos, target))
+                            hoof(target)
+                        }
+                    }
                 };
                 Plan {
                     waypoints: vec![waypoint],
@@ -708,17 +771,12 @@ impl Planner {
     /// half, where a blocked ball is most dangerous. Applied to every ball release —
     /// restart aim (shot / deflection / advance), open-play hoof, defensive clear.
     fn fires_into_close_opp(&self, world: &World, ball: Vector2, target: Vector2) -> bool {
-        let mul = if ball.x < 0.0 {
-            config::CLOSE_OPP_VETO_OWN_HALF_MUL
-        } else {
-            1.0
-        };
         geometry::fires_into_close_opponent(
             ball,
             target,
             world.opp_players(),
-            config::CLOSE_OPP_VETO_DIST * mul,
-            config::CLOSE_OPP_VETO_CORRIDOR * mul,
+            config::CLOSE_OPP_VETO_DIST,
+            config::CLOSE_OPP_VETO_CORRIDOR,
         )
     }
 
@@ -785,10 +843,12 @@ impl Planner {
         let opps = world.opp_players();
         let n = config::ADVANCE_FAN_STEPS;
         let mut best: Option<(Vector2, f64)> = None;
+        let goal_dir = (world.opp_goal_center() - from).normalize();
         for i in 0..=n {
-            let ang =
-                -config::ADVANCE_FAN_HALF + 2.0 * config::ADVANCE_FAN_HALF * (i as f64) / (n as f64);
+            let ang = -config::ADVANCE_FAN_HALF
+                + 2.0 * config::ADVANCE_FAN_HALF * (i as f64) / (n as f64);
             let dir = Vector2::new(ang.cos(), ang.sin());
+            let toward_goal = (goal_dir - dir).norm_squared();
             let exit = geometry::ray_exit_distance(from, dir, half_len, half_wid);
             if exit < config::ADVANCE_MIN_TRAVEL {
                 continue; // heading leaves the field almost immediately
@@ -797,8 +857,8 @@ impl Planner {
             if self.fires_into_close_opp(world, from, target) {
                 continue;
             }
-            let open = geometry::lane_openness(from, target, opps, config::ADVANCE_CORRIDOR);
-            let score = open + config::ADVANCE_FWD_W * dir.x;
+
+            let score = toward_goal;
             if best.map(|(_, s)| score > s).unwrap_or(true) {
                 best = Some((target, score));
             }
@@ -1032,8 +1092,7 @@ impl Planner {
                 if margin < 0.0 {
                     continue;
                 }
-                let open =
-                    geometry::lane_openness(pocket, aim, opps, config::KICK_LANE_CORRIDOR);
+                let open = geometry::lane_openness(pocket, aim, opps, config::KICK_LANE_CORRIDOR);
                 let score = margin + open * config::CORNER_OT_AIM_OPENNESS_WEIGHT;
                 if best.map_or(true, |(_, s)| score > s) {
                     best = Some((aim, score));
@@ -1823,8 +1882,8 @@ mod tests {
     fn corner_world(own: Vec<PlayerState>, extra_opps: Vec<PlayerState>) -> World {
         let ball = Vector2::new(4150.0, 2500.0);
         let mut opp = vec![
-            player(14, 4400.0, 100.0),  // their keeper
-            player(5, 4300.0, 2500.0),  // presser behind the ball
+            player(14, 4400.0, 100.0), // their keeper
+            player(5, 4300.0, 2500.0), // presser behind the ball
         ];
         opp.extend(extra_opps);
         world_contest(ball, own, opp, None)
@@ -2102,12 +2161,7 @@ mod tests {
         inp.our_restart_is_kickoff = true;
 
         let plan = planner
-            .replan(
-                &world,
-                &Possession::Loose,
-                Some(PlayerId::new(2)),
-                &inp,
-            )
+            .replan(&world, &Possession::Loose, Some(PlayerId::new(2)), &inp)
             .expect("should produce a plan");
         match &plan.waypoints[0] {
             Waypoint::Handle {
