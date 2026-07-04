@@ -403,10 +403,16 @@ impl Planner {
                     .own_player(robot)
                     .map(|p| p.position)
                     .unwrap_or(ball_pos);
-                let waypoint = if on_boundary {
+                let waypoint = if on_boundary && !inputs.our_attacking_restart {
                     // A ball pinned on a line must be scooped inward, never struck
                     // (a strike would kick it out). `rescue` biases the approach
                     // inward; the driver computes the live approach heading.
+                    //
+                    // Excluded for our attacking restart (kickoff / free kick): the
+                    // taker must take a clean strike-through, never scoop-and-hold.
+                    // A boundary Hold leaves the kicker holding the ball misaligned,
+                    // which loops HandleBall's held-ball re-aim disengage and the
+                    // restart never fires — it falls through to `strike_release`.
                     Waypoint::Handle {
                         action: BallAction::Hold {
                             heading: goalward_heading(ball_pos, opp_goal),

@@ -476,7 +476,7 @@ pub const THREAT_GOAL_FAR: f64 = 6000.0;
 /// (Fix A: SHADOW_MIN is retained for reference but the goal wall now always
 /// emits `SHADOW_MAX` shadows; the *staffed* count emerges from importance.)
 pub const SHADOW_MIN: usize = 1;
-pub const SHADOW_MAX: usize = 2; // TODO: CHECk
+pub const SHADOW_MAX: usize = 3; // TODO: CHECk
 /// Fix A: per-arc-step importance falloff for the always-emitted shadow wall.
 /// The central shadow (on the ball→goal ray) keeps full importance; each step out
 /// toward a wing multiplies by this, so at low threat only the centre is staffed
