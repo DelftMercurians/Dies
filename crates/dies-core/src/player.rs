@@ -214,7 +214,7 @@ fn kick_time_for_id(id: PlayerId) -> u16 {
         2 => 5100,
         3 => 8000, // maxes out at ~4.79 m/s
         4 => 5300,
-        5 => 5100,
+        5 => 2100,
         _ => 5100,
     }
 }

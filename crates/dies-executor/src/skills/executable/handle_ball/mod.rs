@@ -356,7 +356,7 @@ tunables! {
     YAW_TOLERANCE: f64 = 5.0 * std::f64::consts::PI / 180.0;
     /// Commanded kick speed for an aimed shot.
     #[tunable(unit = "mm/s", min = 1000.0, max = 6500.0, step = 100.0)]
-    KICK_SPEED: f64 = 4000.0;
+    KICK_SPEED: f64 = 2300.0;
     /// Half-width of the lane-openness corridor checked along the shot.
     #[tunable(unit = "mm", min = 50.0, max = 400.0, step = 10.0)]
     LANE_HALF_WIDTH: f64 = 120.0;
