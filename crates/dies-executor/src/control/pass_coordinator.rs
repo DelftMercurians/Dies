@@ -74,6 +74,26 @@ tunables! {
     /// coordinator to ungate the strike (the release barrier).
     #[tunable(unit = "mm", min = 50.0, max = 1000.0, step = 25.0)]
     RECEIVER_READY_DIST: f64 = 250.0;
+    /// Passer-staged barrier: max lateral offset (mm) of the passer from the
+    /// ball→target pass axis for the strike to ungate. The gated strike's design
+    /// assumes it reached its staging point BEFORE ungating ("waits there lined
+    /// up, commits the tick after ungating") — with a pre-posted receiver the
+    /// receiver-only barrier opened instantly and the drive-through ran from a
+    /// random pose, shoving the ball at body speed instead of kicking
+    /// (StoppedShort/KickFailed loops in the corner scenario). Must sit inside
+    /// the strike's own commit corridor (`COMMIT_PERP` 30 / release 70): at 130
+    /// an ungated-but-uncommitted drive still shell-shoved the ball (546 mm/s
+    /// departures from a stationary staged passer).
+    #[tunable(unit = "mm", min = 20.0, max = 400.0, step = 10.0)]
+    PASSER_STAGED_PERP: f64 = 40.0;
+    /// Passer-staged barrier: how far BEHIND the ball (mm, along the pass axis,
+    /// away from the target) the passer must at least be.
+    #[tunable(unit = "mm", min = 50.0, max = 400.0, step = 10.0)]
+    PASSER_STAGED_BEHIND_MIN: f64 = 100.0;
+    /// Passer-staged barrier: staging farther behind the ball than this doesn't
+    /// count as staged (the drive-through would build too much error).
+    #[tunable(unit = "mm", min = 300.0, max = 1200.0, step = 25.0)]
+    PASSER_STAGED_BEHIND_MAX: f64 = 700.0;
     /// Time budget for the `Stage` phase (passer staging + receiver positioning).
     /// Sized for a cold cross-field receiver pull (the corner one-timer nominates
     /// whichever robot is best, often ~7-8 m out): 8 s timed out on the first leg
@@ -486,10 +506,21 @@ impl PassCoordinator {
                 if let Some(r) = self.preflight_guard(ctx, ball_pos, STAGE_TIMEOUT()) {
                     result = Some(self.finish(r));
                 } else {
-                    // Barrier: ungate the strike once the receiver is ready. A
-                    // one-way edge — the receiver drifting off afterwards does
-                    // not re-gate a committed strike.
-                    let ready = (receiver.position - target_point).norm() < RECEIVER_READY_DIST();
+                    // Barrier: ungate the strike once the receiver is ready AND
+                    // the passer is staged behind the ball on the pass axis. A
+                    // one-way edge — either robot drifting off afterwards does
+                    // not re-gate a committed strike. The passer half exists
+                    // because a pre-posted receiver otherwise opens the barrier
+                    // on the first tick, releasing the drive-through from a
+                    // random pose (it shoves the ball instead of kicking).
+                    let receiver_ready =
+                        (receiver.position - target_point).norm() < RECEIVER_READY_DIST();
+                    let staged = passer_staged(passer.position, ball_pos, target_point);
+                    ctx.team_context.debug_value(
+                        format!("pass.{}-{}.passer_staged", self.passer, self.receiver),
+                        if staged { 1.0 } else { 0.0 },
+                    );
+                    let ready = receiver_ready && staged;
                     if ready {
                         self.enter(PassPhase::Release);
                         // log::info!("entering release {}", receiver.position - target_point);
@@ -1186,6 +1217,25 @@ impl PassCoordinator {
             }
         }
     }
+}
+
+/// Whether the passer stands in the staging window BEHIND the ball on the
+/// ball→target pass axis (see the `PASSER_STAGED_*` tunables). With no ball or
+/// degenerate geometry this is permissive (`true`) — those cases are owned by
+/// the preflight guards, not the barrier.
+fn passer_staged(passer: Vector2, ball_pos: Option<Vector2>, target: Vector2) -> bool {
+    let Some(ball) = ball_pos else {
+        return true;
+    };
+    let Some(axis) = (target - ball).try_normalize(1e-6) else {
+        return true;
+    };
+    let rel = passer - ball;
+    let along = rel.dot(&axis); // negative = behind the ball (staging side)
+    let perp = (rel - axis * along).norm();
+    along < -PASSER_STAGED_BEHIND_MIN()
+        && along > -PASSER_STAGED_BEHIND_MAX()
+        && perp < PASSER_STAGED_PERP()
 }
 
 fn bool_str(b: bool) -> &'static str {
