@@ -1,112 +1,133 @@
-//! The corner one-timer at its **real match geometry** — on a loop.
+//! The corner one-timer at real match geometry — simplified for LIVE testing.
 //!
-//! Concerto's corner play (see `strategies/concerto`, `CORNER_OT_*`) crosses
-//! from a corner carrier to a pocket at the opponent box edge, which redirects
-//! the ball into the goal with the pre-armed reflex kick. Its deflection is
-//! tight — ~135° against the coordinator's 120° `ONE_TIMER_MIN_DEFLECTION`
-//! gate — unlike the `pass_forward` scenario's comfortable ~165° head-on
-//! return. This scenario exercises the coordinator at exactly that marginal
-//! geometry: cross ≈ 3.5 m, deflection ≈ 136°.
+//! One fixed play, on a loop: the **striker** kicks the corner ball, the
+//! **receiver** posts at the far-side box-edge pocket and redirects it into
+//! the goal with the pre-armed reflex kick. All geometry is anchored to a real
+//! goal and computed from the live ball, so the play works wherever the ball
+//! is actually placed — no assumed seed points (the old fixed ball-relative
+//! offsets produced nonsense pockets when the ball wasn't at the sim's
+//! corner-analog; live logs 2026-07-04 showed 104° deflections and off-field
+//! hints from an own-corner ball).
 //!
-//! ## Why the positions look shifted
+//! ## Running it live
 //!
-//! The whole figure (ball → pocket → aim) is the real corner play translated
-//! 2.5 m away from the opponent goal, into open field. Deflection angles are
-//! translation-invariant, and the redirect must NOT fire into the physical
-//! goal — a scored ball wedges in the net and kills the loop (the same reason
-//! `pass_forward` aims at a virtual point). Legs alternate the mirrored ±y
-//! "corner" so the field re-seeds itself.
+//! 1. Place the ball in a corner near the tested goal, **at least ~0.5 m off
+//!    both lines** — the passer stages ~250 mm behind the ball on the cross
+//!    axis and needs in-field room (a ball tight on the touchline wedges the
+//!    release against the boundary).
+//! 2. The loop idles until the ball is seen settled near a corner of the
+//!    tested goal, then: striker frees/approaches the ball → one-timer cross
+//!    to the pocket → reflex redirect at the goal centre. After a shot,
+//!    place the ball back in a corner (either side — the pocket auto-flips to
+//!    the far side).
 //!
-//! Loop: carrier dribbles the ball to the corner-analog point, frees it
-//! (the pass never starts on a held ball), then the one-timer runs with the
-//! pocket/aim placed relative to wherever the ball actually settled.
+//! ## Env knobs (set on the dies process; the strategy child inherits them)
+//!
+//! - `SCENARIO_GOAL=opp` (default) aims at the opponent goal; `own` flips to
+//!   our own goal for half-field testing.
+//! - `SCENARIO_PASSER` / `SCENARIO_RECEIVER` — robot ids (defaults 1 and 5).
 
 use scenarios::prelude::*;
-
-/// Ball seed point of the +y leg — the corner-analog (real corner ≈
-/// (4100, 2450), translated −2500 in x away from the goal). Kept ≥550 mm off
-/// the touchline: the passer stages ~250 mm BEHIND the ball on the cross axis,
-/// and the carry can settle the ball up to 250 mm past the seed — a deeper
-/// seed wedges the release against the boundary (the exact failure the
-/// planner's `CORNER_OT_STAGE_ROOM` gate excludes in the real play).
-const SEED: Vector2 = Vector2::new(1600.0, 2450.0);
-
-/// Pocket relative to the settled ball (real play: ball (4100, 2600) →
-/// box-edge pocket (3200, −800)). Yields ≈136° deflection with [`AIM_REL`].
-const POCKET_REL: Vector2 = Vector2::new(-900.0, -3400.0);
-
-/// Redirect aim relative to the settled ball (real play: goal centre
-/// (4500, 0)).
-const AIM_REL: Vector2 = Vector2::new(400.0, -2600.0);
 
 /// How far from the ball the passer parks before the pass is commanded: past
 /// the coordinator's staging point (~200 mm) but well inside its start-distance
 /// guard (600 mm).
 const FREE_DIST: f64 = 400.0;
 
-/// Margin (mm) kept between the receive pocket and the field boundary.
-const FIELD_MARGIN: f64 = 190.0;
+/// Lateral standoff of the receive pocket outside the penalty-area side edge.
+const POCKET_MARGIN: f64 = 300.0;
 
-/// Clamp `pos` into the field playing area (minus [`FIELD_MARGIN`]).
-fn clamp_to_field(world: &World, pos: Vector2) -> Vector2 {
-    let hx = world.field_length() / 2.0 - FIELD_MARGIN;
-    let hy = world.field_width() / 2.0 - FIELD_MARGIN;
-    Vector2::new(pos.x.clamp(-hx, hx), pos.y.clamp(-hy, hy))
+/// Ball-to-corner distance within which the play arms (the "ball is placed"
+/// gate). Generous — anywhere in the corner region works, the geometry is
+/// computed from the actual ball position.
+const CORNER_RADIUS: f64 = 2000.0;
+
+fn env_id(name: &str, default: u32) -> PlayerId {
+    PlayerId::new(
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default),
+    )
 }
 
-/// One-timer geometry from the live ball: pocket and aim at the corner play's
-/// relative offsets, mirrored per leg by `side` (±1). `None` until the ball is
-/// seen.
-fn corner_geometry(world: &World, side: f64) -> Option<(Vector2, Vector2)> {
+/// `+1.0` = opponent goal (default), `-1.0` = our own goal (half-field tests).
+fn goal_sign() -> f64 {
+    match std::env::var("SCENARIO_GOAL").as_deref() {
+        Ok("own") => -1.0,
+        _ => 1.0,
+    }
+}
+
+/// Centre of the tested goal.
+fn goal_center(world: &World, sgx: f64) -> Vector2 {
+    Vector2::new(sgx * world.field_length() / 2.0, 0.0)
+}
+
+/// One-timer geometry anchored to the tested goal, from the live ball:
+/// pocket = mid-depth point just outside the penalty box's side edge on the
+/// side AWAY from the ball (the far post), aim = goal centre. From a corner
+/// ball this yields a comfortable ~155–170° deflection; the coordinator's
+/// 120° gate still vetoes a genuinely misplaced ball pre-release.
+fn corner_geometry(world: &World) -> Option<(Vector2, Vector2)> {
     let ball = world.ball_position()?;
-    let mirror = |v: Vector2| Vector2::new(v.x, v.y * side);
-    let pocket = clamp_to_field(world, ball + mirror(POCKET_REL));
-    let aim = ball + mirror(AIM_REL);
-    Some((pocket, aim))
+    let sgx = goal_sign();
+    let goal = goal_center(world, sgx);
+    let pen = if sgx > 0.0 {
+        world.opp_penalty_area()
+    } else {
+        world.own_penalty_area()
+    };
+    let depth = pen.max.x - pen.min.x;
+    let half_w = (pen.max.y - pen.min.y) / 2.0;
+    // Far side: opposite the ball's y (deterministic +y for a dead-central ball).
+    let side = if ball.y > 0.0 { -1.0 } else { 1.0 };
+    let pocket = Vector2::new(
+        goal.x - sgx * depth * 0.5,
+        side * (half_w + POCKET_MARGIN),
+    );
+    Some((pocket, goal))
 }
 
-/// Dribble the ball to `dest` (the leg's corner-analog), facing the upcoming
-/// pocket so the release backs straight off the cross axis. Succeeds once the
-/// ball has settled at the destination.
-fn carry_to(r: PlayerId, dest: Vector2, side: f64) -> Step {
-    Step::custom(format!("{r} carries the ball to the corner"), move |ctx| {
+/// Idle until the ball is seen settled in the corner region of the tested
+/// goal — lets a human walk in and (re)place the ball between legs without the
+/// robots thrashing after it.
+fn wait_for_corner_ball() -> Step {
+    Step::custom("waiting for a corner ball".to_string(), move |ctx| {
         let Some(ball) = ctx.world().ball_position() else {
             return StepOutcome::Running;
         };
-        let settled = ctx
-            .world()
+        let world = ctx.world();
+        let sgx = goal_sign();
+        let hx = sgx * world.field_length() / 2.0;
+        let hy = world.field_width() / 2.0;
+        let settled = world
             .ball_velocity()
             .map(|v| v.norm() < 150.0)
             .unwrap_or(false);
-        if (ball - dest).norm() < 250.0 && settled {
-            return StepOutcome::Succeeded;
+        let near_corner = [hy, -hy]
+            .iter()
+            .any(|&cy| (ball - Vector2::new(hx, cy)).norm() < CORNER_RADIUS);
+        if settled && near_corner {
+            // Staging-room check: the passer needs ~250 mm of in-field room
+            // behind the ball on the cross axis. A ball tight on a line WILL
+            // wedge the release (live logs 2026-07-04: 8 s stage burn, no
+            // kick) — warn the humans but still run, so they see it fail live.
+            let room = 450.0;
+            if world.field_length() / 2.0 - ball.x.abs() < room
+                || hy - ball.y.abs() < room
+            {
+                tracing::warn!(
+                    "corner ball only {:.0}/{:.0} mm off the lines — place it ≥{room:.0} mm out or the release will wedge",
+                    world.field_length() / 2.0 - ball.x.abs(),
+                    hy - ball.y.abs(),
+                );
+            }
+            StepOutcome::Succeeded
+        } else {
+            StepOutcome::Running
         }
-        if let Some(h) = ctx.player(r) {
-            let pocket_dir = Vector2::new(POCKET_REL.x, POCKET_REL.y * side);
-            h.handle_ball(
-                BallAction::Carry {
-                    to: dest,
-                    heading: Angle::from_radians(pocket_dir.y.atan2(pocket_dir.x)),
-                },
-                AcquirePosition::Default,
-            );
-        }
-        StepOutcome::Running
     })
-    .timeout(40.0)
-}
-
-/// Park the upcoming receiver far from the play — every leg is a COLD
-/// cross-field pull, like the real corner play (the receiver is nominated from
-/// wherever it happens to be, often the other side of the field). Without this
-/// the loop settles into a rhythm where the receiver starts each leg already
-/// posted near the pocket, which hides arrival-transient misses (observed:
-/// warm legs 100%, cold legs missed).
-fn pull_away(r: PlayerId, to: Vector2) -> Step {
-    Step::skill(format!("{r} parks far (cold pull)"), r, move |h| {
-        h.go_to(to);
-    })
-    .timeout(15.0)
 }
 
 /// Free the ball for `passer`: if the robot holds it (or is pressed against
@@ -136,27 +157,18 @@ fn release(passer: PlayerId) -> Step {
         }
         StepOutcome::Running
     })
-    .timeout(15.0)
+    .timeout(20.0)
 }
 
 fn main() {
     run_scenario(|| {
-        let a = PlayerId::new(3);
-        let b = PlayerId::new(4);
+        let striker = env_id("SCENARIO_PASSER", 1);
+        let receiver = env_id("SCENARIO_RECEIVER", 5);
         Scenario::looping(move || {
             vec![
-                // +y corner: a crosses, b is pulled COLD from across the field
-                // to the pocket and redirects.
-                carry_to(a, SEED, 1.0),
-                pull_away(b, Vector2::new(-1200.0, -1800.0)),
-                release(a),
-                Step::pass_forward(a, b, |w| corner_geometry(w, 1.0)).timeout(30.0),
-                Step::wait(3.0),
-                // Mirrored −y corner: roles swap, the field re-seeds itself.
-                carry_to(b, Vector2::new(SEED.x, -SEED.y), -1.0),
-                pull_away(a, Vector2::new(-1200.0, 1800.0)),
-                release(b),
-                Step::pass_forward(b, a, |w| corner_geometry(w, -1.0)).timeout(30.0),
+                wait_for_corner_ball(),
+                release(striker),
+                Step::pass_forward(striker, receiver, |w| corner_geometry(w)).timeout(30.0),
                 Step::wait(3.0),
             ]
         })

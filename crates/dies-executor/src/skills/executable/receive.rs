@@ -1,4 +1,4 @@
-use dies_core::{Angle, Vector2};
+use dies_core::{Angle, FieldGeometry, Vector2};
 use dies_tunables_macro::tunables;
 
 use crate::control::skill_executor::{SkillContext, SkillProgress};
@@ -49,6 +49,14 @@ tunables! {
     /// doesn't pull the receiver back early in flight.
     #[tunable(unit = "mm", min = 100.0, max = 1500.0, step = 50.0)]
     CUSHION_RANGE: f64 = 700.0;
+
+    /// Margin (mm, robot-centre) the receive stand point keeps outside the defense
+    /// areas — robot radius plus slack, so the whole robot stays legally out. The
+    /// intercept solve is box-blind (the lateral slide / fetch advance can land in a
+    /// defense area when the pass line clips a box corner); an illegal stand point is
+    /// slid back along the pass line to the first legal one.
+    #[tunable(unit = "mm", min = 90.0, max = 300.0, step = 10.0)]
+    RECEIVE_BOX_MARGIN: f64 = 130.0;
 }
 
 fn dkey(ctx: &SkillContext<'_>, tag: &str) -> String {
@@ -135,6 +143,63 @@ pub(super) fn solve_intercept(
         dist_to_target,
         line_dir,
     }
+}
+
+/// Best LEGAL receive stand point. Robots may never play in a defense area, and
+/// the intercept solve is box-blind — when the pass line clips a box corner its
+/// stand point can land inside one. Slide the point back along the pass line
+/// TOWARD the passer to the first point clear of both boxes (the ball travels
+/// passer→receiver, so the nearest upstream legal point is the best legal
+/// receive spot: the ball reaches it first, still on the line). Returns the
+/// point unchanged when it is already legal, geometry is unknown, or the
+/// direction is degenerate.
+pub(super) fn legal_receive_pos(
+    field: Option<&FieldGeometry>,
+    from: Vector2,
+    desired: Vector2,
+) -> Vector2 {
+    let margin = RECEIVE_BOX_MARGIN();
+    let Some(field) = field else {
+        return desired;
+    };
+    if !field.in_defense_area(desired, margin) {
+        return desired;
+    }
+    let Some(dir) = (from - desired).try_normalize(1e-6) else {
+        return desired;
+    };
+    // The (inflated) box containing the point, as an axis-aligned rect.
+    let hl = field.field_length / 2.0;
+    let depth = field.penalty_area_depth + margin;
+    let half_w = field.penalty_area_width / 2.0 + margin;
+    let (min, max) = if desired.x < 0.0 {
+        // Own box (goal at −x); extend past the goal line so the slab exit is
+        // always through a reachable in-field face.
+        (
+            Vector2::new(-hl - margin, -half_w),
+            Vector2::new(-hl + depth, half_w),
+        )
+    } else {
+        (
+            Vector2::new(hl - depth, -half_w),
+            Vector2::new(hl + margin, half_w),
+        )
+    };
+    // Slab exit: distance along `dir` to the first rect face crossed.
+    let axis_t = |lo: f64, hi: f64, p: f64, d: f64| -> f64 {
+        if d > 1e-9 {
+            (hi - p) / d
+        } else if d < -1e-9 {
+            (lo - p) / d
+        } else {
+            f64::INFINITY
+        }
+    };
+    let t = axis_t(min.x, max.x, desired.x, dir.x).min(axis_t(min.y, max.y, desired.y, dir.y));
+    if !t.is_finite() {
+        return desired;
+    }
+    desired + dir * (t + 1.0)
 }
 
 #[derive(Clone)]
@@ -225,7 +290,11 @@ impl ReceiveSkill {
             tc.debug_value(dkey(&ctx, "cushion_speed"), cushion_vel.norm());
         }
 
-        input.with_position(ix.position);
+        input.with_position(legal_receive_pos(
+            ctx.world.field_geom.as_ref(),
+            self.from_pos,
+            ix.position,
+        ));
         if cushion_vel.norm() > 1.0 {
             // Added to the position-controller output: keeps the receiver drifting
             // backward through the catch.
@@ -274,5 +343,36 @@ mod tests {
         let ball = Some((Vector2::new(1000.0, 300.0), Vector2::new(1000.0, 0.0)));
         let ix = solve_intercept(FROM, INTERCEPT, 100.0, ball);
         assert!((ix.position - Vector2::new(2000.0, 100.0)).norm() < 1e-6);
+    }
+
+    #[test]
+    fn illegal_receive_pos_slides_back_up_the_line() {
+        // Div-B default: opp box x>3500, |y|<1000. A stand point inside it, on a
+        // pass line from a corner ball, must slide back toward the passer until
+        // clear of both boxes — and stay on the line.
+        let field = FieldGeometry::default();
+        let from = Vector2::new(4200.0, 2800.0); // corner ball
+        let desired = Vector2::new(3900.0, 500.0); // inside the opp box
+        let legal = legal_receive_pos(Some(&field), from, desired);
+        assert!(
+            !field.in_defense_area(legal, RECEIVE_BOX_MARGIN() - 1.0),
+            "clamped point still in a defense area: {legal:?}"
+        );
+        // On the from→desired line, on the passer side of the box.
+        let dir = (from - desired).normalize();
+        let along = (legal - desired).dot(&dir);
+        let perp = (legal - desired - dir * along).norm();
+        assert!(perp < 1e-6, "clamp left the pass line by {perp:.1} mm");
+        assert!(along > 0.0, "clamp must move toward the passer");
+    }
+
+    #[test]
+    fn legal_receive_pos_is_identity_when_already_legal() {
+        let field = FieldGeometry::default();
+        let p = Vector2::new(2000.0, -1300.0);
+        assert_eq!(
+            legal_receive_pos(Some(&field), Vector2::new(4200.0, 2800.0), p),
+            p
+        );
     }
 }

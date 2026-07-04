@@ -318,7 +318,7 @@ pub const ESCAPE_CLEAR_AIM_Y: f64 = 250.0;
 /// Master switch for the whole play. `false` reverts cleanly to the previous
 /// Div-B behavior — no passes at all, only goal shots and kick-aheads (the
 /// planner branch is the single entry point, so nothing else changes).
-pub const CORNER_OT_ENABLED: bool = true;
+pub const CORNER_OT_ENABLED: bool = false;
 /// How far upfield of the opponent box front the trigger zone extends: the
 /// carrier must be at `x > box_front − CORNER_OT_ZONE_DEPTH`. Deep enough to
 /// cover the whole corner pocket where the strike-finish fallback fires from

@@ -177,7 +177,13 @@ impl ExecutableSkill for ReflexReceiveSkill {
             .try_normalize(1e-6)
             .unwrap_or_else(Vector2::zeros)
             * MOUTH_OFFSET();
-        input.with_position(ix.position - mouth);
+        // Never stand in a defense area: an illegal stance is slid back up the
+        // pass line to the best legal receive point (see `legal_receive_pos`).
+        input.with_position(super::receive::legal_receive_pos(
+            ctx.world.field_geom.as_ref(),
+            self.from_pos,
+            ix.position - mouth,
+        ));
 
         let tc = ctx.team_context;
         tc.debug_string(dkey(&ctx, "stage"), "armed");

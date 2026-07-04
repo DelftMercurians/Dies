@@ -75,8 +75,13 @@ tunables! {
     #[tunable(unit = "mm", min = 50.0, max = 1000.0, step = 25.0)]
     RECEIVER_READY_DIST: f64 = 250.0;
     /// Time budget for the `Stage` phase (passer staging + receiver positioning).
-    #[tunable(unit = "s", min = 1.0, max = 10.0, step = 0.5)]
-    STAGE_TIMEOUT: f64 = 8.0;
+    /// Sized for a cold cross-field receiver pull (the corner one-timer nominates
+    /// whichever robot is best, often ~7-8 m out): 8 s timed out on the first leg
+    /// and the instant retry released from a degraded passer pose (shell-shove
+    /// whiff, KickFailed). The gated strike holds fire the whole time, so a longer
+    /// budget only lengthens a held possession, never rushes a kick.
+    #[tunable(unit = "s", min = 1.0, max = 20.0, step = 0.5)]
+    STAGE_TIMEOUT: f64 = 12.0;
     /// Ball displacement from its pass-start position that aborts the pass while
     /// staging — the gated strike would otherwise follow a rolling ball forever.
     #[tunable(unit = "mm", min = 100.0, max = 1500.0, step = 50.0)]
