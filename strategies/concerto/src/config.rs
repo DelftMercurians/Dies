@@ -797,7 +797,7 @@ pub const SHADOW_HOLD_FAR: f64 = 900.0;
 /// Shadow roles are exempt — the wall must never step aside because a scrum
 /// arrived at it (its post is most valuable exactly then); Shadow staffing is
 /// instead moderated by the body-proximity slot-hold above.
-pub const SUPPRESS_RADIUS: f64 = 500.0;
+pub const SUPPRESS_RADIUS: f64 = 800.0;
 /// Max importance penalty applied at the centre of a suppression zone. Set above
 /// the shadow/mark bases so a redundant role on the contested ball decisively
 /// loses to anything further out (clustering fix).
@@ -831,7 +831,7 @@ pub const CAPTURE_COMMIT: f64 = 0.4;
 /// shadow↔support ping-pong that makes the wall shuffle — the wall-membership analogue
 /// of [`CAPTURE_COMMIT`]. Bounded below the wall importance so a genuine threat drop
 /// (wing importance fading) still releases the body; it only settles near-ties.
-pub const WALL_COMMIT: f64 = 0.5;
+pub const WALL_COMMIT: f64 = 0.7;
 /// Over-generate roles to this multiple of the assignable robot count.
 pub const OVERGEN_FACTOR: f64 = 1.5;
 /// Assignment recalculation cadence.

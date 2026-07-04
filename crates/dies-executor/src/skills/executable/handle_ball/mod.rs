@@ -42,7 +42,7 @@ mod strike;
 
 use std::time::Duration;
 
-use dies_core::{Angle, DebugColor, Vector2, PLAYER_RADIUS};
+use dies_core::{Angle, DebugColor, GameState, Vector2, PLAYER_RADIUS};
 use dies_strategy_protocol::{AcquirePosition, BallAction, SkillCommand, SkillStatus};
 use dies_tunables_macro::tunables;
 
@@ -800,6 +800,13 @@ impl ExecutableSkill for HandleBallSkill {
         // Held for arming purposes: the RAW breakbeam (the signal the firmware
         // reflex fires on) OR the fused possession.
         let holding = has_ball || ctx.player.breakbeam_ball_detected;
+        // An attacking-restart kicker (our kickoff / free kick) must do a clean
+        // strike-through ONLY — never disengage-and-re-strike, and never orbit to
+        // aim. Both re-aim modes loop the take and the restart never fires, so a
+        // restart kicker always drives through and reflex-fires regardless of yaw.
+        let gs = &ctx.world.current_game_state;
+        let our_restart = gs.us_operating
+            && matches!(gs.game_state, GameState::Kickoff | GameState::FreeKick);
         let reaim_disengage = REAIM_DISENGAGE() > 0.5;
 
         // Post-disengage: the deliberately released ball is kicked via the
@@ -836,7 +843,7 @@ impl ExecutableSkill for HandleBallSkill {
         {
             let in_aim_path = matches!(self.stage, Stage::Aim | Stage::Kicking | Stage::Verifying);
             if !in_aim_path {
-                if holding && self.reaim_needed(&ctx, target) {
+                if holding && !our_restart && self.reaim_needed(&ctx, target) {
                     if reaim_disengage {
                         self.enter_disengage(now);
                         self.emit_common(&ctx, "disengage");
