@@ -727,6 +727,25 @@ pub const OUTLET_Y_FRAC: f64 = 0.55;
 /// discounted Mark (≤4, deliberate: forward presence over man-marking) so that
 /// body holds high instead of collapsing all the way home.
 pub const IMP_OUTLET: f64 = 5.0;
+// ── Opponent-kickoff guard ───────────────────────────────────────────────────
+/// A single body that shadows the opponent kicker's aim just outside the centre
+/// circle on our side, ready for an instant catch of the kickoff. Active only
+/// while the opponent prepares/takes a kickoff.
+///
+/// Importance: below the (kickoff) shadow wall so the wall + keeper always staff
+/// first — at a centred ball the wings sit at `IMP_SHADOW_BASE·(0.5+0.5·threat)·
+/// SHADOW_STAGGER ≈ 12·0.66·0.8 ≈ 6.4` — but above every other role (Outlet 5.0,
+/// Striker 5.5, Support/Mark ≤4). So the guard claims the next body after the
+/// wall and yields a wing only when short-handed.
+pub const IMP_KICKOFF_GUARD: f64 = 6.0;
+/// How far outside the centre circle (mm) the guard rides — just clear of it, so
+/// it can step onto a rolling kickoff. (The lib.rs kickoff-staging push-out, which
+/// forces other robots to `radius + KICKOFF_CIRCLE_MARGIN`, is bypassed for this
+/// role; see the `kickoff_guard` exemption there.)
+pub const KICKOFF_GUARD_CIRCLE_MARGIN: f64 = 150.0;
+/// Margin (mm) past the halfway line onto our side: the guard's centre never
+/// crosses to `x > -this`, keeping the whole body on our half.
+pub const KICKOFF_GUARD_HALF_MARGIN: f64 = 150.0;
 // ── Wall clear ──────────────────────────────────────────────────────────────
 // A ball loose in front of our wall (the "apron" — near our goal, outside the
 // keeper's box) is the wall's to deal with, and the wall alone: while the ball

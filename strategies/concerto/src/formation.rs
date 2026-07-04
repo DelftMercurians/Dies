@@ -48,6 +48,10 @@ enum RoleKind {
     /// keeper + box anchor alone (it recovers into a wing of the wall). See the
     /// generator (gated on `attacking`).
     Balance,
+    /// Opponent-kickoff guard: one body just outside the centre circle on our
+    /// side that tracks the kicker's aim along the circle for an instant catch.
+    /// Active only during an opponent kickoff (prep + live).
+    KickoffGuard,
     Spread,
 }
 
@@ -59,6 +63,7 @@ fn role_name(kind: RoleKind) -> &'static str {
         RoleKind::Support => "support",
         RoleKind::Pivot => "pivot",
         RoleKind::Balance => "balance",
+        RoleKind::KickoffGuard => "kickoff_guard",
         RoleKind::Spread => "spread",
     }
 }
@@ -597,6 +602,51 @@ impl Formation {
                 GameState::Run | GameState::Halt | GameState::Timeout | GameState::Unknown
             )
             && ball.x < -half_len / 3.0;
+
+        // Opponent-kickoff guard. During the opponent's kickoff (prep + live) put
+        // one body just outside the centre circle on our side, on the kicker's aim
+        // line, tracking it along the circle for an instant catch. Importance sits
+        // just under the shadow wall (see IMP_KICKOFF_GUARD), so the wall + keeper
+        // staff first and this claims the next body. Rides a tight radius; the
+        // lib.rs kickoff-staging push-out exempts the "kickoff_guard" role so it can
+        // hug the circle instead of being shoved to the staging arc.
+        let opp_kickoff = !world.us_operating()
+            && matches!(
+                world.game_state(),
+                GameState::PrepareKickoff | GameState::Kickoff
+            );
+        if opp_kickoff {
+            let r = world.center_circle_radius() + config::KICKOFF_GUARD_CIRCLE_MARGIN;
+            // Kicker = opponent nearest the (centred) ball; track its heading, but
+            // only when it aims toward our half. Otherwise rest on the halfway line.
+            let aim = world
+                .closest_opp_player_to(ball)
+                .map(|k| k.heading.to_vector())
+                .filter(|d| d.x < 0.0)
+                .and_then(|d| {
+                    let n = d.norm();
+                    (n > 1e-6).then(|| d / n)
+                })
+                .unwrap_or_else(|| Vector2::new(-1.0, 0.0));
+            // Point where the shot line crosses the guard's circle (ball ≈ centre),
+            // clamped onto our side of the halfway line while staying on the arc.
+            let mut pos = aim * r;
+            let m = config::KICKOFF_GUARD_HALF_MARGIN;
+            if pos.x > -m {
+                let y = (r * r - m * m).max(0.0).sqrt() * if pos.y >= 0.0 { 1.0 } else { -1.0 };
+                pos = Vector2::new(-m, y);
+            }
+            roles.push(Role {
+                id: RoleId {
+                    kind: RoleKind::KickoffGuard,
+                    slot: 0,
+                },
+                position: pos,
+                importance: config::IMP_KICKOFF_GUARD,
+                face: ball,
+                bounds: None,
+            });
+        }
 
         // 1. Shadow / goal coverage. Fix A: always emit `SHADOW_MAX` shadows as a
         //    fixed-width wall; importance is staggered center-out (the central

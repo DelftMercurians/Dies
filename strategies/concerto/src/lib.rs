@@ -721,7 +721,11 @@ impl Strategy for ConcertoStrategy {
         for cmd in &fout.commands {
             if let Some(p) = ctx.player(cmd.id) {
                 let mut target = cmd.target;
-                if kickoff_staging {
+                // The kickoff guard positions itself tight to the centre circle on
+                // our side (see formation.rs); exempt it from the staging push-out,
+                // which would otherwise shove it to the far `+ KICKOFF_CIRCLE_MARGIN`
+                // staging arc.
+                if kickoff_staging && cmd.role != "kickoff_guard" {
                     target.x = target.x.min(KICKOFF_STAGE_X);
                     if target.norm() < circle_keepout {
                         // Slide out of the center circle along -x; with x already
