@@ -242,7 +242,7 @@ impl Planner {
                     Waypoint::Handle {
                         action: BallAction::Strike {
                             target: aim.target,
-                            acquire_first: false,
+                            acquire_first: true,
                         },
                         rescue: false,
                     }
@@ -270,7 +270,7 @@ impl Planner {
                     let hoof = |target: Vector2| Waypoint::Handle {
                         action: BallAction::Strike {
                             target,
-                            acquire_first: false,
+                            acquire_first: true,
                         },
                         rescue: false,
                     };
@@ -296,7 +296,7 @@ impl Planner {
                         Waypoint::Handle {
                             action: BallAction::Strike {
                                 target,
-                                acquire_first: false,
+                                acquire_first: true,
                             },
                             rescue: false,
                         }
@@ -376,7 +376,15 @@ impl Planner {
                 let shot = shot_raw.filter(|s| s.angle >= config::SHOT_MIN_ANGLE);
                 let in_range = (actor_pos - opp_goal).norm() < config::SHOOT_RANGE;
 
-                let waypoint = if let (true, Some(aim)) = (in_range, shot) {
+                let waypoint = if inputs.our_attacking_restart && ball_pos.x < 0.0 {
+                    Waypoint::Handle {
+                        action: BallAction::Strike {
+                            target: world.opp_goal_center(),
+                            acquire_first: false,
+                        },
+                        rescue: false,
+                    }
+                } else if let (true, Some(aim)) = (in_range, shot) {
                     // println!("loose finish: Open-goal shot");
                     // A real aimed shot is on: finish FIRST-TIME with a reflex
                     // `Strike` — one uninterrupted approach → contact → kick episode.
@@ -538,8 +546,9 @@ impl Planner {
                     Waypoint::Steal { from: oid }
                 } else {
                     Waypoint::Handle {
-                        action: BallAction::Hold {
-                            heading: goalward_heading(ball_pos, opp_goal),
+                        action: BallAction::Strike {
+                            target: world.opp_goal_center(),
+                            acquire_first: true,
                         },
                         rescue: false,
                     }

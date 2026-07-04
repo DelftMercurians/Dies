@@ -7,12 +7,12 @@
 // AND'd with the UI's live per-role toggles (`role_*` params): a role runs only
 // if both this and the UI switch are on.
 pub const ROLE_WALL_ENABLED: bool = true;
-pub const ROLE_MARK_ENABLED: bool = false; // TODO: only for ITA
+pub const ROLE_MARK_ENABLED: bool = true; // TODO: only for ITA
 pub const ROLE_SUPPORT_ENABLED: bool = true;
 pub const ROLE_STRIKER_ENABLED: bool = true;
-pub const ROLE_PIVOT_ENABLED: bool = true;
+pub const ROLE_PIVOT_ENABLED: bool = false;
 pub const ROLE_BALANCE_ENABLED: bool = false;
-pub const ROLE_OUTLET_ENABLED: bool = true;
+pub const ROLE_OUTLET_ENABLED: bool = false;
 
 /// Master switch for the goalkeeper. When `false` the keeper robot is not driven
 /// by the Guard/Clear machine and is no longer excluded from Formation — it folds
@@ -59,7 +59,7 @@ pub const FORWARD_OK_BAR: f64 = 0.50;
 /// Div-B conservative mode: 0.0 — passes are the dominant self-inflicted turnover
 /// source against lower-tier opponents, so the carrier always shoots, carries, or
 /// hoofs. Restore 1.0 for peer-level play.
-pub const PASS_SUCCESS_BASE: f64 = 0.8;
+pub const PASS_SUCCESS_BASE: f64 = 1.0;
 /// How far behind the ball (toward our own half) the recycle pivot sits, on the
 /// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
 /// where an extra central body would invite the defence to collapse the shot zone.
@@ -476,7 +476,7 @@ pub const THREAT_GOAL_FAR: f64 = 6000.0;
 /// (Fix A: SHADOW_MIN is retained for reference but the goal wall now always
 /// emits `SHADOW_MAX` shadows; the *staffed* count emerges from importance.)
 pub const SHADOW_MIN: usize = 1;
-pub const SHADOW_MAX: usize = 3; // TODO: CHECk
+pub const SHADOW_MAX: usize = 2; // TODO: CHECk
 /// Fix A: per-arc-step importance falloff for the always-emitted shadow wall.
 /// The central shadow (on the ball→goal ray) keeps full importance; each step out
 /// toward a wing multiplies by this, so at low threat only the centre is staffed
@@ -488,7 +488,7 @@ pub const SHADOW_MAX: usize = 3; // TODO: CHECk
 /// wall coverage (not a deeper central body) is what shrinks the open angle.
 pub const SHADOW_STAGGER: f64 = 0.8;
 /// How far in front of our goal the shadow line sits.
-pub const SHADOW_STANDOFF: f64 = 1600.0;
+pub const SHADOW_STANDOFF: f64 = 1000.0;
 /// Lateral spacing between adjacent shadows in the goal-coverage wall. Kept just
 /// under a robot width (~180mm) so neighbours overlap and leave no central gap —
 /// the wall is built centre-out on the direct ball→goal line, so an even count
@@ -504,7 +504,7 @@ pub const COMPACT_SPACING: f64 = SHADOW_SPACING;
 /// Together they replace the goal-centre-radial `SHADOW_STANDOFF`. Sits ~one
 /// robot-width-plus outside the anchor so a 2-body wall never stacks. Tuning surface
 /// — changes wall depth/coverage; validate in sim.
-pub const SHADOW_BOX_OFFSET: f64 = 550.0;
+pub const SHADOW_BOX_OFFSET: f64 = 100.0;
 /// Half-width (mm) of the bounded band around each shadow offset curve. The
 /// no-overshoot envelope keeps a waller within `offset ± this` of the box. Must
 /// exceed the executor's BOUNDS_MARGIN (30) or the target sits on an unreachable
