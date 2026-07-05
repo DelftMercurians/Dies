@@ -1,9 +1,9 @@
 //! Driver — realizes the current waypoint via skill commands and reports status.
 //!
-//! The planner decides *what* should happen to the ball; the Driver makes it
-//! happen for the active robot and reports Ongoing / Succeeded / Failed(reason)
-//! so the orchestrator can replan. The reason is informational (debug/logging);
-//! any failure simply triggers a fresh replan for the same most-eligible robot.
+//! The planner decides *where the ball should go*; the Driver makes it happen
+//! for the active robot and reports Ongoing / Succeeded / Failed(reason) so the
+//! orchestrator can replan. The reason is informational (debug/logging); any
+//! failure simply triggers a fresh replan for the same most-eligible robot.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -11,7 +11,6 @@ use dies_strategy_api::prelude::*;
 use dies_strategy_api::{PassFailure, PassResult, World};
 
 use crate::config;
-use crate::geometry;
 use crate::planner::{Engagement, PlanContext, Waypoint};
 
 /// Outcome of the current waypoint this tick.
@@ -36,15 +35,14 @@ pub enum FailReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
     Idle,
-    /// Unified acquire + carry + shoot/strike via `player.handle_ball`. One phase
-    /// for the whole ball-handling episode — the acquire→act transition is a live
-    /// param swap inside the skill, so the driver never tears it down.
-    Handle,
-    /// Strip a held ball off an opponent — press the ball and rotate to peel it
-    /// loose (the `snatch` skill). Distinct from `Handle` because it has a simpler
-    /// completion contract (succeed when the opponent loses the ball) and its own
-    /// timeout, not the pickup tiered-commit timer.
-    Snatch,
+    /// One strike-through ball episode via `player.handle_ball(Strike)`: the
+    /// skill stages behind the ball, drives through, and reflex-kicks. The
+    /// target is recommanded every frame, so a replan that only moves the aim is
+    /// a live param swap inside the running skill — never a teardown.
+    Strike,
+    /// Block an opponent holder: track a point directly in front of its dribbler
+    /// each tick. Never terminal — ends via replan edges (possession change).
+    Harass,
     /// A coordinated pass is in flight; the framework's `PassCoordinator` owns
     /// both robots. The driver just keeps the pass alive and watches the result.
     PassExec,
@@ -57,7 +55,7 @@ pub struct Driver {
     last_status: WaypointStatus,
     /// Ball position when the current waypoint started (for ball-moved detection).
     engage_ball_pos: Option<Vector2>,
-    /// Whether the post-kick latch reset has been handled for the current `Handle`
+    /// Whether the post-kick latch reset has been handled for the current `Strike`
     /// waypoint. A successful `HandleBall` kick is one-shot and latches the
     /// executor slot; a fresh episode clears it for one frame before re-commanding.
     handle_reset_done: bool,
@@ -122,6 +120,20 @@ impl Driver {
             && self.last_status == WaypointStatus::Ongoing
     }
 
+    /// The live pass being executed, if any: `(passer, receiver, target_area)`.
+    /// The orchestrator's pass follow-through pin is armed from this.
+    pub fn current_pass(&self) -> Option<(PlayerId, PlayerId, Vector2)> {
+        match &self.waypoint {
+            Some(Waypoint::Pass {
+                passer,
+                receiver,
+                target_area,
+                ..
+            }) => Some((*passer, *receiver, *target_area)),
+            _ => None,
+        }
+    }
+
     /// Coverage the plan-controlled robots provide this tick, for Formation's
     /// coverage accounting. Empty when no waypoint is active.
     pub fn plan_context(&self) -> PlanContext {
@@ -130,12 +142,16 @@ impl Driver {
             None => return PlanContext::default(),
         };
         let mut engagements = Vec::new();
-        // Any ball-holding/contesting waypoint occupies the ball area.
+        // Any ball-working waypoint occupies the ball area.
         if let Some(at) = self.engage_ball_pos {
             engagements.push(Engagement::BallContest { at });
         }
         match wp {
-            Waypoint::Steal { from } => engagements.push(Engagement::Engaging { opponent: *from }),
+            Waypoint::Harass { opponent } => {
+                engagements.push(Engagement::Engaging {
+                    opponent: *opponent,
+                });
+            }
             Waypoint::Pass { target_area, .. } => {
                 engagements.push(Engagement::ReceiveArea { at: *target_area })
             }
@@ -163,10 +179,8 @@ impl Driver {
     /// Begin executing a waypoint with the given active robot.
     pub fn set_waypoint(&mut self, waypoint: Waypoint, active_robot: PlayerId) {
         self.phase = match &waypoint {
-            // Stripping a held ball is a snatch; everything else (acquire + carry +
-            // shoot/strike) is one unified ball-handling episode.
-            Waypoint::Steal { .. } => Phase::Snatch,
-            Waypoint::Handle { .. } => Phase::Handle,
+            Waypoint::Strike { .. } => Phase::Strike,
+            Waypoint::Harass { .. } => Phase::Harass,
             Waypoint::Pass { .. } => Phase::PassExec,
         };
         if matches!(waypoint, Waypoint::Pass { .. }) {
@@ -200,7 +214,6 @@ impl Driver {
         if self.engage_ball_pos.is_none() {
             self.engage_ball_pos = Some(ball_pos);
         }
-        let opp_goal = world.opp_goal_center();
 
         // ── Pass: delegate to the joint coordinator ─────────────────────────
         // A pass is a degenerate waypoint: keep it alive (idempotent) and watch
@@ -252,6 +265,31 @@ impl Driver {
             return status;
         }
 
+        // ── Harass: track a block point in front of the holder's dribbler ───
+        // Positional, never terminal (the possession edge replans it away), and
+        // exempt from the ball-moved guard — the ball moves with the holder.
+        if let Waypoint::Harass { opponent } = waypoint {
+            let Some(holder) = world.opp_player(opponent) else {
+                // Holder vanished (sidelined / tracking lost): replan.
+                return self.finish(WaypointStatus::Failed(FailReason::SkillFailed));
+            };
+            let Some(player) = ctx.player(active_id) else {
+                return self.finish(WaypointStatus::Failed(FailReason::SkillFailed));
+            };
+            // Directly in front of the dribbler: on the holder's facing axis, a
+            // contact-distance standoff. ORCA off — it would refuse to press
+            // this close; the block point itself keeps us just off the bumper.
+            let facing = holder.heading.to_vector();
+            let block = holder.position + facing * config::HARASS_STANDOFF;
+            player
+                .go_to(block)
+                .facing(holder.position)
+                .avoid_robots(false);
+            player.set_role("harassing");
+            self.last_status = WaypointStatus::Ongoing;
+            return WaypointStatus::Ongoing;
+        }
+
         // ── Global failure: ball left the engagement area, and not ours ─────
         if let (Some(engage), Some(bp)) = (self.engage_ball_pos, world.ball_position()) {
             let ours = world
@@ -273,11 +311,11 @@ impl Driver {
         let has_ball = player.has_ball();
 
         // Post-kick latch reset: a successful one-shot `HandleBall` kick latches the
-        // executor slot, so a *fresh* `Handle` episode must clear it for one frame
+        // executor slot, so a *fresh* `Strike` episode must clear it for one frame
         // before re-commanding (else the new command is ignored). This only fires
-        // when the previous skill actually succeeded — a `Hold → Shoot` live swap
-        // stays `Running` and updates in place, which is the seam fix.
-        if self.phase == Phase::Handle && !self.handle_reset_done {
+        // when the previous skill actually succeeded — a live target update on a
+        // Running strike stays in place, which is the seam fix.
+        if self.phase == Phase::Strike && !self.handle_reset_done {
             self.handle_reset_done = true;
             if skill_status == SkillStatus::Succeeded {
                 player.stop();
@@ -287,37 +325,19 @@ impl Driver {
         }
 
         let status = match (&waypoint, self.phase) {
-            // ── Handle (acquire + carry + shoot/strike) ─────────────────
-            // One unified skill owns the whole episode: it stages behind the ball,
-            // commits the capture, then (for Shoot) orbits to aim and kicks — all
-            // without a teardown, so the capture→aim seam keeps its state. The
-            // action is recommanded every frame; swapping it (e.g. once we secure
-            // the ball) is a live param update on the same skill instance.
-            (Waypoint::Handle { action, rescue }, Phase::Handle) => {
-                // Acquire exit-bias, computed live so a contested/boundary capture
-                // scoops the ball to the open side. Only used while `!has_ball`;
-                // for non-Hold actions the default action-derived bias is fine.
-                let acquire = if matches!(action, BallAction::Hold { .. }) {
-                    AcquirePosition::Heading(pickup_heading(
-                        world, active_id, ball_pos, opp_goal, *rescue,
-                    ))
-                } else {
-                    AcquirePosition::Default
-                };
-                player.handle_ball(*action, acquire);
-                player.set_role(match action {
-                    BallAction::Shoot { .. } => "shooting",
-                    BallAction::Strike { .. } => "kicking",
-                    BallAction::Carry { .. } => "carrying",
-                    BallAction::Hold { .. } if *rescue => "rescuing",
-                    BallAction::Hold { .. } => "capturing",
-                });
-
-                // The skill owns all execution timing (approach/pickup/aim/carry
-                // timeouts live inside `HandleBall`); the driver just maps its terminal
-                // status. `Carry` self-completes on arrival and `Shoot`/`Strike` on the
-                // verified kick; `Hold` never self-completes — the planner replans it
-                // away on the possession flip.
+            // ── Strike-through kick ─────────────────────────────────────
+            // The skill owns the whole episode (stage behind the ball, commit,
+            // drive through, reflex kick, verify) and all execution timing; the
+            // driver just maps its terminal status.
+            (Waypoint::Strike { target }, Phase::Strike) => {
+                player.handle_ball(
+                    BallAction::Strike {
+                        target: *target,
+                        acquire_first: false,
+                    },
+                    AcquirePosition::Default,
+                );
+                player.set_role("kicking");
                 match skill_status {
                     SkillStatus::Succeeded => WaypointStatus::Succeeded,
                     SkillStatus::Failed => WaypointStatus::Failed(if has_ball {
@@ -325,23 +345,6 @@ impl Driver {
                     } else {
                         FailReason::PossessionLost
                     }),
-                    _ => WaypointStatus::Ongoing,
-                }
-            }
-
-            // ── Snatch (strip a held ball) ──────────────────────────────
-            // The opponent is holding the ball on its dribbler. Press our dribbler
-            // against the ball and rotate to peel it loose, aimed to a safe clear
-            // away from the holder. Succeeds when the opponent loses the ball — the
-            // ball then goes loose and the next replan captures it normally.
-            (Waypoint::Steal { from }, Phase::Snatch) => {
-                let release = snatch_release_hint(world, *from, ball_pos);
-                player.snatch(release);
-                player.set_role("snatching");
-                // The `snatch` skill owns its own timeout; map its terminal status.
-                match skill_status {
-                    SkillStatus::Succeeded => WaypointStatus::Succeeded,
-                    SkillStatus::Failed => WaypointStatus::Failed(FailReason::SkillFailed),
                     _ => WaypointStatus::Ongoing,
                 }
             }
@@ -366,96 +369,6 @@ impl Driver {
         self.phase = Phase::Idle;
         status
     }
-}
-
-/// Heading pointing from `from` toward `to`.
-fn heading_toward(from: Vector2, to: Vector2) -> Angle {
-    let d = to - from;
-    Angle::from_radians(d.y.atan2(d.x))
-}
-
-/// How far ahead (mm) the snatch release point is placed. Only its *direction*
-/// from the ball matters (the skill picks which way to peel from it), so the
-/// magnitude is arbitrary — just large enough to be a stable direction.
-const SNATCH_RELEASE_AIM: f64 = 1000.0;
-
-/// Where to knock a stripped ball: a safe clear *away from the holder*. The peel
-/// moves the ball perpendicular to the holder's facing, so the only real choice
-/// is which lateral side — pick the one pointing away from our own goal (upfield)
-/// so a strip never squirts the ball back toward danger. Returns `None` (skill's
-/// own safe default) if the holder can't be located.
-fn snatch_release_hint(world: &World, holder: PlayerId, ball: Vector2) -> Option<Vector2> {
-    let holder_pos = world.opp_player(holder)?.position;
-    let facing = ball - holder_pos;
-    if facing.norm() < 1e-3 {
-        return None;
-    }
-    let facing = facing.normalize();
-    // The two lateral (perpendicular) escape directions.
-    let lateral = Vector2::new(-facing.y, facing.x);
-    let away_from_goal = (ball - world.own_goal_center()).normalize();
-    let side = if lateral.dot(&away_from_goal) >= 0.0 {
-        lateral
-    } else {
-        -lateral
-    };
-    Some(ball + side * SNATCH_RELEASE_AIM)
-}
-
-/// How strongly the off-axis escape direction bends the contested pickup heading
-/// away from the straight-at-goal aim (0 = aim at goal, larger = more sideways).
-const CONTEST_HEADING_BIAS: f64 = 0.7;
-
-/// Capture heading for the pickup phase. With no contest, aim straight at the
-/// opponent goal (unchanged). Under contest, blend the goal direction with the
-/// off-axis [`geometry::escape_direction`] so we scoop the loose ball to our open
-/// side instead of head-butting the opponent straight over it.
-fn pickup_heading(
-    world: &World,
-    robot: PlayerId,
-    ball: Vector2,
-    opp_goal: Vector2,
-    rescue: bool,
-) -> Angle {
-    // Boundary rescue takes priority: dribble the ball back into the field rather
-    // than along/over the line. Falls through to the normal heading if the ball
-    // has since drifted off the boundary.
-    if rescue {
-        if let Some(h) = geometry::boundary_rescue_heading(
-            ball,
-            opp_goal,
-            world.field_length() / 2.0,
-            world.field_width() / 2.0,
-            config::BOUNDARY_RESCUE_MARGIN,
-            config::RESCUE_GOAL_BIAS,
-        ) {
-            return h;
-        }
-    }
-    if world.ball_contest().is_none() {
-        return heading_toward(ball, opp_goal);
-    }
-    let robot_pos = world.own_player(robot).map(|p| p.position).unwrap_or(ball);
-    let presser = world
-        .principal_presser()
-        .and_then(|id| world.opp_player(id))
-        .map(|p| p.position)
-        .unwrap_or(ball);
-    let escape = geometry::escape_direction(
-        robot_pos,
-        presser,
-        ball,
-        world.opp_players(),
-        world.field_width() / 2.0,
-    );
-    let to_goal = opp_goal - ball;
-    let to_goal = if to_goal.norm() > 1e-6 {
-        to_goal / to_goal.norm()
-    } else {
-        Vector2::new(1.0, 0.0)
-    };
-    let blended = to_goal + escape * CONTEST_HEADING_BIAS;
-    Angle::from_radians(blended.y.atan2(blended.x))
 }
 
 /// Map a typed pass failure onto the driver's coarse `FailReason` (informational).
@@ -578,5 +491,13 @@ mod tests {
         assert_eq!(d.update(&world, &mut ctx), WaypointStatus::Ongoing);
         assert!(d.is_passing());
         assert_eq!(d.plan_slots(), vec![PlayerId::new(2), PlayerId::new(3)]);
+        assert_eq!(
+            d.current_pass(),
+            Some((
+                PlayerId::new(2),
+                PlayerId::new(3),
+                Vector2::new(2500.0, 0.0)
+            ))
+        );
     }
 }

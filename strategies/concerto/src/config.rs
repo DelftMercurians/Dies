@@ -10,7 +10,6 @@ pub const ROLE_WALL_ENABLED: bool = true;
 pub const ROLE_MARK_ENABLED: bool = true; // TODO: only for ITA
 pub const ROLE_SUPPORT_ENABLED: bool = true;
 pub const ROLE_STRIKER_ENABLED: bool = true;
-pub const ROLE_PIVOT_ENABLED: bool = false;
 pub const ROLE_BALANCE_ENABLED: bool = false;
 pub const ROLE_OUTLET_ENABLED: bool = false;
 
@@ -23,93 +22,35 @@ pub const ROLE_OUTLET_ENABLED: bool = false;
 /// this stays the single gate.
 pub const GOALIE_ENABLED: bool = true;
 
-// ── Attacking-half recycle pivot ─────────────────────────────────────────────
-// When the carrier has no good *forward* option in the opponent half, it lays the
-// ball back to a deep recycle pivot to keep possession, rather than forcing a
-// low-percentage forward pass or hoofing into space (the two dominant turnover
-// sources). Gated to the attacking half so we never circulate the ball in our own
-// half, where a turnover becomes a goal. In headless self-play vs v0 (32 paired
-// seeds) this lifted pass completion ~2.4×, cut turnovers ~40%, lengthened
-// possession chains, and *raised* shots/SOT — with goals-for and goals-against vs
-// v0 unchanged. Earlier variants that recycled everywhere (own half too) conceded
-// significantly more and lost; the attacking-half gate is what makes it pay.
-//
-/// Forward-pass quality (lane openness × receiver clearance, 0..1) at/above which a
-/// forward pass is taken outright instead of recycling. Below it, a weak forward
-/// pass (or a hoof into space) is recycled when a safe outlet exists.
-pub const FORWARD_OK_BAR: f64 = 0.50;
-
 /// Global pass-propensity knob — a single scalar multiplied into **every**
-/// pass-success estimate concerto computes (forward-pass quality, forward-outlet
-/// eligibility, and recycle openness). It is the one global lever for "how much to
+/// pass-success estimate concerto computes (forward-pass quality and
+/// forward-outlet eligibility). It is the one global lever for "how much to
 /// pass vs just shoot":
 /// - `1.0` (default) — neutral; behaviour is unchanged from an ungated build.
 /// - `(0, 1)` — progressively discount every pass's assessed success, so more
-///   forward balls fall below [`FORWARD_OK_BAR`] / [`SUPPORTER_MIN_OPENNESS`] and
-///   are downgraded to a strike-finish, hoof, or short carry. Biases toward
-///   shooting/carrying.
-/// - `0.0` — passing is fully disabled: no pass ever clears its gate, so the
-///   planner never emits a `Waypoint::Pass`. The carrier always shoots, carries,
-///   or hoofs; a set-piece kicker still releases forward into open space.
+///   forward balls fall below [`SUPPORTER_MIN_OPENNESS`] and are downgraded to a
+///   strike-finish or hoof. Biases toward shooting.
+/// - `0.0` — passing is fully disabled: no forward pass ever clears its gate
+///   (the corner one-timer has its own geometry gates and is unaffected). The
+///   ball is always advanced by a strike.
 /// - `> 1.0` — biases toward passing (marginal lanes clear their gate more often).
-///
-/// Because every pass gate scales linearly with it, `0.0` disabling passing falls
-/// out of the arithmetic — no special-casing needed.
-///
-/// Div-B conservative mode: 0.0 — passes are the dominant self-inflicted turnover
-/// source against lower-tier opponents, so the carrier always shoots, carries, or
-/// hoofs. Restore 1.0 for peer-level play.
 pub const PASS_SUCCESS_BASE: f64 = 1.0;
-/// How far behind the ball (toward our own half) the recycle pivot sits, on the
-/// ball's flank. Deep enough to be a safe lay-back outlet, never up in the box
-/// where an extra central body would invite the defence to collapse the shot zone.
-pub const PIVOT_SETBACK: f64 = 1400.0;
-/// Lateral band (|y|) the pivot holds — ball-side half-space, clamped so it stays
-/// central enough to switch play but off the exact ball line.
-pub const PIVOT_Y_MIN: f64 = 300.0;
-pub const PIVOT_Y_MAX: f64 = 1800.0;
-/// Importance of the pivot. Kept at the conservative-support level so a *surplus*
-/// body takes it; it never outbids a shadow/mark and pulls a defender out of shape
-/// (the defensive cost that sank the more prominent-pivot variants).
-pub const IMP_PIVOT: f64 = 3.0;
-/// ── Rest defense (lever 2: don't over-commit on the counter) ────────────────
-/// While attacking, all field robots but the keeper + box anchor pile forward
-/// (2 wide support + box-runner + pivot), so a turnover leaves the goal to the
-/// keeper + anchor alone and the wing wall has nobody recoverable to staff it.
-/// The Balance role keeps ONE body home as rest defense: it is placed on the
-/// ball→own-goal ray this far (mm) in front of our goal — own-half/midfield, on
-/// the most likely counter lane — so on turnover it is already there to take a
-/// wing of the wall while the deep attackers recover.
+/// ── Rest defense (don't over-commit on the counter) ─────────────────────────
+/// While attacking, all field robots but the keeper + box anchor pile forward,
+/// so a turnover leaves the goal to the keeper + anchor alone and the wing wall
+/// has nobody recoverable to staff it. The Balance role keeps ONE body home as
+/// rest defense: it is placed on the ball→own-goal ray this far (mm) in front of
+/// our goal — own-half/midfield, on the most likely counter lane — so on
+/// turnover it is already there to take a wing of the wall while the deep
+/// attackers recover.
 pub const BALANCE_STANDOFF: f64 = 3500.0;
 /// Importance of the rest-defense Balance role while attacking. Set above the
 /// forward block (IMP_SUPPORT_ATTACK = 5.0, IMP_STRIKER = 5.5) so it wins exactly
-/// one body — displacing the *pivot* (IMP_PIVOT = 3.0, the least-critical forward
-/// outlet), not a support — but below the box anchor (8.0 × 0.8 = 6.4), so it
-/// never outranks the genuine last line. Sits above the discounted Mark (≤4),
-/// which is intended: rest-defense shape beats man-marking in the current
-/// tuning. Only emitted when `attacking`.
+/// one body, but below the box anchor (8.0 × 0.8 = 6.4), so it never outranks
+/// the genuine last line. Sits above the discounted Mark (≤4), which is
+/// intended: rest-defense shape beats man-marking in the current tuning. Only
+/// emitted when `attacking`.
 pub const IMP_BALANCE: f64 = 5.0;
-/// A recycle outlet must be at least this far from the carrier (a real switch of
-/// play, not a tap) and its lane this open, to be worth laying the ball back to.
-pub const RECYCLE_MIN_DIST: f64 = 1200.0;
-pub const RECYCLE_MIN_OPENNESS: f64 = 0.6;
-
-// ── Fast-break commit (transient counter-attack) ─────────────────────────────
-// The patient recycle (above) keeps possession but is wrong on a clean
-// counter-attack: in the 1–2 s after we win the ball the opponent is still
-// recovering, so the open lane is *forward*, not backward. For a short window
-// after a turnover, when we have a genuine numerical break — strictly more of our
-// own bodies goal-side of the ball than the opponent has (its keeper excluded) —
-// we commit the ball forward (kick-ahead to a supporter, or a hoof into the space
-// behind their line) instead of laying it back. This is net-asymmetric: it can
-// only fire for the team that just recovered the ball, so a frozen mirror of
-// ourselves can't symmetrically copy it; and it is self-limiting — once the
-// defence recovers its numbers goal-side, the break gate closes and play reverts
-// to the patient shape. The numerical gate keeps it safe: we never gamble the
-// direct ball when we are outnumbered at the back.
-/// Seconds after winning the ball during which a numerical break is committed
-/// forward rather than recycled. Outside this window play is always patient.
-pub const FAST_BREAK_WINDOW: f64 = 1.5;
 
 // ── Robot motion model (used by momentum-aware redirect cost) ───────────────
 /// Assumed top speed for time-to-target estimates.
@@ -135,20 +76,6 @@ pub const SHOOT_RANGE: f64 = 4000.0;
 /// corridor and orbits forever from wide/covered angles; the Strike fires through
 /// it, turning stalled attacking possessions into shots.
 pub const STRIKE_FINISH_RANGE: f64 = 3600.0;
-
-/// First-time finish: a *contested* ball in the attacking strike zone (within
-/// [`STRIKE_FINISH_RANGE`] of the opponent goal) is struck goalward on contact
-/// rather than settled. Trying to settle a genuine 50/50 in the final third loses
-/// the ball and concedes a counter — the recurring finishing-battery failure
-/// (ball sits in the attacking third, the 50/50 is lost, the opponent counters
-/// the length of the field). A reflex strike-through forces a save/rebound/corner
-/// and pins the ball in the attacking third instead. The contest is "genuine" when
-/// an opponent is within [`FINISH_CONTEST_OPP_DIST`] of the ball AND our actor is
-/// within [`FINISH_CONTEST_OUR_DIST`] — i.e. a reflex strike is imminent, not a
-/// long traverse during which the picture changes. If we'd win the ball clean (no
-/// opponent near), we settle and build instead of hacking at goal.
-pub const FINISH_CONTEST_OPP_DIST: f64 = 600.0;
-pub const FINISH_CONTEST_OUR_DIST: f64 = 750.0;
 
 // ── Open-goal shot aiming ───────────────────────────────────────────────────
 // Instead of only ever shooting at the goal *centre* (which a keeper tracking the
@@ -213,32 +140,24 @@ pub const SHOT_MIN_ANGLE: f64 = 0.03;
 pub const KICKER_SHOT_RANGE: f64 = 5600.0;
 
 // ── Never fire into a close opponent ─────────────────────────────────────────
-// A universal veto on any ball release (restart shot / deflection / advance,
-// open-play hoof, defensive clear) whose ray drives the ball almost immediately
-// INTO a nearby opponent — worst of all in our own half, where a blocked ball
-// hands them a shot on our goal. Reach and corridor widen in our own half.
-//
-// The corridor is COLLISION-sized, not a danger bubble: ~ball radius + robot
-// radius + aim margin. A wider bubble would seal every forward lane whenever a
-// marker sits closer than the bubble (the t=1125 free-kick failure), forcing the
-// very hoof-into-the-marker it was meant to prevent. Clearing an opponent by a
-// comfortable margin is fine; the *openness* scoring in `clean_advance` is what
-// prefers the roomiest lane. This veto only forbids actually hitting a robot.
+// A veto on any ball release (restart shot / deflection / advance, open-play
+// hoof) whose ray drives the ball straight INTO an opponent at point-blank
+// range. Tuned VERY aggressively: it fires only on a *direct shadow* of the
+// kick ray — collision-imminent, ball radius + robot radius, nothing wider.
+// A wider bubble seals every forward lane whenever a marker stands near (the
+// t=1125 free-kick failure), forcing the very hoof-into-the-marker it was meant
+// to prevent. Lane *preference* is `clean_advance`'s openness scoring, not this.
 /// An opponent within this range of the ball, ahead on the aim ray, vetoes the aim.
-pub const CLOSE_OPP_VETO_DIST: f64 = 500.0;
-/// Perpendicular half-width (mm) of the veto corridor — collision-sized
-/// (ball 21 + robot 90 + ~190 aim/tracking margin), NOT a danger bubble.
-pub const CLOSE_OPP_VETO_CORRIDOR: f64 = 100.0;
-/// Multiplier on the veto reach and corridor when the ball is in our own half.
-pub const CLOSE_OPP_VETO_OWN_HALF_MUL: f64 = 1.3;
+pub const CLOSE_OPP_VETO_DIST: f64 = 300.0;
+/// Perpendicular half-width (mm) of the veto corridor — a direct shadow only
+/// (ball 21 + robot 90, essentially touching the ray).
+pub const CLOSE_OPP_VETO_CORRIDOR: f64 = 115.0;
 
-// ── Clean advance (restart / hoof fallback) ──────────────────────────────────
-// The universal fallback when there is no clear shot and no clean forward pass:
-// sweep a fan of forward-to-lateral headings (never backward toward our own
-// goal), reject any that fire into a close opponent or leave the field too soon,
-// and take the one down the cleanest lane. Replaces blindly hoofing at the goal
-// mouth — a marker standing in front sits squarely in that narrow cone, so the
-// mouth hoof cannot avoid it; a wide clean-lane sweep steers around it.
+// ── Clean advance (safe-release fallback) ────────────────────────────────────
+// The fallback when the naive release aim fails `release_ok` (a direct-shadow
+// opponent, or the ray would leave the field almost immediately): sweep a fan of
+// forward-to-lateral headings (never backward toward our own goal), reject any
+// that fail the same release gate, and take the one down the most open lane.
 /// Half-angle (rad) of the heading fan, measured off straight up-field (+x).
 /// `FRAC_PI_2` = ±90°, so the extremes are pure-lateral (toward a touchline, at
 /// worst a throw-in) and never point back toward our own goal.
@@ -248,15 +167,26 @@ pub const ADVANCE_FAN_STEPS: usize = 24;
 /// Aim-point distance (mm) down the chosen heading (heading is what the strike
 /// uses; the exact landing point is not modelled).
 pub const ADVANCE_REACH: f64 = 2500.0;
-/// A heading whose ray leaves the field sooner than this (mm) is rejected — it
-/// would put the ball out almost immediately (e.g. straight at a near touchline).
-pub const ADVANCE_MIN_TRAVEL: f64 = 500.0;
+/// A release whose ray leaves the field sooner than this (mm) is rejected — it
+/// would put the ball out almost immediately. Applied to BOTH the fan candidates
+/// and (new) every naive release via `safe_release`, so no kick concedes the
+/// ball over a line; rays exiting through the opponent goal mouth are exempt
+/// (that exit is a shot).
+pub const ADVANCE_MIN_TRAVEL: f64 = 1500.0;
 /// Corridor (mm) for the lane-openness score of each candidate heading.
 pub const ADVANCE_CORRIDOR: f64 = 500.0;
 /// Forward-progress tiebreak weight: added as `w · dir.x` (dir.x ∈ [0,1]) to the
 /// openness ∈ [0,1]. Kept well below 1 so a genuinely cleaner lane always wins —
 /// "prioritise clean lanes heavily", forward only breaks near-ties.
 pub const ADVANCE_FWD_W: f64 = 0.35;
+
+// ── Harass (block a stable opponent holder) ──────────────────────────────────
+/// Centre-to-centre standoff (mm) of the harasser's block point, placed on the
+/// holder's facing axis directly in front of its dribbler. ~2 robot radii + a
+/// little slack: pressed right up against the holder's mouth, blocking its
+/// advancement without ORCA fighting the contact (the driver disables robot
+/// avoidance for the harass drive).
+pub const HARASS_STANDOFF: f64 = 250.0;
 
 // ── Kickoff deflection ───────────────────────────────────────────────────────
 // With no clear shot from the kickoff spot (the mouth is never clear from centre),
@@ -272,52 +202,35 @@ pub const KICKOFF_DEFLECT_MIN_DIST: f64 = 2000.0;
 /// A deflection target must be at least this far off centre ("to the side"), so
 /// the deflection runs toward a touchline rather than back into central play.
 pub const KICKOFF_DEFLECT_MIN_LATERAL: f64 = 800.0;
-/// A kick-ahead target teammate must be at least this far forward of the carrier.
+/// A forward-pass receiver must be at least this far forward of the ball.
 pub const SUPPORTER_FWD_MARGIN: f64 = 400.0;
-/// Corridor width for the carrier→supporter lane-openness check.
+/// Corridor width for the ball→supporter lane-openness check.
 pub const KICK_LANE_CORRIDOR: f64 = 400.0;
-/// Minimum lane openness (0..1) for a supporter to be a viable kick-ahead target.
+/// Minimum lane openness (0..1) for a supporter to be a viable pass target.
 pub const SUPPORTER_MIN_OPENNESS: f64 = 0.5;
-/// Lead the kick-ahead this far past the supporter toward goal (kick into space).
+/// Lead the pass this far past the supporter toward goal (into space to run onto).
 pub const SUPPORTER_LEAD: f64 = 350.0;
-/// Carrier rel-x beyond which we're in the attacking final third. Here the strict
+/// Ball rel-x beyond which we're in the attacking final third. Here the strict
 /// "supporter must be forward" gate no longer fits (there is little field left
 /// ahead), so we also accept a wide, roughly-level supporter as a cross/cutback
-/// outlet — see [`best_kickahead_target`].
+/// outlet — see the planner's `forward_pass`.
 pub const FINAL_THIRD_X: f64 = 2000.0;
-/// Minimum lateral (|Δy|) separation between carrier and supporter for the
+/// Minimum lateral (|Δy|) separation between ball and supporter for the
 /// supporter to count as a final-third cross/cutback outlet.
 pub const CROSS_MIN_LATERAL: f64 = 800.0;
-/// How far *behind* the carrier (along x) a wide final-third outlet may still sit
+/// How far *behind* the ball (along x) a wide final-third outlet may still sit
 /// and remain pass-eligible (a cutback). Strictly-forward outlets are unaffected.
 pub const CROSS_BACK_MARGIN: f64 = 600.0;
-/// Per-step distance of a corrective dribble.
-pub const DRIBBLE_CORRECTION_STEP: f64 = 250.0;
-/// Hard cap on how far the ball may be carried from the contact point before we
-/// must kick (well under the 1m excessive-dribbling limit).
-pub const DRIBBLE_CORRECTION_LIMIT: f64 = 350.0;
-/// Lateral step a contested carrier strafes off the squeeze axis to break a pin
-/// while keeping the ball (the keep-possession escape). Short — it only needs to
-/// move the opponent out from between us and goal, after which we replan normally.
-pub const ESCAPE_STEP: f64 = 300.0;
-/// |y| of the pressed contest-escape clear's aim point on the opponent goal
-/// line, on the ball's flank side — inside the mouth (goal half-width 500) but
-/// off centre, so a full-length roll-out is a goal or a keeper touch, never a
-/// Div-B aimless-kick reset. (The keeper's own clear no longer uses a fixed
-/// aim point — see `geometry::best_clear_ray`.)
-pub const ESCAPE_CLEAR_AIM_Y: f64 = 250.0;
 
 // ── Corner one-timer (the 1-2 finish) ────────────────────────────────────────
-// The one pass shape whitelisted through the Div-B pass kill-switch
-// ([`PASS_SUCCESS_BASE`] = 0): a carrier deep and wide of the opponent box — no
-// shot window from that acute angle — crosses to a teammate posted at the box
-// edge, which redirects it into the goal with the pre-armed reflex kick
-// (`ctx.pass(..).forward_to(..)`, zero handling latency). These gates are
-// deliberately independent of every generic pass-quality estimate: the play is
-// judged on its own deflection geometry, not on the disabled pass model.
-/// Master switch for the whole play. `false` reverts cleanly to the previous
-/// Div-B behavior — no passes at all, only goal shots and kick-aheads (the
-/// planner branch is the single entry point, so nothing else changes).
+// A ball deep and wide of the opponent box — no shot window from that acute
+// angle — is crossed to a teammate posted at the box edge, which redirects it
+// into the goal with the pre-armed reflex kick (`ctx.pass(..).forward_to(..)`,
+// zero handling latency). These gates are deliberately independent of every
+// generic pass-quality estimate ([`PASS_SUCCESS_BASE`] does not scale them):
+// the play is judged on its own deflection geometry.
+/// Master switch for the whole play. `false` removes it from the destination
+/// ladder — only goal shots, forward passes, and advance strikes remain.
 pub const CORNER_OT_ENABLED: bool = false;
 /// How far upfield of the opponent box front the trigger zone extends: the
 /// carrier must be at `x > box_front − CORNER_OT_ZONE_DEPTH`. Deep enough to
@@ -425,42 +338,6 @@ pub const HOOF_CENTER_W: f64 = 0.3;
 /// long kicks land ~100–150mm off the intended line at full field range; today's
 /// near-post aimless misses were exactly this band (534–1100mm past the post).
 pub const HOOF_MOUTH_INSET: f64 = 150.0;
-/// A loose ball within this distance of a touchline or goal line is treated as a
-/// boundary "rescue": the capture heading is biased to dribble the ball back
-/// *inward* (into the field) instead of along/over the line. Set comfortably
-/// above the ball radius + capture contact so a ball pinned on the line still
-/// trips it. Pairs with the pickup skill's in-field staging clamp.
-pub const BOUNDARY_RESCUE_MARGIN: f64 = 300.0;
-/// During a boundary rescue, how strongly the toward-goal direction is blended
-/// into the inward push (0 = straight inward, larger = more goalward). Keeps a
-/// forward component while guaranteeing the dominant pull is away from the line.
-pub const RESCUE_GOAL_BIAS: f64 = 0.6;
-/// When `false`, concerto never emits the dedicated `Steal`/snatch skill against
-/// an opponent holder — it captures the ball with the regular `Handle`/`Hold`
-/// skill instead (drive in and contest at the ball, no peel). Disabled for now
-/// because the snatch peel relies on a rotating heading setpoint that the real
-/// robots don't act on (`w` isn't transmitted), so on hardware it already
-/// degrades to a plain approach. Flip back to `true` to restore snatching.
-pub const SNATCH_ENABLED: bool = false;
-
-// ── Kick-ahead (hoof toward a supporter) ─────────────────────────────────────
-// When an open-play hoof is aimed near a forward teammate, we don't fire-and-
-// forget: that teammate is pinned as the ball-winner and, once the kick clears,
-// collects the ball in flight (a plain `Hold` acquire — no receive prediction,
-// just pick it up whichever way it comes). Distinct from a coordinated `Pass`:
-// the carrier never waits, it just hoofs, and the runner chases.
-/// Maximum perpendicular distance (mm) of a forward teammate from the hoof ray
-/// for it to be treated as the kick-ahead receiver. Tighter than the hoof's own
-/// mate-bias radius so we only commit a runner when the ball is genuinely on its
-/// path.
-pub const KICKAHEAD_MAX_PERP: f64 = 1000.0;
-/// How far (mm) the ball must travel from the kick origin for the kick to count
-/// as "cleared" — once cleared, the runner stays committed to the chase.
-pub const KICKAHEAD_CLEAR_DIST: f64 = 400.0;
-/// If the ball hasn't cleared [`KICKAHEAD_CLEAR_DIST`] within this many seconds
-/// of the kick releasing (kick whiffed / blocked / stuck on the kicker), abort
-/// the kick-ahead and replan the loose ball normally. World-time, not wall-clock.
-pub const KICKAHEAD_CLEAR_TIMEOUT: f64 = 0.6;
 
 // ── Driver ──────────────────────────────────────────────────────────────────
 /// Ball displacement from the engagement point that aborts any waypoint. This is
@@ -472,10 +349,8 @@ pub const BALL_MOVED_DIST: f64 = 2000.0;
 /// Threat ramp: distance to our goal at which threat is maximal / negligible.
 pub const THREAT_GOAL_NEAR: f64 = 1500.0;
 pub const THREAT_GOAL_FAR: f64 = 6000.0;
-/// Shadow (goal-coverage) role count scales with threat between these bounds.
-/// (Fix A: SHADOW_MIN is retained for reference but the goal wall now always
-/// emits `SHADOW_MAX` shadows; the *staffed* count emerges from importance.)
-pub const SHADOW_MIN: usize = 1;
+/// Number of shadow (goal-coverage) roles the wall always emits; the *staffed*
+/// count emerges from threat-scaled importance.
 pub const SHADOW_MAX: usize = 2; // TODO: CHECk
 /// Fix A: per-arc-step importance falloff for the always-emitted shadow wall.
 /// The central shadow (on the ball→goal ray) keeps full importance; each step out
@@ -546,10 +421,6 @@ pub const MARK_STANDOFF: f64 = 400.0;
 /// (team-relative, so 0 = midfield). Keeps defenders home instead of chasing
 /// opponents up-field.
 pub const MARK_MAX_X: f64 = 0.0;
-/// Don't generate a mark role for opponents below this threat (0..1) to our goal
-/// — a zero-importance mark is still assignable and would lure an up-field robot
-/// off its defensive duty.
-pub const MARK_MIN_THREAT: f64 = 0.05;
 /// Corridor width for the marking lane-openness term.
 pub const MARK_LANE_CORRIDOR: f64 = 500.0;
 /// Number of offensive support roles (split across flanks).
@@ -587,27 +458,48 @@ pub const SUPPORT_LANE_CORRIDOR: f64 = 500.0;
 /// supporter, so two never converge on the same outlet. Sized so distinct grid cells
 /// survive the constraint while genuinely co-located spots are forbidden.
 pub const SUPPORT_MIN_SEPARATION: f64 = 1500.0;
+/// Minimum LATERAL (|Δy|) spacing between two supporters' targets, applied on top
+/// of the radial separation: supporters must occupy distinct lateral bands, so
+/// multiple outlets always spread across the field width instead of stacking on
+/// one flank (two bodies on one wing are one pass option, not two).
+pub const SUPPORT_MIN_LATERAL_SEP: f64 = 1200.0;
+/// Weight of the shot-quality term in supporter placement. The candidate score is
+/// `lane_openness + receiver_clearance + SUPPORT_SHOT_W · shot_quality`, where
+/// shot_quality is the planner's own keeper-charge-aware shot model
+/// (`geometry::best_shot_from`) normalized by [`SUPPORT_SHOT_ANGLE_NORM`]. At 1.0
+/// a fully open shooting window is worth as much as a fully open pass lane — the
+/// supporter stands where a received ball is a real chance, not merely reachable.
+pub const SUPPORT_SHOT_W: f64 = 1.0;
+/// Shot-window angular width (rad) that counts as a "full" shooting window in
+/// supporter scoring; wider windows saturate at 1. ~0.25 rad is a ~500mm gap at
+/// 2m — a comfortably makeable shot.
+pub const SUPPORT_SHOT_ANGLE_NORM: f64 = 0.25;
+/// Forward (+x) preference in supporter scoring, per mm of candidate x — pushes
+/// the outlets into the opponent half. At 2e-4 a 3000mm-deeper spot is worth
+/// +0.6 in the 0..3 score space: it decides among comparably open spots, but a
+/// genuinely open + shootable spot (a full term's worth) still beats raw depth.
+pub const SUPPORT_FWD_X_W: f64 = 2e-4;
 /// Incumbency bonus that stabilises a supporter's target against frame-to-frame
 /// thrashing. `best_support_pos` is a discrete argmax over a grid of candidate
-/// outlets scored by `lane_openness + receiver_clearance` (both in [0, 1]); with
-/// opponent positions jittering under Kalman noise, the top two candidates are
-/// often near-tied and the winner flips every tick — yanking the target across a
-/// grid cell (or the whole field, on a flank flip) and leaving the supporter
-/// dithering in place instead of arriving. The candidate nearest last tick's
-/// target for this slot gets up to `+SUPPORT_STICKINESS` added to its score, so a
-/// challenger must be *decisively* more open (by this margin in the 0..2 score
-/// space) to displace the incumbent — hysteresis in argmax form, the same
-/// commitment pattern as the capture-role discount. Small enough that a genuinely
-/// better outlet (openness swing ≥ this) still wins and the supporter follows the
-/// ball as the whole grid advances.
-pub const SUPPORT_STICKINESS: f64 = 0.18;
-/// Distance over which the incumbency bonus decays to zero (mm). Sized well below
-/// the grid spacing (~1000mm in x, wider across flanks) so only the candidate
+/// outlets; with opponent positions jittering under Kalman noise, the top two
+/// candidates are often near-tied and the winner flips every tick — yanking the
+/// target across a grid cell (or the whole field, on a flank flip) and leaving
+/// the supporter dithering in place instead of arriving. The candidate nearest
+/// last tick's target for this slot gets up to `+SUPPORT_STICKINESS` added to its
+/// score, so a challenger must be *decisively* better (by this margin in the
+/// 0..3 score space) to displace the incumbent — hysteresis in argmax form.
+/// Deliberately VERY high: a challenger must beat the incumbent by a full
+/// term's worth (a whole open lane / clear spot / shot window) before the
+/// target moves. A stable, predictable outlet beats chasing the marginally
+/// best spot (oscillation is the failure mode, not slightly-suboptimal spots).
+pub const SUPPORT_STICKINESS: f64 = 1.0;
+/// Distance over which the incumbency bonus decays to zero (mm). Around the
+/// grid spacing (~1000mm in x, wider across flanks) so only the candidate
 /// essentially *at* last tick's target keeps the full bonus and its neighbours get
-/// none — the bonus favours holding the current outlet, not a whole region. Also
-/// absorbs the small per-tick translation of the ball-relative grid so the
+/// little — the bonus favours holding the current outlet, not a whole region.
+/// Also absorbs the small per-tick translation of the ball-relative grid so the
 /// incumbent stays sticky through jitter while still advancing with the ball.
-pub const SUPPORT_STICKY_RADIUS: f64 = 600.0;
+pub const SUPPORT_STICKY_RADIUS: f64 = 1000.0;
 // ── Central box-runner (striker) ────────────────────────────────────────────
 // v0 (and most simple defences) cover the centre of the mouth with only a 2-robot
 // wall + an arc keeper that bias toward the ball — so the highest-value attacking
@@ -657,9 +549,6 @@ pub const REBOUND_CRASH_DEPTH: f64 = 700.0;
 /// the shot, tends to leave open). Small — it must still cover a central rebound.
 pub const REBOUND_CRASH_Y: f64 = 220.0;
 
-/// A ball contest with at least this much threat to our goal relieves one shadow
-/// (the contesting plan robot stands in for it). Keeps shadows off the snatcher.
-pub const SHADOW_RELIEF_THREAT: f64 = 0.4;
 /// Importance ladder (points; converted to seconds via SEC_PER_IMPORTANCE).
 /// Lever 1: raised 8.0→10.0 to give the threat-scaled wing wall enough headroom
 /// to outbid Mark for the nearest bodies when the goal is threatened, so the
@@ -832,8 +721,6 @@ pub const CAPTURE_COMMIT: f64 = 0.4;
 /// of [`CAPTURE_COMMIT`]. Bounded below the wall importance so a genuine threat drop
 /// (wing importance fading) still releases the body; it only settles near-ties.
 pub const WALL_COMMIT: f64 = 0.7;
-/// Over-generate roles to this multiple of the assignable robot count.
-pub const OVERGEN_FACTOR: f64 = 1.5;
 /// Assignment recalculation cadence.
 pub const RECALC_COOLDOWN: f64 = 0.18;
 pub const RECALC_BG_PERIOD: f64 = 0.4;

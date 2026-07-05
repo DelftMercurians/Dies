@@ -1,5 +1,7 @@
 use dies_strategy_api::prelude::*;
 
+use crate::config;
+
 /// Momentum-aware estimate of the time (seconds) for a robot at `pos` moving with
 /// `vel` to reach `target`, given top speed `v_max` and acceleration `a_max`.
 ///
@@ -27,45 +29,6 @@ pub fn redirect_time(pos: Vector2, vel: Vector2, target: Vector2, v_max: f64, a_
     let t_credit = v_along.max(0.0).min(v_max) / (2.0 * a_max);
 
     (t_cruise + t_redirect - t_credit).max(0.0)
-}
-
-/// If `ball` is within `margin` of a touchline or goal line, return the heading a
-/// capturer should dribble it on to "rescue" it back into play: the inward normal
-/// of the nearest boundary, blended with the toward-`opp_goal` direction by
-/// `goal_bias`. Returns `None` when the ball is comfortably inside the field (the
-/// caller then uses the normal toward-goal pickup heading).
-///
-/// The dominant component is always inward, so driving the ball on this heading
-/// moves it *away* from the line rather than along/over it — the touchline-capture
-/// fix. The nearest single boundary is chosen; corners pick whichever is closer.
-pub fn boundary_rescue_heading(
-    ball: Vector2,
-    opp_goal: Vector2,
-    half_len: f64,
-    half_wid: f64,
-    margin: f64,
-    goal_bias: f64,
-) -> Option<Angle> {
-    // Distance to each boundary and that boundary's inward normal.
-    let candidates = [
-        (half_wid - ball.y, Vector2::new(0.0, -1.0)), // top touchline
-        (half_wid + ball.y, Vector2::new(0.0, 1.0)),  // bottom touchline
-        (half_len - ball.x, Vector2::new(-1.0, 0.0)), // opp goal line
-        (half_len + ball.x, Vector2::new(1.0, 0.0)),  // own goal line
-    ];
-    let (dist, inward) = candidates
-        .into_iter()
-        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))?;
-    if dist > margin {
-        return None;
-    }
-
-    let to_goal = (opp_goal - ball)
-        .try_normalize(1e-6)
-        .unwrap_or(Vector2::new(1.0, 0.0));
-    let blended = inward + to_goal * goal_bias;
-    let dir = blended.try_normalize(1e-6).unwrap_or(inward);
-    Some(Angle::from_radians(dir.y.atan2(dir.x)))
 }
 
 /// Infer the opponent keeper: the opponent nearest its own goal (the goal we
@@ -231,6 +194,53 @@ pub fn best_shot(
         target: Vector2::new(goal_x, mid_y),
         angle: (ang_hi - ang_lo).abs(),
     })
+}
+
+/// Effective keeper shot-shadow radius as a function of how far the keeper has
+/// advanced off its goal line (mm). On its line → full inflated shadow (it can
+/// dive/slide to cover the mouth during the ball's flight); fully committed
+/// forward → plain field-robot radius (it can no longer recover to a corner);
+/// linear in between. See [`config::KEEPER_CHARGE_NEAR`]/[`config::KEEPER_CHARGE_FAR`].
+pub fn keeper_charge_radius(advance: f64) -> f64 {
+    let full = config::SHOT_KEEPER_RADIUS;
+    let t = ((advance - config::KEEPER_CHARGE_NEAR)
+        / (config::KEEPER_CHARGE_FAR - config::KEEPER_CHARGE_NEAR))
+        .clamp(0.0, 1.0);
+    full + t * (config::SHOT_ROBOT_RADIUS - full)
+}
+
+/// Charge-aware shadow radius for the inferred opponent keeper in the shot model.
+pub fn keeper_shot_radius(world: &World) -> f64 {
+    let full = config::SHOT_KEEPER_RADIUS;
+    let goal = world.opp_goal_center();
+    let Some(kid) = opp_keeper(world) else {
+        return full;
+    };
+    let Some(keeper) = world.opp_players().iter().find(|p| p.id == kid) else {
+        return full;
+    };
+    // Advancement off the goal line: the goal we attack is at max +x, so a
+    // keeper that has charged toward the ball has a *smaller* x than its goal.
+    let advance = (goal.x - keeper.position.x).max(0.0);
+    keeper_charge_radius(advance)
+}
+
+/// THE shot model: [`best_shot`] wired to concerto's config parameters and the
+/// charge-aware keeper shadow. The single scoring function shared by the
+/// planner's shot gate / finish aim and Formation's supporter placement, so
+/// supporters stand exactly where the planner would rate a shot highly.
+pub fn best_shot_from(world: &World, from: Vector2) -> Option<ShotAim> {
+    best_shot(
+        from,
+        world.opp_goal_center().x,
+        world.goal_width(),
+        world.opp_players(),
+        opp_keeper(world),
+        config::SHOT_ROBOT_RADIUS,
+        keeper_shot_radius(world),
+        config::BALL_RADIUS,
+        config::SHOT_KEEPER_BIAS,
+    )
 }
 
 /// Pick the most dangerous *open* finishing pocket for the central box-runner.
@@ -593,7 +603,8 @@ pub fn best_clear_ray(
             // rather than fire it) and sinks below every clean ray (so even a
             // forced panic clear takes any lane that misses the opponent, e.g. a
             // sideways fan ray, and only fires into one when fully surrounded).
-            let vetoed = fires_into_close_opponent(ball, target, opponents, veto_reach, veto_corridor);
+            let vetoed =
+                fires_into_close_opponent(ball, target, opponents, veto_reach, veto_corridor);
             let openness = if vetoed { 0.0 } else { near_openness(target) };
             let mut s = score(target, openness);
             if vetoed {
@@ -628,10 +639,13 @@ pub fn best_support_pos(
     flank_y_fracs: [f64; 3],
     goal_line_setback: f64,
     // Positions already claimed by other supporters this tick. Candidates within
-    // `min_separation` of any of these are excluded, so two supporters can never
-    // resolve to the same outlet (structural anti-stacking, not a soft tie-break).
+    // `min_separation` of any of these are excluded — and additionally candidates
+    // within `min_lateral_sep` of a taken spot's y — so supporters can never
+    // resolve to the same outlet AND are structurally spread across the field
+    // width (two supporters never stack on one flank).
     taken: &[Vector2],
     min_separation: f64,
+    min_lateral_sep: f64,
     // Hysteresis: last tick's target for this slot (if any) and the incumbency
     // bonus. The candidate nearest `prev` gets up to `+stickiness` added to its
     // score, so a challenger must be decisively more open to displace the
@@ -641,11 +655,17 @@ pub fn best_support_pos(
     prev: Option<Vector2>,
     stickiness: f64,
     sticky_radius: f64,
+    // Shot quality (0..1) at a candidate spot — the planner's own shot model
+    // ([`best_shot_from`], normalized by the caller), weighted by `shot_w`, so
+    // supporters stand where a received pass has a real shooting window instead
+    // of merely where the lane is clear.
+    shot_quality: &dyn Fn(Vector2) -> f64,
+    shot_w: f64,
 ) -> Vector2 {
     const PAD: f64 = 400.0;
     // Conservative grid stays modest and central; attacking mode reaches toward the
     // goal line and flanks wide (outer bands clear the box keepout at the corners).
-    let (x_targets, y_mags, fwd_bonus): ([f64; 3], [f64; 3], f64) = if attacking {
+    let (x_targets, y_mags): ([f64; 3], [f64; 3]) = if attacking {
         (
             [
                 ball.x + 1500.0,
@@ -653,15 +673,11 @@ pub fn best_support_pos(
                 half_len - goal_line_setback,
             ],
             flank_y_fracs,
-            // Stronger pull toward the goal line; still below the openness range
-            // (0..1) so we never stand behind an opponent for the sake of depth.
-            1e-4,
         )
     } else {
         (
             [ball.x + 1000.0, ball.x + 2000.0, ball.x + 3000.0],
             [0.18, 0.32, 0.46],
-            5e-5,
         )
     };
 
@@ -720,11 +736,18 @@ pub fn best_support_pos(
                 }
                 _ => 0.0,
             };
-            let score = open + clearance + fwd_bonus * cand.x + SIDE_BIAS * sign * cand.y + sticky;
+            let score = open
+                + clearance
+                + shot_w * shot_quality(cand)
+                + config::SUPPORT_FWD_X_W * cand.x
+                + SIDE_BIAS * sign * cand.y
+                + sticky;
             if fallback.is_none() || score > fallback.unwrap().1 {
                 fallback = Some((cand, score));
             }
-            if taken.iter().any(|t| (cand - t).norm() < min_separation) {
+            if taken.iter().any(|t| {
+                (cand - t).norm() < min_separation || (cand.y - t.y).abs() < min_lateral_sep
+            }) {
                 continue;
             }
             if best.is_none() || score > best.unwrap().1 {
@@ -797,51 +820,6 @@ pub fn is_between(point: Vector2, from: Vector2, to: Vector2) -> bool {
     let t = (to_point.x * dir.x + to_point.y * dir.y) / len_sq;
 
     (0.0..=1.0).contains(&t)
-}
-
-/// Direction to break out of a ball contest: a unit vector **perpendicular to the
-/// carrier→presser squeeze axis**, on whichever side is more open.
-///
-/// In a pin both dribblers push along the squeeze axis, so the perpendicular is
-/// the one unopposed escape direction. Of the two perpendiculars we pick the side
-/// with the more open lane from the ball (via [`lane_openness`]), mildly biased
-/// toward midfield so we don't shepherd the ball into a touchline. Robust to the
-/// degenerate case where carrier and presser coincide.
-pub fn escape_direction(
-    carrier: Vector2,
-    presser: Vector2,
-    ball: Vector2,
-    opponents: &[PlayerState],
-    field_half_width: f64,
-) -> Vector2 {
-    const PROBE_DIST: f64 = 1000.0;
-    const CORRIDOR: f64 = 400.0;
-    const CENTER_BIAS: f64 = 0.25;
-
-    // Squeeze axis (carrier → presser), with finite fallbacks if robots coincide.
-    let mut axis = presser - carrier;
-    if axis.norm() < 1e-6 {
-        axis = ball - carrier;
-    }
-    if axis.norm() < 1e-6 {
-        axis = Vector2::new(1.0, 0.0);
-    }
-    let axis = axis / axis.norm();
-    let perp = Vector2::new(-axis.y, axis.x); // unit ⟂ to the axis
-
-    let half_w = field_half_width.max(1.0);
-    let score = |dir: Vector2| -> f64 {
-        let cand = ball + dir * PROBE_DIST;
-        let openness = lane_openness(ball, cand, opponents, CORRIDOR);
-        let center = 1.0 - (cand.y.abs() / half_w).min(1.0);
-        openness + CENTER_BIAS * center
-    };
-
-    if score(perp) >= score(-perp) {
-        perp
-    } else {
-        -perp
-    }
 }
 
 /// Smooth Hermite step: 0 below `edge0`, 1 above `edge1`, C¹-continuous between.
@@ -1127,10 +1105,7 @@ pub fn rect_offset_point(pen: &Rect, offset: f64, s: f64) -> Vector2 {
     } else if a <= half_wid + quarter {
         // Rounded corner: sweep from facing +x to facing +y.
         let ang = (a - half_wid) / offset;
-        (
-            front_x + offset * ang.cos(),
-            half_wid + offset * ang.sin(),
-        )
+        (front_x + offset * ang.cos(), half_wid + offset * ang.sin())
     } else {
         // Side edge, receding toward the goal line.
         let t = a - half_wid - quarter;
@@ -1180,7 +1155,10 @@ mod tests {
     #[test]
     fn rect_offset_roundtrip_and_corner_wrap() {
         // Standard SSL own defense area: x∈[-4500,-3500], y∈[-1000,1000].
-        let pen = Rect::new(Vector2::new(-4500.0, -1000.0), Vector2::new(-3500.0, 1000.0));
+        let pen = Rect::new(
+            Vector2::new(-4500.0, -1000.0),
+            Vector2::new(-3500.0, 1000.0),
+        );
         let off = 550.0;
         // Front-centre is at (front_x + offset, 0) at s = 0.
         let p0 = rect_offset_point(&pen, off, 0.0);
@@ -1190,7 +1168,12 @@ mod tests {
             let p = rect_offset_point(&pen, off, s);
             let s2 = project_to_rect_offset(&pen, off, p);
             let p2 = rect_offset_point(&pen, off, s2);
-            assert!((p - p2).norm() < 1.0, "roundtrip s={s}: {:?} vs {:?}", p, p2);
+            assert!(
+                (p - p2).norm() < 1.0,
+                "roundtrip s={s}: {:?} vs {:?}",
+                p,
+                p2
+            );
         }
         // A base near the +y front corner fans onto BOTH the front edge and the
         // side edge (wraps the corner) instead of a straight chord — every point
@@ -1202,7 +1185,10 @@ mod tests {
             let nx = pt.x.clamp(pen.min.x, pen.max.x);
             let ny = pt.y.clamp(pen.min.y, pen.max.y);
             let d = (pt - Vector2::new(nx, ny)).norm();
-            assert!((d - off).abs() < 1.0, "fanned pt off-box dist {d}, want {off}");
+            assert!(
+                (d - off).abs() < 1.0,
+                "fanned pt off-box dist {d}, want {off}"
+            );
         }
     }
 
@@ -1224,30 +1210,28 @@ mod tests {
     }
 
     #[test]
-    fn boundary_rescue_pushes_inward_near_top_touchline() {
-        // Ball 200mm inside the top touchline (half_wid = 3000), opp goal at +x.
-        // Rescue heading must point into the field (-y) so the dribble moves the
-        // ball away from the line, while keeping a forward (+x) component.
-        let ball = Vector2::new(-2735.0, 2800.0);
-        let opp_goal = Vector2::new(4500.0, 0.0);
-        let h = boundary_rescue_heading(ball, opp_goal, 4500.0, 3000.0, 300.0, 0.6)
-            .expect("ball within margin should trigger a rescue");
-        let v = h.to_vector();
+    fn keeper_charge_radius_shrinks_with_advancement() {
+        // On its line (no advancement) → full inflated shadow.
+        assert!((keeper_charge_radius(0.0) - crate::config::SHOT_KEEPER_RADIUS).abs() < 1e-6);
         assert!(
-            v.y < -0.5,
-            "heading should pull strongly inward (-y), got {v:?}"
+            (keeper_charge_radius(crate::config::KEEPER_CHARGE_NEAR)
+                - crate::config::SHOT_KEEPER_RADIUS)
+                .abs()
+                < 1e-6
         );
+        // Fully committed forward → shrinks to a plain field-robot shadow.
         assert!(
-            v.x > 0.0,
-            "heading should keep a forward (+x) component, got {v:?}"
+            (keeper_charge_radius(crate::config::KEEPER_CHARGE_FAR)
+                - crate::config::SHOT_ROBOT_RADIUS)
+                .abs()
+                < 1e-6
         );
-    }
-
-    #[test]
-    fn no_rescue_when_ball_is_well_inside() {
-        let ball = Vector2::new(0.0, 0.0);
-        let opp_goal = Vector2::new(4500.0, 0.0);
-        assert!(boundary_rescue_heading(ball, opp_goal, 4500.0, 3000.0, 300.0, 0.6).is_none());
+        // Halfway between near and far → midpoint radius, monotone shrinking.
+        let mid = keeper_charge_radius(
+            (crate::config::KEEPER_CHARGE_NEAR + crate::config::KEEPER_CHARGE_FAR) / 2.0,
+        );
+        let expected = (crate::config::SHOT_KEEPER_RADIUS + crate::config::SHOT_ROBOT_RADIUS) / 2.0;
+        assert!((mid - expected).abs() < 1e-6);
     }
 
     #[test]
@@ -1372,8 +1356,11 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            0.0,
             None,
             0.0,
+            0.0,
+            &|_| 0.0,
             0.0,
         );
         let openness = lane_openness(ball, pos, std::slice::from_ref(&blocker), 500.0);
@@ -1407,8 +1394,11 @@ mod tests {
                 400.0,
                 &[],
                 1500.0,
+                0.0,
                 None,
                 0.0,
+                0.0,
+                &|_| 0.0,
                 0.0,
             );
             let in_box = pos.x > half_len - pen_depth && pos.y.abs() < pen_half_width;
@@ -1436,8 +1426,11 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            0.0,
             None,
             0.0,
+            0.0,
+            &|_| 0.0,
             0.0,
         );
         assert!(
@@ -1479,8 +1472,11 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            0.0,
             None,
             0.0,
+            0.0,
+            &|_| 0.0,
             0.0,
         );
         assert!(
@@ -1521,8 +1517,11 @@ mod tests {
                 400.0,
                 &taken,
                 min_sep,
+                0.0,
                 None,
                 0.0,
+                0.0,
+                &|_| 0.0,
                 0.0,
             );
             for prev in &taken {
@@ -1564,8 +1563,11 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            0.0,
             None,
             0.0,
+            0.0,
+            &|_| 0.0,
             0.0,
         );
         let mirror = Vector2::new(base.x, -base.y);
@@ -1583,9 +1585,12 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            0.0,
             Some(mirror),
             crate::config::SUPPORT_STICKINESS,
             crate::config::SUPPORT_STICKY_RADIUS,
+            &|_| 0.0,
+            0.0,
         );
         assert!(
             (held - mirror).norm() < (base - mirror).norm(),
@@ -1617,47 +1622,16 @@ mod tests {
             400.0,
             &[],
             1500.0,
+            0.0,
             Some(covered),
             crate::config::SUPPORT_STICKINESS,
             crate::config::SUPPORT_STICKY_RADIUS,
+            &|_| 0.0,
+            0.0,
         );
         assert!(
             (moved - covered).norm() > crate::config::SUPPORT_STICKY_RADIUS,
             "supporter should yield a covered outlet despite incumbency, stayed at {moved:?}"
-        );
-    }
-
-    #[test]
-    fn escape_direction_is_lateral_and_avoids_the_blocked_side() {
-        // Presser dead ahead along +x → escape must be lateral (±y). An opponent
-        // blocks the +y lane, so we must squirt out toward -y.
-        let carrier = Vector2::new(0.0, 0.0);
-        let presser = Vector2::new(500.0, 0.0);
-        let ball = Vector2::new(250.0, 0.0);
-        let blocker = PlayerState::new(
-            PlayerId::new(9),
-            Vector2::new(250.0, 1000.0), // sitting in the +y escape lane
-            Vector2::new(0.0, 0.0),
-            Angle::from_radians(0.0),
-        );
-        let dir = escape_direction(
-            carrier,
-            presser,
-            ball,
-            std::slice::from_ref(&blocker),
-            3000.0,
-        );
-        assert!(
-            dir.x.abs() < 1e-6,
-            "escape should be perpendicular to the axis"
-        );
-        assert!(
-            dir.y < 0.0,
-            "escape should avoid the blocked +y side, got {dir:?}"
-        );
-        assert!(
-            (dir.norm() - 1.0).abs() < 1e-6,
-            "escape should be a unit vector"
         );
     }
 
@@ -1976,23 +1950,31 @@ mod tests {
 
     #[test]
     fn hoof_ray_favors_forward_teammate_when_mouth_is_walled() {
+        // Rays are confined to the goal-mouth cone (the Div-B aimless-kick fix),
+        // so a mate can only bias the ray *within* the mouth: a teammate on the
+        // +y side of the cone should pull the exit to the +y half of the mouth.
         let opps = mouth_wall();
-        let mate = Vector2::new(2000.0, 2000.0);
+        let mate = Vector2::new(2000.0, 800.0);
         let t = hoof(Vector2::new(0.0, 0.0), &opps, std::slice::from_ref(&mate))
             .expect("hoof must exist");
         assert!(
-            t.y > 1000.0,
-            "ray should bend toward the forward target man, got {t:?}"
+            t.y > 0.0,
+            "ray should bend toward the forward target man's side of the mouth, got {t:?}"
         );
     }
 
     #[test]
     fn hoof_ray_avoids_intercepted_lanes() {
-        // Mouth walled, no target man, and extra blockers on the +y side: the
-        // openness penalty should push the exit to the clean -y side.
-        let mut opps = mouth_wall();
-        opps.push(opp(30, 2000.0, 800.0));
-        opps.push(opp(31, 3000.0, 1400.0));
+        // A central keeper leaves a sliver inside each post; en-route blockers
+        // sitting on the +y-side mouth rays: the openness penalty should push
+        // the exit to the clean -y sliver. (With a fully walled mouth every
+        // legal ray ends at a wall robot, so openness cannot discriminate —
+        // the mouth-cone design accepts that and ties break centrally.)
+        let opps = vec![
+            opp(9, 4400.0, 0.0),
+            opp(30, 2000.0, 250.0),
+            opp(31, 3000.0, 280.0),
+        ];
         let t = hoof(Vector2::new(0.0, 0.0), &opps, &[]).expect("hoof must exist");
         assert!(t.y < 0.0, "blocked +y lanes should lose, got {t:?}");
     }

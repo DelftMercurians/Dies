@@ -40,9 +40,6 @@ enum RoleKind {
     /// than a separate kind) makes central↔wide reassignment a within-kind slot
     /// swap, not a tactical role flip — see the generator.
     Support,
-    /// Deep recycle pivot behind the ball, ball-side: the safe outlet the carrier
-    /// lays the ball back to when nothing is on forward. Never in the box.
-    Pivot,
     /// Rest-defense body kept home while attacking, on the ball→own-goal ray in our
     /// own half. Holds one robot back so a turnover doesn't leave the goal to the
     /// keeper + box anchor alone (it recovers into a wing of the wall). See the
@@ -61,7 +58,6 @@ fn role_name(kind: RoleKind) -> &'static str {
         RoleKind::Shadow => "shadow",
         RoleKind::Mark => "mark",
         RoleKind::Support => "support",
-        RoleKind::Pivot => "pivot",
         RoleKind::Balance => "balance",
         RoleKind::KickoffGuard => "kickoff_guard",
         RoleKind::Spread => "spread",
@@ -135,8 +131,6 @@ pub struct RoleToggles {
     pub support: bool,
     /// Central box-runner / rebound poacher (Support slot SUPPORT_COUNT).
     pub striker: bool,
-    /// Deep recycle pivot.
-    pub pivot: bool,
     /// Rest defender held home while attacking.
     pub balance: bool,
     /// Counter outlet / permanent forward (Support slot SUPPORT_COUNT+1).
@@ -150,7 +144,6 @@ impl Default for RoleToggles {
             mark: true,
             support: true,
             striker: true,
-            pivot: true,
             balance: true,
             outlet: true,
         }
@@ -956,7 +949,19 @@ impl Formation {
                 * self.stance.aggression
         };
         // Placed greedily; each supporter excludes spots already claimed by an
-        // earlier one (see `taken` below) so two never converge on the same outlet.
+        // earlier one (see `taken` below) — radially AND laterally
+        // (SUPPORT_MIN_LATERAL_SEP), so supporters spread across the field width
+        // instead of stacking on one flank.
+        //
+        // Candidate scoring reuses the planner's own shot model
+        // (`geometry::best_shot_from`, keeper-charge-aware): a supporter stands
+        // where the pass lane is open AND a received ball has a real shooting
+        // window — the spot the destination ladder actually wants to pass to.
+        let shot_quality = |spot: Vector2| -> f64 {
+            geometry::best_shot_from(world, spot)
+                .map(|s| (s.angle / config::SUPPORT_SHOT_ANGLE_NORM).min(1.0))
+                .unwrap_or(0.0)
+        };
         if self.toggles.support {
             let mut taken: Vec<Vector2> = Vec::with_capacity(support_count + 1);
             for slot in 0..support_count {
@@ -983,9 +988,12 @@ impl Formation {
                     config::SUPPORT_GOAL_LINE_SETBACK,
                     &taken,
                     config::SUPPORT_MIN_SEPARATION,
+                    config::SUPPORT_MIN_LATERAL_SEP,
                     self.support_prev.get(&slot_key).copied(),
                     config::SUPPORT_STICKINESS,
                     config::SUPPORT_STICKY_RADIUS,
+                    &shot_quality,
+                    config::SUPPORT_SHOT_W,
                 );
                 self.support_prev.insert(slot_key, pos);
                 taken.push(pos);
@@ -1000,40 +1008,11 @@ impl Formation {
                     bounds: None,
                 });
             }
-            // Rest defender disabled: push the freed body into offense support
-            // (an extra wide supporter) instead of letting it idle on Spread.
-            if !self.toggles.balance {
-                let slot_key = (config::SUPPORT_COUNT + 2) as u16;
-                let pos = geometry::best_support_pos(
-                    ball,
-                    world.opp_players(),
-                    0.0,
-                    half_len,
-                    half_wid,
-                    config::SUPPORT_LANE_CORRIDOR,
-                    opp_pen_depth,
-                    opp_pen_half_width,
-                    attacking,
-                    config::SUPPORT_FLANK_Y_FRACS,
-                    config::SUPPORT_GOAL_LINE_SETBACK,
-                    &taken,
-                    config::SUPPORT_MIN_SEPARATION,
-                    self.support_prev.get(&slot_key).copied(),
-                    config::SUPPORT_STICKINESS,
-                    config::SUPPORT_STICKY_RADIUS,
-                );
-                self.support_prev.insert(slot_key, pos);
-                roles.push(Role {
-                    id: RoleId {
-                        kind: RoleKind::Support,
-                        slot: slot_key,
-                    },
-                    position: pos,
-                    importance: support_imp,
-                    face: world.opp_goal_center(),
-                    bounds: None,
-                });
-            }
+            // NOTE: the wide-supporter count is hard-capped at SUPPORT_COUNT (2).
+            // The old "rest defender disabled → extra third supporter" spillover
+            // is gone: a third body near the outlets adds no pass option the
+            // lateral-separation rule doesn't already force apart, and it
+            // crowded the attacking half.
         }
 
         // 3b. Central box-runner — a single advanced body just in front of the
@@ -1059,17 +1038,7 @@ impl Formation {
             // Opponent keeper ≈ the opponent nearest the goal we attack; passed so
             // the pocket search respects the keeper's wider blocking shadow (matches
             // the planner's shot model). Degrades gracefully if none is near.
-            let opp_keeper = world
-                .opp_players()
-                .iter()
-                .min_by(|a, b| {
-                    let goal = world.opp_goal_center();
-                    (a.position - goal)
-                        .norm()
-                        .partial_cmp(&(b.position - goal).norm())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|p| p.id);
+            let opp_keeper = geometry::opp_keeper(world);
             // Rebound poacher: when a shot is already in flight at the opponent goal
             // (ball moving goalward fast, in the attacking third), abandon the static
             // cutback pocket and crash the goal mouth to pounce on a save/parry —
@@ -1133,39 +1102,16 @@ impl Formation {
             });
         }
 
-        // 3c. Deep recycle pivot behind the ball on the ball's flank — the safe
-        // outlet the carrier lays the ball back to when nothing is on forward (the
-        // planner's recycle branch). Placed deep (never in the box) so it does
-        // not invite the defence to collapse the shooting zone the way an advanced
-        // central body does. Only while attacking (ball advanced, our goal safe),
-        // and only when passing is enabled at all — with PASS_SUCCESS_BASE = 0 no
-        // recycle can ever be played to it, so the body is freed instead.
-        if self.toggles.pivot && attacking && config::PASS_SUCCESS_BASE > 0.0 {
-            let y_mag = ball.y.abs().clamp(config::PIVOT_Y_MIN, config::PIVOT_Y_MAX);
-            let py = if ball.y >= 0.0 { y_mag } else { -y_mag };
-            let px = (ball.x - config::PIVOT_SETBACK).clamp(-half_len + 400.0, half_len - 400.0);
-            roles.push(Role {
-                id: RoleId {
-                    kind: RoleKind::Pivot,
-                    slot: 0,
-                },
-                position: Vector2::new(px, py),
-                importance: config::IMP_PIVOT * self.stance.aggression,
-                face: world.opp_goal_center(),
-                bounds: None,
-            });
-        }
-
-        // 3d. Rest defense — keep ONE body home while we commit forward, so a
+        // 3c. Rest defense — keep ONE body home while we commit forward, so a
         // turnover doesn't leave the goal to the keeper + box anchor alone (the
         // counter-attack that opens the wall's flanks). Placed on the ball→own-goal
         // ray in our own half — the most likely counter lane — at a recoverable
         // depth, so on turnover it is already there to take a wing of the wall while
         // the deep attackers recover. Importance (IMP_BALANCE) sits above the
-        // forward block but below the anchor, so it displaces the pivot (the least
-        // critical forward outlet), not a supporter — netting a 3-back/3-forward
-        // shape instead of 2-back/4-forward. Only while attacking (same gate as the
-        // pivot it replaces); when defending, the 3-wide wall already lights up.
+        // forward block but below the anchor, so it claims the least-critical
+        // forward body, not a supporter — netting a 3-back/3-forward shape
+        // instead of 2-back/4-forward. Only while attacking; when defending, the
+        // 3-wide wall already lights up.
         // Count gate: a short-handed team (field_n < balance_min_bots) can't spare a
         // dedicated rest defender on top of the anchor, so that body goes forward.
         if self.toggles.balance && attacking && (field_n as f64) >= self.stance.balance_min_bots {
@@ -1520,7 +1466,6 @@ mod tests {
             mark: false,
             support: false,
             striker: false,
-            pivot: false,
             balance: false,
             outlet: false,
         });
@@ -1952,12 +1897,32 @@ mod tests {
         );
     }
 
+    /// Mirror of the generator's wall placement math: the along-curve base
+    /// coordinate for a fresh wall (first tick seeds `base_s = desired_s`).
+    fn wall_base_s(world: &World) -> f64 {
+        let pen = world.own_penalty_area();
+        let own_goal = world.own_goal_center();
+        let ball = world.ball_position().unwrap();
+        let ref_standoff = (pen.max.x - own_goal.x) + config::SHADOW_BOX_OFFSET;
+        let ref_pt = geometry::goal_ray_point(ball, own_goal, ref_standoff);
+        geometry::project_to_rect_offset(&pen, config::SHADOW_BOX_OFFSET, ref_pt)
+    }
+
+    fn slot_offset(slot: u16) -> f64 {
+        let center = (config::SHADOW_MAX as f64 - 1.0) / 2.0;
+        (slot as f64 - center) * config::SHADOW_SPACING
+    }
+
     #[test]
     fn two_staffed_shadows_compact_into_a_pair_wall() {
-        // Ball at center, goal at (-4500, 0). Anchor standoff = pen depth (1000)
-        // + ANCHOR_BOX_MARGIN (150) = 1150 → anchor at (-3350, 0).
+        // Centered ball, goal at (-4500, 0). Unstaffed: the wall layers on two
+        // depths — anchor (slot 0) on the ANCHOR_BOX_MARGIN band, wing (slot 1)
+        // on the SHADOW_BOX_OFFSET band. With both slots staffed, the pair
+        // compacts side-by-side on the wing band, straddling the shot line.
+        // Counts of 4 keep the wing inside the forward-reserve budget.
         let own = vec![player(1, -4000.0, 0.0), player(2, -3200.0, 100.0)];
         let world = world_with(own, vec![], 1);
+        let pen = world.own_penalty_area();
         let mut f = Formation::new();
 
         let shadow = |rs: &[Role], slot: u16| {
@@ -1966,42 +1931,56 @@ mod tests {
                 .map(|r| r.position)
                 .unwrap_or_else(|| panic!("shadow slot {slot} missing"))
         };
-        // Uncompacted (no staffing info): the wing sits on the outer arc —
-        // (-2950, -170) for a centered ball (the wall line is perpendicular to
-        // the shot ray, so the offset is straight -y here).
-        let plain = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[], false);
-        let wing = shadow(&plain, 0);
+        let base = wall_base_s(&world);
+
+        // Uncompacted (no staffing info): two distinct depths.
+        let plain = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[], false);
+        let anchor = shadow(&plain, 0);
+        let wing = shadow(&plain, 1);
+        let want_anchor =
+            geometry::rect_offset_point(&pen, config::ANCHOR_BOX_MARGIN, base + slot_offset(0));
+        let want_wing =
+            geometry::rect_offset_point(&pen, config::SHADOW_BOX_OFFSET, base + slot_offset(1));
         assert!(
-            (wing - Vector2::new(-2950.0, -170.0)).norm() < 1e-6,
-            "unstaffed wing stays on the SHADOW_STANDOFF arc, got {wing:?}"
+            (anchor - want_anchor).norm() < 1e-6,
+            "anchor rides its own tighter band, got {anchor:?}, want {want_anchor:?}"
+        );
+        assert!(
+            (wing - want_wing).norm() < 1e-6,
+            "unstaffed wing stays on the wing band, got {wing:?}, want {want_wing:?}"
         );
 
-        // Anchor + exactly one staffed wing → the wing snaps onto the anchor's
-        // wall line, SHADOW_SPACING beside it; the anchor itself is untouched.
-        let compact = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1], false);
-        let anchor = shadow(&compact, 1);
-        let wing = shadow(&compact, 0);
-        assert!(
-            (anchor - Vector2::new(-3350.0, 0.0)).norm() < 1e-6,
-            "anchor stays on the ray at the box edge, got {anchor:?}"
-        );
-        assert!(
-            (wing - Vector2::new(-3350.0, -170.0)).norm() < 1e-6,
-            "compacted wing sits SHADOW_SPACING beside the anchor, got {wing:?}"
-        );
+        // Both slots staffed → compacted: BOTH on the wing band, spaced by
+        // COMPACT_SPACING around the base (a tight side-by-side pair).
+        let compact = f.generate_roles(&world, &PlanContext::default(), None, 4, 4, &[0, 1], false);
+        for (slot, s) in [
+            (0u16, base - config::COMPACT_SPACING / 2.0),
+            (1u16, base + config::COMPACT_SPACING / 2.0),
+        ] {
+            let got = shadow(&compact, slot);
+            let want = geometry::rect_offset_point(&pen, config::SHADOW_BOX_OFFSET, s);
+            assert!(
+                (got - want).norm() < 1e-6,
+                "compacted slot {slot} sits on the wing band beside its partner, \
+                 got {got:?}, want {want:?}"
+            );
+        }
     }
 
     #[test]
-    fn update_emits_compacted_pair_wall_for_two_defenders() {
-        // Keeper + 2 field robots: wing budget = 1, so the wall is anchor + one
-        // wing. After the first update() establishes the assignment, the second
-        // emits the compacted side-by-side pair.
+    fn update_wall_sizing_respects_the_forward_reserve() {
+        // Keeper + 2 field robots with the Div-B stance (forward_reserve = 2):
+        // wing budget = clamp(2 − 2 − 1, ..) = 0, so the wall is the anchor
+        // alone — a short-handed team keeps a body forward instead of pinning
+        // both home. (The compaction pair itself is covered by
+        // `two_staffed_shadows_compact_into_a_pair_wall`.)
         let own = vec![
             player(1, -4400.0, 0.0), // keeper
             player(2, -3300.0, 100.0),
             player(3, -3000.0, -300.0),
         ];
         let world = world_with(own, vec![], 1);
+        let pen = world.own_penalty_area();
         let mut f = Formation::new();
         f.update(&world, &[], &PlanContext::default(), None, 0.0, false);
         let out = f.update(&world, &[], &PlanContext::default(), None, 0.0, false);
@@ -2012,15 +1991,17 @@ mod tests {
             .filter(|c| c.role == "shadow")
             .map(|c| c.target)
             .collect();
-        assert_eq!(targets.len(), 2, "both defenders staff the wall");
-        // Centered ball → anchor at (-3350, 0), compacted wing at (-3350, -170):
-        // a tight side-by-side pair on the anchor's wall line.
-        for want in [Vector2::new(-3350.0, 0.0), Vector2::new(-3350.0, -170.0)] {
-            assert!(
-                targets.iter().any(|t| (t - want).norm() < 1e-6),
-                "expected a wall body at {want:?}, got {targets:?}"
-            );
-        }
+        assert_eq!(targets.len(), 1, "only the anchor staffs the wall");
+        let want = geometry::rect_offset_point(
+            &pen,
+            config::ANCHOR_BOX_MARGIN,
+            wall_base_s(&world) + slot_offset(0),
+        );
+        assert!(
+            (targets[0] - want).norm() < 1e-6,
+            "the lone wall body is the anchor at the box edge, got {:?}, want {want:?}",
+            targets[0]
+        );
     }
 
     #[test]
@@ -2053,19 +2034,27 @@ mod tests {
         });
         let mut f = Formation::new();
         let rs = f.generate_roles(&world, &PlanContext::default(), None, 2, 2, &[0, 1], false);
-        let expected = geometry::shadow_arc(
-            ball,
-            world.own_goal_center(),
-            config::SHADOW_MAX,
-            config::SHADOW_STANDOFF,
-            config::SHADOW_SPACING,
-        );
-        for r in rs.iter().filter(|r| r.id.kind == RoleKind::Shadow) {
-            let want = expected[r.id.slot as usize];
+        // Set-piece defense: NO anchor promotion and NO pair compaction — every
+        // slot sits contiguously on the wing band at its nominal spacing, even
+        // though both slots are staffed (which would compact in open play).
+        let base = wall_base_s(&world);
+        let shadows: Vec<&Role> = rs
+            .iter()
+            .filter(|r| r.id.kind == RoleKind::Shadow)
+            .collect();
+        assert_eq!(shadows.len(), config::SHADOW_MAX, "full wall committed");
+        let pen = world.own_penalty_area();
+        for r in &shadows {
+            let want = geometry::rect_offset_point(
+                &pen,
+                config::SHADOW_BOX_OFFSET,
+                base + slot_offset(r.id.slot),
+            );
             assert!(
                 (r.position - want).norm() < 1e-6,
-                "slot {} must stay in the contiguous set-piece wall",
-                r.id.slot
+                "slot {} must stay in the contiguous set-piece wall, got {:?}, want {want:?}",
+                r.id.slot,
+                r.position
             );
         }
     }

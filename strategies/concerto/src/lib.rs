@@ -56,19 +56,30 @@ const KICKOFF_STAGE_X: f64 = -300.0;
 /// PrepareKickoff/Kickoff states; stage slightly deeper so that's a no-op too.
 const KICKOFF_CIRCLE_MARGIN: f64 = 600.0;
 
-/// An in-progress kick-ahead: the carrier has hoofed (or is about to hoof) the
-/// ball toward a forward teammate, and that teammate is the intended runner.
-/// Distinct from a coordinated `Pass` — the carrier never waits; it just clears
-/// the ball, and the runner chases and collects it in flight.
+/// Pass follow-through: once the kicked ball has cleared the passer and traveled
+/// more than [`PASS_FOLLOW_PROGRESS`] of the way to the receive area, the
+/// receiver becomes the mandatory ball-winner REGARDLESS of the pass result — a
+/// ball that bounds off the catch is the receiver's to chase (it is already
+/// there, moving with it), not the matcher's to re-elect mid-scramble. Dropped
+/// when possession resolves (either side gains) or play stops.
 #[derive(Debug, Clone, Copy)]
-struct KickAhead {
-    /// The teammate pinned to collect the ball.
+struct PassFollowThrough {
+    passer: PlayerId,
     receiver: PlayerId,
-    /// `(ball position, world time)` at the moment the kick released (stamped on
-    /// the first pursuit tick after the hoof). `None` while still pending — the
-    /// carrier is lining up / executing the strike and the ball hasn't left yet.
-    kicked: Option<(Vector2, f64)>,
+    /// Ball position when the pass episode was armed (the kick origin).
+    origin: Vector2,
+    /// The pass's receive area.
+    target: Vector2,
+    /// Set once the ball clears the passer and passes the progress bar; from
+    /// then on the receiver pin holds independent of the pass result.
+    committed: bool,
 }
+
+/// Fraction of the origin→target distance the ball must have traveled for the
+/// follow-through pin to commit.
+const PASS_FOLLOW_PROGRESS: f64 = 0.5;
+/// The ball counts as having "cleared the passer" beyond this distance (mm).
+const PASS_FOLLOW_CLEAR_DIST: f64 = 400.0;
 
 /// The Concerto strategy.
 pub struct ConcertoStrategy {
@@ -89,12 +100,6 @@ pub struct ConcertoStrategy {
     /// is released, another robot takes it, or the robot leaves the field — so
     /// the kicker identity can never flicker mid-take.
     restart_kicker: Option<PlayerId>,
-    /// Ball position when we gained possession (the dribble contact point), for the
-    /// excessive-dribbling carry cap. Cleared whenever we don't hold the ball.
-    dribble_origin: Option<Vector2>,
-    /// World time we gained possession, for the transient fast-break window. Cleared
-    /// whenever we don't hold the ball, so it re-stamps on the next turnover.
-    gained_ball_t: Option<f64>,
     /// Goalkeeper Guard/Clear state machine.
     keeper: keeper::KeeperState,
     /// Latched penalty-taker state (aim point), reset outside the penalty family.
@@ -113,9 +118,10 @@ pub struct ConcertoStrategy {
     /// churn (capture↔kick↔rescue) and shove the wall around while it fights a ball
     /// near our box. Barring the double-touch robot (which may not capture).
     last_capturer: Option<PlayerId>,
-    /// In-progress kick-ahead intent (a hoof aimed at a forward runner). Armed
-    /// from the plan while we hold the ball, consumed/aborted after the kick.
-    kickahead: Option<KickAhead>,
+    /// In-progress pass follow-through (see [`PassFollowThrough`]). Armed from
+    /// the driver's live pass, committed at the progress bar, released when
+    /// possession resolves.
+    pass_follow: Option<PassFollowThrough>,
 }
 
 impl ConcertoStrategy {
@@ -129,14 +135,12 @@ impl ConcertoStrategy {
             last_game_state: GameState::Unknown,
             double_touch_robot: None,
             restart_kicker: None,
-            dribble_origin: None,
-            gained_ball_t: None,
             keeper: keeper::KeeperState::new(),
             penalty: penalty::PenaltyState::default(),
             wall_clearer: None,
             last_wall_ids: Vec::new(),
             last_capturer: None,
-            kickahead: None,
+            pass_follow: None,
         }
     }
 }
@@ -169,7 +173,6 @@ impl Strategy for ConcertoStrategy {
             ParamSpec::bool("role_mark", "Role: man-marking", true),
             ParamSpec::bool("role_support", "Role: wide supporters", true),
             ParamSpec::bool("role_striker", "Role: striker / box-runner", true),
-            ParamSpec::bool("role_pivot", "Role: recycle pivot", true),
             ParamSpec::bool("role_balance", "Role: rest defender", true),
             ParamSpec::bool("role_outlet", "Role: counter outlet", true),
         ]
@@ -252,7 +255,7 @@ impl Strategy for ConcertoStrategy {
         if game_state_changed {
             self.planner.clear_plan();
             self.driver.clear();
-            self.kickahead = None;
+            self.pass_follow = None;
         }
         self.last_game_state = game_state;
 
@@ -315,27 +318,6 @@ impl Strategy for ConcertoStrategy {
         let contest_changed = contest_active != self.last_contest_active;
         self.last_contest_active = contest_active;
 
-        // Track the dribble contact point: stamp it when we gain the ball, clear it
-        // when we don't hold it. `carried` = how far we've dribbled since contact.
-        match possession {
-            Possession::We(_) => {
-                if self.dribble_origin.is_none() {
-                    self.dribble_origin = world.ball_position();
-                }
-                if self.gained_ball_t.is_none() {
-                    self.gained_ball_t = Some(now);
-                }
-            }
-            _ => {
-                self.dribble_origin = None;
-                self.gained_ball_t = None;
-            }
-        }
-        let carried = match (self.dribble_origin, world.ball_position()) {
-            (Some(origin), Some(ball)) => (ball - origin).norm(),
-            _ => 0.0,
-        };
-
         let ball_present = world.ball_position().is_some();
         let we_may_act = match game_state {
             GameState::Run => true,
@@ -368,21 +350,12 @@ impl Strategy for ConcertoStrategy {
             can_act && !keeper_has_ball && (passing || matches!(possession, Possession::We(_)));
         let pursuit = can_act && !offense && !keeper_has_ball;
 
-        let mut inputs = PlanInputs {
+        let inputs = PlanInputs {
             keeper_id: our_keeper_id(&world),
             double_touch_robot: self.double_touch_robot,
             our_attacking_restart: us_operating
                 && matches!(game_state, GameState::Kickoff | GameState::FreeKick),
             our_restart_is_kickoff: us_operating && game_state == GameState::Kickoff,
-            carried,
-            fresh_possession: self
-                .gained_ball_t
-                .map(|t| now - t < config::FAST_BREAK_WINDOW)
-                .unwrap_or(false),
-            now,
-            // Set below, once the kick-ahead lifecycle has run (the runner only
-            // collects — rather than strikes — a loose ball that is in flight).
-            kickahead_receiver: None,
         };
 
         // Robots Formation must not position: those the Planner already controls
@@ -401,20 +374,10 @@ impl Strategy for ConcertoStrategy {
             if needs_replan {
                 match self.planner.replan(&world, &possession, None, &inputs) {
                     Some(plan) => {
-                        // Arm/refresh (or drop) the kick-ahead intent from the
-                        // fresh plan: a hoof toward a forward runner carries that
-                        // runner's id; any other plan carries `None`.
-                        self.kickahead = plan.kickahead.map(|receiver| KickAhead {
-                            receiver,
-                            kicked: None,
-                        });
                         self.driver
                             .set_waypoint(plan.waypoints[0].clone(), plan.active_robot);
                     }
-                    None => {
-                        self.driver.clear();
-                        self.kickahead = None;
-                    }
+                    None => self.driver.clear(),
                 }
             }
             if self.driver.active_robot_id().is_some() {
@@ -430,21 +393,15 @@ impl Strategy for ConcertoStrategy {
             // Not acting — replan fresh when play resumes.
             self.planner.clear_plan();
             self.driver.clear();
-            self.kickahead = None;
         }
 
-        // ── Kick-ahead lifecycle ────────────────────────────────────────
-        // Advance the intent armed above: stamp the kick-release origin on the
-        // first pursuit tick, then hold the runner committed until the ball
-        // clears (success) or the clear-gate times out (abort → replan normally).
-        self.step_kickahead(&world, possession, offense, pursuit, now);
-        // A kick-ahead runner in flight *collects* the loose ball (see the Loose
-        // branch); only expose it to the planner once the kick has actually
-        // released (`kicked` stamped), so a mid-strike replan still strikes.
-        inputs.kickahead_receiver = self
-            .kickahead
-            .filter(|ka| ka.kicked.is_some())
-            .map(|ka| ka.receiver);
+        // ── Pass follow-through ─────────────────────────────────────────
+        // Arm from the driver's live pass, commit once the ball clears the
+        // passer past the progress bar, and from then on pin the receiver as
+        // the mandatory ball-winner regardless of the pass result, until
+        // possession resolves.
+        self.step_pass_follow(&world, possession);
+        let pass_pin = self.pass_follow.filter(|f| f.committed).map(|f| f.receiver);
 
         // ── Our set-piece preparation: designate & position a kicker ─────
         // Covers states that are not yet ball-in-play but where comply() would
@@ -501,16 +458,8 @@ impl Strategy for ConcertoStrategy {
                 let sy = world.own_player(sid).map(|p| p.position.y).unwrap_or(0.0);
                 let target = Vector2::new(world.field_length() / 2.0, sy);
                 self.planner.clear_plan();
-                self.driver.set_waypoint(
-                    planner::Waypoint::Handle {
-                        action: BallAction::Strike {
-                            target,
-                            acquire_first: false,
-                        },
-                        rescue: false,
-                    },
-                    sid,
-                );
+                self.driver
+                    .set_waypoint(planner::Waypoint::Strike { target }, sid);
                 self.wall_clearer = Some(sid);
             }
         }
@@ -578,12 +527,13 @@ impl Strategy for ConcertoStrategy {
                 ineligible,
                 // During our set piece the capture role is reserved for the
                 // pinned taker — matching may not hand the ball to anyone else.
-                // A kick-ahead in flight likewise reserves it for the runner, so
-                // the intended teammate (not the nearest body) collects the ball.
+                // A committed pass follow-through likewise reserves it for the
+                // receiver, so the intended teammate (not the nearest body)
+                // chases a pass that bounded away.
                 pinned: if take_window {
                     self.restart_kicker
                 } else {
-                    inputs.kickahead_receiver.or(defensive_pin)
+                    pass_pin.or(defensive_pin)
                 },
             }
         });
@@ -597,7 +547,6 @@ impl Strategy for ConcertoStrategy {
             mark: config::ROLE_MARK_ENABLED && ctx.param_bool("role_mark"),
             support: config::ROLE_SUPPORT_ENABLED && ctx.param_bool("role_support"),
             striker: config::ROLE_STRIKER_ENABLED && ctx.param_bool("role_striker"),
-            pivot: config::ROLE_PIVOT_ENABLED && ctx.param_bool("role_pivot"),
             balance: config::ROLE_BALANCE_ENABLED && ctx.param_bool("role_balance"),
             outlet: config::ROLE_OUTLET_ENABLED && ctx.param_bool("role_outlet"),
         });
@@ -884,62 +833,69 @@ impl ConcertoStrategy {
         Some(id)
     }
 
-    /// Advance the kick-ahead intent one tick. Phases:
-    /// - **Pending** (`kicked` is `None`): the carrier is lining up / executing
-    ///   the hoof. Held alive while we still hold the ball (offense); on the first
-    ///   pursuit tick (the kick has released) we stamp the origin + time and enter
-    ///   the flight phase. A stoppage in between drops it.
-    /// - **Flight** (`kicked` is `Some`): the runner is pinned to collect the ball.
-    ///   Dropped when we regain the ball (collected → offense), the opponent takes
-    ///   it, play stops, or the clear-gate times out without the ball travelling
-    ///   [`config::KICKAHEAD_CLEAR_DIST`] from the kick origin (a whiffed/blocked
-    ///   kick → abort and let the normal loose-ball capture take over).
-    fn step_kickahead(
-        &mut self,
-        world: &World,
-        possession: Possession,
-        offense: bool,
-        pursuit: bool,
-        now: f64,
-    ) {
-        let Some(mut ka) = self.kickahead.take() else {
+    /// Advance the pass follow-through one tick. Phases:
+    /// - **Armed** (a pass is live in the driver, not yet committed): track ball
+    ///   progress along origin→target. Once the ball has cleared the passer's
+    ///   reach ([`PASS_FOLLOW_CLEAR_DIST`]) and traveled more than
+    ///   [`PASS_FOLLOW_PROGRESS`] of the way, commit. If the pass episode ends
+    ///   before commit (whiff, pre-release abort), drop — the ball never really
+    ///   left, so normal capture election is right.
+    /// - **Committed**: the receiver is the mandatory ball-winner regardless of
+    ///   the pass result. Held while the ball is loose/contested; dropped the
+    ///   moment possession resolves to either side (or the receiver leaves the
+    ///   field / play stops — the game-state edge clears it in `update`).
+    fn step_pass_follow(&mut self, world: &World, possession: Possession) {
+        // Arm / re-arm from the driver's live pass (a new pass replaces a stale
+        // uncommitted arm; a committed pin is never displaced by arming).
+        if let Some((passer, receiver, target)) = self.driver.current_pass() {
+            let stale = self
+                .pass_follow
+                .map(|f| !f.committed && (f.passer != passer || f.receiver != receiver))
+                .unwrap_or(true);
+            if stale && self.pass_follow.map(|f| !f.committed).unwrap_or(true) {
+                self.pass_follow = world.ball_position().map(|origin| PassFollowThrough {
+                    passer,
+                    receiver,
+                    origin,
+                    target,
+                    committed: false,
+                });
+            }
+        }
+        let Some(mut f) = self.pass_follow.take() else {
             return;
         };
-        // The runner must still be on the field to chase.
-        if !world.own_players().iter().any(|p| p.id == ka.receiver) {
+        // The receiver must still be on the field to chase.
+        if !world.own_players().iter().any(|p| p.id == f.receiver) {
             return;
         }
-        match ka.kicked {
-            None => {
-                if offense {
-                    // Still pending — the carrier hasn't released the ball yet.
-                    self.kickahead = Some(ka);
-                } else if pursuit {
-                    // Kick released: stamp the origin/time and commit the runner.
-                    if let Some(ball) = world.ball_position() {
-                        ka.kicked = Some((ball, now));
-                        self.kickahead = Some(ka);
-                    }
-                }
-                // Otherwise (stoppage / not acting) drop it.
+        if !f.committed {
+            // Only meaningful while the pass episode is alive.
+            if self.driver.current_pass().is_none() {
+                return;
             }
-            Some((origin, t)) => {
-                // Consumed (we hold it again), opponent stole it, or play stopped.
-                if offense || !pursuit || matches!(possession, Possession::Opp(_)) {
-                    return;
-                }
-                let dist = world
-                    .ball_position()
-                    .map(|b| (b - origin).norm())
-                    .unwrap_or(0.0);
-                let cleared = dist > config::KICKAHEAD_CLEAR_DIST;
-                if !cleared && now - t > config::KICKAHEAD_CLEAR_TIMEOUT {
-                    // The kick never travelled clear of the kicker → abort.
-                    return;
-                }
-                self.kickahead = Some(ka);
+            let Some(ball) = world.ball_position() else {
+                self.pass_follow = Some(f);
+                return;
+            };
+            let cleared = world
+                .own_player(f.passer)
+                .map(|p| (ball - p.position).norm() > PASS_FOLLOW_CLEAR_DIST)
+                .unwrap_or(true);
+            let span = f.target - f.origin;
+            let len = span.norm().max(1.0);
+            let progress = (ball - f.origin).dot(&(span / len)) / len;
+            if cleared && progress > PASS_FOLLOW_PROGRESS {
+                f.committed = true;
             }
+            self.pass_follow = Some(f);
+            return;
         }
+        // Committed: hold until possession resolves to either side.
+        if matches!(possession, Possession::We(_) | Possession::Opp(_)) {
+            return;
+        }
+        self.pass_follow = Some(f);
     }
 
     fn draw_debug(
@@ -1013,23 +969,10 @@ impl ConcertoStrategy {
 
 /// Build a UI plan step from a waypoint.
 fn plan_step(wp: &planner::Waypoint, active: bool) -> debug::PlanStep {
-    use dies_strategy_api::BallAction;
     use planner::Waypoint;
     let (kind, detail) = match wp {
-        Waypoint::Steal { from } => ("Steal", format!("from p{}", from.as_u32())),
-        Waypoint::Handle { action, rescue } => match action {
-            BallAction::Shoot { target } => {
-                ("Shoot", format!("→ ({:.0}, {:.0})", target.x, target.y))
-            }
-            BallAction::Strike { target, .. } => {
-                ("Strike", format!("→ ({:.0}, {:.0})", target.x, target.y))
-            }
-            BallAction::Carry { to, .. } => ("Carry", format!("→ ({:.0}, {:.0})", to.x, to.y)),
-            BallAction::Hold { .. } => (
-                "Acquire",
-                if *rescue { "rescue off line" } else { "ball" }.to_string(),
-            ),
-        },
+        Waypoint::Strike { target } => ("Strike", format!("→ ({:.0}, {:.0})", target.x, target.y)),
+        Waypoint::Harass { opponent } => ("Harass", format!("block p{}", opponent.as_u32())),
         Waypoint::Pass {
             passer,
             receiver,
@@ -1078,7 +1021,7 @@ fn our_kicker_role(game_state: GameState, us_operating: bool) -> Option<&'static
 /// wall decides between blocking (fast ball) and clearing (slow ball). The wall
 /// always re-centers on the ball→goal line via `shadow_arc`, so a radial x-depth
 /// plus a lateral bound suffices — no separate angular test is needed.
-fn wall_owns_ball(world: &World) -> bool {
+pub(crate) fn wall_owns_ball(world: &World) -> bool {
     let Some(ball) = world.ball_position() else {
         return false;
     };

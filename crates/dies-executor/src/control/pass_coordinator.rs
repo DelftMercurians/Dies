@@ -65,11 +65,12 @@ use crate::skills::executable::{HandleBallSkill, ReceiveSkill, ReflexReceiveSkil
 tunables! {
     section "Pass";
 
-    /// Max distance the ball may be from the passer at pass start. Beyond this
-    /// the pass fails immediately with `BallLost` — a pass never chases a loose
-    /// ball across the field.
-    #[tunable(unit = "mm", min = 100.0, max = 2000.0, step = 50.0)]
-    START_DISTANCE: f64 = 600.0;
+    /// Ball speed below which the ball counts as *settled* during `Stage`. A
+    /// pass may start on a distant / still-rolling loose ball (the stage chases
+    /// it down), so the ball-moved abort anchors at the ball's first settled
+    /// position rather than at pass start — see [`BALL_MOVED_ABORT`].
+    #[tunable(unit = "mm/s", min = 100.0, max = 800.0, step = 25.0)]
+    STAGE_SETTLE_SPEED: f64 = 300.0;
     /// How close (mm) the receiver must be to the intercept point for the
     /// coordinator to ungate the strike (the release barrier).
     #[tunable(unit = "mm", min = 50.0, max = 1000.0, step = 25.0)]
@@ -102,8 +103,12 @@ tunables! {
     /// budget only lengthens a held possession, never rushes a kick.
     #[tunable(unit = "s", min = 1.0, max = 20.0, step = 0.5)]
     STAGE_TIMEOUT: f64 = 12.0;
-    /// Ball displacement from its pass-start position that aborts the pass while
-    /// staging — the gated strike would otherwise follow a rolling ball forever.
+    /// Ball displacement from its first *settled* position (see
+    /// [`STAGE_SETTLE_SPEED`]) that aborts the pass while staging — a settled
+    /// ball that rolls this far was kicked or deflected away, so the pass
+    /// premise is void. Not measured from pass start: a pass may legitimately
+    /// begin on a ball still rolling to rest, which the stage chases down
+    /// (until then the stage timeout + opponent-possession guards bound it).
     #[tunable(unit = "mm", min = 100.0, max = 1500.0, step = 50.0)]
     BALL_MOVED_ABORT: f64 = 500.0;
     /// Backstop time budget for the `Release` phase. Sized past the strike
@@ -248,8 +253,12 @@ pub struct PassCoordinator {
     /// first tick. Hint updates apply only while in `Stage` (the strike re-stages
     /// naturally); frozen from `Release` on.
     intercept_point: Option<Vector2>,
-    /// Ball position at pass creation — anchors the ball-moved abort guard.
+    /// Ball position at pass creation (first-tick init marker).
     ball_start: Option<Vector2>,
+    /// Ball position where the ball first *settled* during `Stage` (speed below
+    /// [`STAGE_SETTLE_SPEED`]) — anchors the ball-moved abort guard. `None`
+    /// while the ball is still rolling to rest (a chased loose-ball pass).
+    ball_anchor: Option<Vector2>,
     /// Ball position at verified departure — the pass-line origin for `Flight`
     /// (the live passer position drifts as it disengages).
     flight_origin: Option<Vector2>,
@@ -319,6 +328,7 @@ impl PassCoordinator {
             total_elapsed: 0.0,
             intercept_point: None,
             ball_start: None,
+            ball_anchor: None,
             flight_origin: None,
             ball_reached_receiver: false,
             strike: HandleBallSkill::new(
@@ -611,23 +621,20 @@ impl PassCoordinator {
 
     /// First-tick contract checks. `Some` fails the pass before it starts.
     ///
-    /// A pass may start from possession: the embedded strike re-aims a held
-    /// ball itself (disengage-and-re-strike, or a gated orbit — see the
-    /// `"HandleBall re-aim"` tunables), all inside the gated `Stage` phase.
-    /// The remaining entry contract is only that the ball is near the passer —
-    /// a pass still never chases a loose ball across the field.
-    fn entry_guard(&self, passer: &PlayerData, ball_pos: Option<Vector2>) -> Option<PassResult> {
-        let Some(bp) = ball_pos else {
+    /// A pass may start from possession (the embedded strike re-aims a held
+    /// ball itself inside the gated `Stage` phase) or from a distant /
+    /// still-rolling loose ball — the `Stage` phase chases it: the gated strike
+    /// re-stages behind the live ball every tick, so the passer simply drives to
+    /// wherever the ball settles. The strategy elects the passer (its capturer
+    /// is already the robot best placed to reach the ball); the coordinator's
+    /// job is only to bound the chase — via the stage timeout, the
+    /// opponent-possession guard, and the settled-ball displacement abort
+    /// ([`BALL_MOVED_ABORT`]). The entry contract is just that a ball exists.
+    fn entry_guard(&self, _passer: &PlayerData, ball_pos: Option<Vector2>) -> Option<PassResult> {
+        if ball_pos.is_none() {
             return Some(PassResult::Failure {
                 reason: PassFailure::BallLost,
                 ball_state: PassBallState::Unknown,
-            });
-        };
-        if (bp - passer.position).norm() > START_DISTANCE() {
-            // The pass never chases a loose ball.
-            return Some(PassResult::Failure {
-                reason: PassFailure::BallLost,
-                ball_state: PassBallState::Loose { position: bp },
             });
         }
         None
@@ -648,8 +655,25 @@ impl PassCoordinator {
                 ball_state: PassBallState::Unknown,
             });
         };
-        if let Some(start) = self.ball_start {
-            if (bp - start).norm() > BALL_MOVED_ABORT() {
+        // Displacement abort, anchored at the ball's first SETTLED position: a
+        // pass may start on a ball still rolling to rest (the stage chases it),
+        // so displacement from pass start is meaningless. Once the ball has
+        // settled, a large displacement means it was kicked/deflected away —
+        // the pass premise is void. Until it settles, the stage timeout and the
+        // opponent-possession check below bound the chase.
+        if self.ball_anchor.is_none() {
+            let speed = ctx
+                .world
+                .ball
+                .as_ref()
+                .map(|b| b.velocity.xy().norm())
+                .unwrap_or(0.0);
+            if speed < STAGE_SETTLE_SPEED() {
+                self.ball_anchor = Some(bp);
+            }
+        }
+        if let Some(anchor) = self.ball_anchor {
+            if (bp - anchor).norm() > BALL_MOVED_ABORT() {
                 return Some(PassResult::Failure {
                     reason: PassFailure::BallLost,
                     ball_state: PassBallState::Loose { position: bp },
@@ -1360,8 +1384,10 @@ mod tests {
     }
 
     #[test]
-    fn fails_when_ball_far_from_passer() {
-        // Passer nowhere near the ball -> the pass never chases a loose ball.
+    fn distant_ball_is_chased_not_failed() {
+        // Passer far from the ball: the Stage phase chases it (the strategy's
+        // capturer is the passer) — the pass stays Running instead of the old
+        // instant BallLost, and the gated strike drives the passer.
         let w = world(
             vec![
                 player(0, Vector2::new(0.0, 0.0), 0.0),
@@ -1373,6 +1399,33 @@ mod tests {
         let tc = team_ctx();
         let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None, None);
         let out = c.tick(&ctx(&w, &tc));
+        assert_eq!(out.status, SkillStatus::Running);
+        assert!(c.result().is_none());
+    }
+
+    #[test]
+    fn settled_ball_displacement_aborts_but_a_rolling_start_does_not() {
+        // A settled ball anchors the displacement guard: rolling >
+        // BALL_MOVED_ABORT away from the anchor voids the pass premise.
+        // Passer well off the pass axis (perp >> PASSER_STAGED_PERP) so the
+        // release barrier stays closed and every tick runs the Stage guards.
+        let mk = |ball: Vector2| {
+            world(
+                vec![
+                    player(0, ball + Vector2::new(-200.0, 600.0), 0.0),
+                    player(1, RECEIVER_POS, 0.0),
+                ],
+                Some(ball),
+                0.016,
+            )
+        };
+        let tc = team_ctx();
+        let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None, None);
+        // Tick 1: settled ball (zero velocity) → anchor set.
+        let out = c.tick(&ctx(&mk(Vector2::new(0.0, 0.0)), &tc));
+        assert_eq!(out.status, SkillStatus::Running);
+        // Tick 2: ball displaced far from the anchor → BallLost.
+        let out = c.tick(&ctx(&mk(Vector2::new(1000.0, 0.0)), &tc));
         assert_eq!(out.status, SkillStatus::Failed);
         assert!(matches!(
             c.result(),
@@ -1381,6 +1434,21 @@ mod tests {
                 ..
             })
         ));
+
+        // A FAST ball at pass start never anchors, so its travel does not trip
+        // the displacement abort — the stage keeps chasing it.
+        let mut rolling = mk(Vector2::new(0.0, 0.0));
+        rolling.ball.as_mut().unwrap().velocity = Vector3::new(1500.0, 0.0, 0.0);
+        let mut c = PassCoordinator::new(PlayerId::new(0), PlayerId::new(1), None, None);
+        assert_eq!(c.tick(&ctx(&rolling, &tc)).status, SkillStatus::Running);
+        let mut moved = mk(Vector2::new(2000.0, 0.0));
+        moved.ball.as_mut().unwrap().velocity = Vector3::new(1500.0, 0.0, 0.0);
+        let out = c.tick(&ctx(&moved, &tc));
+        assert_eq!(
+            out.status,
+            SkillStatus::Running,
+            "an unsettled ball's travel must not abort the chase"
+        );
     }
 
     #[test]
