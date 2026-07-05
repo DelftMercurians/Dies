@@ -1381,6 +1381,18 @@ export interface RawGameStateData {
 	yellow_team_name?: string;
 }
 
+/**
+ * A goal scored during the recorded match, surfaced to the replay scrubber.
+ * Derived from logged goal events: live matches log a `goal` event per GC
+ * score increment; sim/self-play logs use `sim_referee` events.
+ */
+export interface ReplayGoal {
+	frame_id: number;
+	t: number;
+	/** Scoring team (`"Blue"`/`"Yellow"`), if attributed. */
+	team?: string;
+}
+
 /** A user point-of-interest marker, surfaced to the replay scrubber. */
 export interface ReplayMarker {
 	frame_id: number;
@@ -1404,6 +1416,8 @@ export interface ReplayState {
 	 */
 	dt: number;
 	markers: ReplayMarker[];
+	/** Goals scored during the match, positioned on the scrubber like markers. */
+	goals: ReplayGoal[];
 }
 
 export interface SaveSnapshotBody {

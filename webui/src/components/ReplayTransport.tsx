@@ -49,9 +49,18 @@ export const ReplayTransport = () => {
     frame_count,
     dt,
     markers,
+    goals,
   } = replay;
   const span = Math.max(t_max - t_min, 1e-6);
   const fps = dt > 0 ? 1 / dt : 0;
+
+  // Running score up to the current playhead (goals are time-ordered in the log).
+  const blueScore = goals.filter(
+    (g) => g.team === "Blue" && g.t <= current_t,
+  ).length;
+  const yellowScore = goals.filter(
+    (g) => g.team === "Yellow" && g.t <= current_t,
+  ).length;
 
   const stepFrame = (delta: number) =>
     sendCommand({ type: "ReplayStep", data: { delta } });
@@ -138,6 +147,28 @@ export const ReplayTransport = () => {
             </TooltipContent>
           </Tooltip>
         ))}
+        {/* Goal ticks — taller, team-colored, sitting above the marker ticks. */}
+        {goals.map((g, i) => (
+          <Tooltip key={`goal-${i}`}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => seek(g.t)}
+                className={
+                  "absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-sm " +
+                  (g.team === "Blue"
+                    ? "bg-blue-400 hover:bg-blue-200"
+                    : g.team === "Yellow"
+                      ? "bg-yellow-300 hover:bg-yellow-100"
+                      : "bg-white hover:bg-white/80")
+                }
+                style={{ left: `${((g.t - t_min) / span) * 100}%` }}
+              />
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {`⚽ ${g.team ?? "?"} goal · ${g.t.toFixed(2)}s`}
+            </TooltipContent>
+          </Tooltip>
+        ))}
       </div>
 
       {/* markers list */}
@@ -206,6 +237,16 @@ export const ReplayTransport = () => {
       </select>
 
       <div className="flex items-center gap-2 whitespace-nowrap font-mono text-[11px] tabular-nums text-cyan-100">
+        {goals.length > 0 && (
+          <span
+            className="rounded-sm bg-black/30 px-1.5 py-0.5"
+            title={`Score at playhead — ${goals.length} goal${goals.length === 1 ? "" : "s"} in log`}
+          >
+            ⚽ <span className="text-blue-300">{blueScore}</span>
+            <span className="text-text-dim">–</span>
+            <span className="text-yellow-300">{yellowScore}</span>
+          </span>
+        )}
         {activeMarker && (
           <span className="max-w-40 truncate rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-amber-200">
             {activeMarker.label ?? "marker"}

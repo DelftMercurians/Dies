@@ -445,6 +445,14 @@ pub struct Executor {
     /// Whether the one-shot "MATCH START" marker has been dropped yet (match runs
     /// only, once the GC team names are known).
     match_marker_dropped: bool,
+    /// Last `(blue, yellow)` score seen from the GC referee, to detect goals on
+    /// live matches by score increment (sim goals come from the simulator's
+    /// referee events instead). `None` until the first referee message arrives.
+    last_gc_score: Option<(u32, u32)>,
+    /// True when running against the simulator. Sim goals are logged from the
+    /// simulator's `sim_referee` events, so GC-score goal detection is skipped
+    /// to avoid double-counting (the sim GC message also carries the score).
+    is_simulation: bool,
 }
 
 impl Executor {
@@ -517,6 +525,7 @@ impl Executor {
             team_controllers.activate_team(TeamColor::Yellow, &settings);
             controlled_teams.push(TeamColor::Yellow);
         }
+        let is_simulation = matches!(environment, Environment::Simulation { .. });
         if let Environment::Simulation { simulator } = &mut environment {
             simulator.set_controlled_teams(&controlled_teams);
         }
@@ -547,6 +556,8 @@ impl Executor {
             paused_edit_world: None,
             last_logged_team_names: None,
             match_marker_dropped: false,
+            last_gc_score: None,
+            is_simulation,
         }
     }
 
@@ -573,6 +584,31 @@ impl Executor {
         }
         self.tracker.update_from_referee(&message);
         self.announcer.on_referee(&message, self.last_t);
+
+        // Detect goals on live matches by watching the GC score. A goal is
+        // logged as a `goal` event (which the replay scrubber reads) so live logs
+        // carry recoverable goals. Only strict increments count; a decrease is a
+        // GC reset and just rebaselines. Skipped in sim, where goals already come
+        // from `sim_referee` events (the sim GC message carries the score too, so
+        // running this there would double-count).
+        if !self.is_simulation {
+            let (blue_score, yellow_score) = (message.blue.score(), message.yellow.score());
+            if let Some((prev_blue, prev_yellow)) = self.last_gc_score {
+                if blue_score > prev_blue {
+                    self.log_event(
+                        "goal",
+                        serde_json::json!({ "team": "Blue", "blue": blue_score, "yellow": yellow_score }),
+                    );
+                }
+                if yellow_score > prev_yellow {
+                    self.log_event(
+                        "goal",
+                        serde_json::json!({ "team": "Yellow", "blue": blue_score, "yellow": yellow_score }),
+                    );
+                }
+            }
+            self.last_gc_score = Some((blue_score, yellow_score));
+        }
 
         // Detect side assignment from referee message
         if let Some(blue_on_positive) = message.blue_team_on_positive_half {

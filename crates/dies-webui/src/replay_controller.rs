@@ -10,7 +10,7 @@ use dies_core::{debug_clear, debug_record, WorldUpdate};
 use dies_logger::replay::LogReader;
 use tokio::sync::{mpsc, watch};
 
-use crate::{ReplayMarker, ReplayState};
+use crate::{ReplayGoal, ReplayMarker, ReplayState};
 
 enum ReplayCmd {
     Play,
@@ -105,6 +105,30 @@ async fn playback_loop(
             label: m.label.clone(),
         })
         .collect();
+    // Goals recorded during the match. Live matches emit a `goal` event on each
+    // GC score increment; sim/self-play emit `sim_referee` events with a
+    // `{"kind":"Goal",...}` payload. Both carry the scoring `team`.
+    let goals: Vec<ReplayGoal> = reader
+        .events()
+        .iter()
+        .filter_map(|e| {
+            let payload: serde_json::Value = serde_json::from_str(&e.payload_json).ok()?;
+            let is_goal = e.event_type == "goal"
+                || (e.event_type == "sim_referee"
+                    && payload.get("kind").and_then(|k| k.as_str()) == Some("Goal"));
+            if !is_goal {
+                return None;
+            }
+            Some(ReplayGoal {
+                frame_id: e.frame_id,
+                t: e.t,
+                team: payload
+                    .get("team")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            })
+        })
+        .collect();
 
     let mut idx = 0usize;
     let mut playing = false;
@@ -136,6 +160,7 @@ async fn playback_loop(
             frame_count: frames.len() as u64,
             dt: nominal_dt,
             markers: markers.clone(),
+            goals: goals.clone(),
         });
     };
 

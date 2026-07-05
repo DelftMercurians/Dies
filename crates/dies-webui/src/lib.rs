@@ -217,6 +217,19 @@ pub(crate) struct ReplayMarker {
     pub label: Option<String>,
 }
 
+/// A goal scored during the recorded match, surfaced to the replay scrubber.
+/// Derived from logged goal events: live matches log a `goal` event per GC
+/// score increment; sim/self-play logs use `sim_referee` events.
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct ReplayGoal {
+    #[typeshare(serialized_as = "number")]
+    pub frame_id: u64,
+    pub t: f64,
+    /// Scoring team (`"Blue"`/`"Yellow"`), if attributed.
+    pub team: Option<String>,
+}
+
 /// State of the replay player, pushed to the frontend on change.
 #[derive(Debug, Clone, Serialize, Default)]
 #[typeshare]
@@ -235,6 +248,8 @@ pub(crate) struct ReplayState {
     /// scrubber's frame/fps readout. Zero for degenerate single-frame logs.
     pub dt: f64,
     pub markers: Vec<ReplayMarker>,
+    /// Goals scored during the match, positioned on the scrubber like markers.
+    pub goals: Vec<ReplayGoal>,
 }
 
 /// A single backend log line streamed to the console panel.
