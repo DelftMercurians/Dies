@@ -167,7 +167,12 @@ impl HandleBallSkill {
                 "staging".into()
             };
             input.with_position(staging);
-            input.add_global_velocity(staging_feed(player_pos, staging));
+            let ball_vel_feedforward = if axis.moving {
+                ball_vel
+            } else {
+                Vector2::zeros()
+            };
+            input.add_global_velocity(staging_feed(player_pos, staging) + ball_vel_feedforward);
             input.avoid_ball = true;
             input.avoid_ball_care = APPROACH_CARE();
             self.commit_pos = Some(player_pos);
