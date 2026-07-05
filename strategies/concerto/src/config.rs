@@ -231,7 +231,7 @@ pub const CROSS_BACK_MARGIN: f64 = 600.0;
 // the play is judged on its own deflection geometry.
 /// Master switch for the whole play. `false` removes it from the destination
 /// ladder — only goal shots, forward passes, and advance strikes remain.
-pub const CORNER_OT_ENABLED: bool = false;
+pub const CORNER_OT_ENABLED: bool = true;
 /// How far upfield of the opponent box front the trigger zone extends: the
 /// carrier must be at `x > box_front − CORNER_OT_ZONE_DEPTH`. Deep enough to
 /// cover the whole corner pocket where the strike-finish fallback fires from
