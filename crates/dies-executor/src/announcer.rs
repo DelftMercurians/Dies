@@ -16,6 +16,15 @@ use dies_protos::{
 };
 use dies_simulator::{RefereeMessage, SimRefereeEvent};
 
+/// A GC referee event worth persisting to the log: a referee command transition
+/// or a newly-seen autoref game event. Produced by [`Announcer::on_referee`] so
+/// the same dedup that gates the on-screen commentary also gates logging.
+pub struct GcLogRecord {
+    /// Log `event_type`: `"gc_command"` or `"gc_game_event"`.
+    pub event_type: &'static str,
+    pub payload: serde_json::Value,
+}
+
 /// Suppress an identical line if it was emitted within this many seconds. Tames
 /// level-triggered sim events (e.g. "defender too close" raised every frame).
 const DEDUPE_SECS: f64 = 3.0;
@@ -50,12 +59,20 @@ impl Announcer {
     }
 
     /// Process a referee message (works for both the sim's synthetic messages and
-    /// a real game controller's). Narrates command transitions and game events.
-    pub fn on_referee(&mut self, referee: &Referee, t: f64) {
+    /// a real game controller's). Narrates command transitions and game events,
+    /// and returns the ones newly seen this message as [`GcLogRecord`]s so the
+    /// caller can persist the full GC event stream to the log.
+    pub fn on_referee(&mut self, referee: &Referee, t: f64) -> Vec<GcLogRecord> {
+        let mut records = Vec::new();
+
         // Command transitions.
         let command = referee.command();
         if self.last_command != Some(command) {
             self.last_command = Some(command);
+            records.push(GcLogRecord {
+                event_type: "gc_command",
+                payload: serde_json::json!({ "command": format!("{command:?}") }),
+            });
             if let Some((category, team, text)) = command_announcement(command) {
                 self.emit(category, team, text, t);
             }
@@ -72,6 +89,10 @@ impl Announcer {
             for ev in &referee.game_events {
                 let key = event_dedupe_key(ev);
                 if self.seen_event_ids.insert(key) {
+                    records.push(GcLogRecord {
+                        event_type: "gc_game_event",
+                        payload: game_event_payload(ev),
+                    });
                     if let Some(item) = game_event_announcement(ev) {
                         new_events.push(item);
                     }
@@ -81,6 +102,8 @@ impl Announcer {
                 self.emit(category, team, text, t);
             }
         }
+
+        records
     }
 
     /// Process a simulator-internal event (foul, violation, goal).
@@ -257,6 +280,20 @@ fn event_dedupe_key(ev: &GameEvent) -> String {
     } else {
         format!("{:?}:{}", ev.type_(), ev.created_timestamp())
     }
+}
+
+/// Build the log payload for a game event: the enum type name as a stable,
+/// queryable discriminator plus the full protobuf serialized to JSON (every
+/// field preserved, so the log stays forward-compatible with new event kinds).
+fn game_event_payload(ev: &GameEvent) -> serde_json::Value {
+    let detail = protobuf_json_mapping::print_to_string(ev)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    serde_json::json!({
+        "type": type_name(ev),
+        "event": detail,
+    })
 }
 
 /// Format a live autoref game event. Explicit arms for the high-value events,

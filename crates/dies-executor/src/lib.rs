@@ -583,7 +583,12 @@ impl Executor {
             }
         }
         self.tracker.update_from_referee(&message);
-        self.announcer.on_referee(&message, self.last_t);
+        // Persist the full GC event stream (command transitions + autoref game
+        // events) to the log; the announcer's dedup gates what's new so each
+        // fires once. Works for sim (commands only) and live (commands + events).
+        for rec in self.announcer.on_referee(&message, self.last_t) {
+            self.log_event(rec.event_type, rec.payload);
+        }
 
         // Detect goals on live matches by watching the GC score. A goal is
         // logged as a `goal` event (which the replay scrubber reads) so live logs

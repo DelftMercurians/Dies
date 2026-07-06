@@ -574,8 +574,8 @@ impl Planner {
         // out-pointing axes), open cross lane from the ball (hard), opponent
         // sitting on the pocket discounts but never vetoes — adjacent samples
         // win, the "slide along the box edge" behavior.
-        let half_len = world.field_length() / 2.0;
-        let half_wid = world.field_width() / 2.0;
+        let half_len = world.field_length() / 2.0 + world.field_boundary_width();
+        let half_wid = world.field_width() / 2.0 + world.field_boundary_width();
         let mut best_pocket: Option<(Vector2, Vector2, f64)> = None;
         for pocket in pockets {
             let Some(axis) = (ball - pocket).try_normalize(1e-6) else {
@@ -583,7 +583,7 @@ impl Planner {
             };
             let stage = ball + axis * config::CORNER_OT_STAGE_ROOM;
             // Robot-centre clearance to the boundary lines (radius + slack).
-            if stage.x.abs() > half_len - 130.0 || stage.y.abs() > half_wid - 130.0 {
+            if stage.x.abs() > half_len - 100.0 || stage.y.abs() > half_wid - 100.0 {
                 continue;
             }
             let lane = geometry::lane_openness(ball, pocket, opps, config::KICK_LANE_CORRIDOR);
@@ -1076,12 +1076,16 @@ mod tests {
     // ── Corner one-timer battery ────────────────────────────────────────────
 
     /// Div-B corner geometry shared by the corner one-timer tests: carrier on
-    /// the ball deep in the opponent corner (no shot window from that angle),
-    /// their keeper home, a presser behind the ball.
+    /// the ball deep in the opponent corner, their keeper guarding the (already
+    /// razor-thin) ball→mouth cone so no direct-shot window clears the angle
+    /// gate, a presser behind the ball. From (4150, 2500) the whole mouth
+    /// subtends only ~0.057 rad; the keeper at (4400, 700) sits inside that
+    /// cone and splits it into sub-gate slivers, so the ladder falls through
+    /// to the corner rung instead of blasting the sliver.
     fn corner_world(own: Vec<PlayerState>, extra_opps: Vec<PlayerState>) -> World {
         let ball = Vector2::new(4150.0, 2500.0);
         let mut opp = vec![
-            player(14, 4400.0, 100.0), // their keeper
+            player(14, 4400.0, 700.0), // their keeper, on the ball→mouth cone
             player(5, 4300.0, 2500.0), // presser behind the ball
         ];
         opp.extend(extra_opps);

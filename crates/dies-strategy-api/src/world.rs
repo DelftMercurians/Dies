@@ -116,6 +116,14 @@ impl World {
             .unwrap_or(6000.0)
     }
 
+    pub fn field_boundary_width(&self) -> f64 {
+        self.snapshot
+            .field_geom
+            .as_ref()
+            .map(|f| f.boundary_width)
+            .unwrap_or(300.0)
+    }
+
     /// Get the center of our own goal (always at -x in normalized coordinates).
     pub fn own_goal_center(&self) -> Vector2 {
         Vector2::new(-self.field_length() / 2.0, 0.0)

@@ -34,7 +34,7 @@ pub const GOALIE_ENABLED: bool = true;
 ///   (the corner one-timer has its own geometry gates and is unaffected). The
 ///   ball is always advanced by a strike.
 /// - `> 1.0` — biases toward passing (marginal lanes clear their gate more often).
-pub const PASS_SUCCESS_BASE: f64 = 1.0;
+pub const PASS_SUCCESS_BASE: f64 = 0.0;
 /// ── Rest defense (don't over-commit on the counter) ─────────────────────────
 /// While attacking, all field robots but the keeper + box anchor pile forward,
 /// so a turnover leaves the goal to the keeper + anchor alone and the wing wall
@@ -351,7 +351,7 @@ pub const THREAT_GOAL_NEAR: f64 = 1500.0;
 pub const THREAT_GOAL_FAR: f64 = 6000.0;
 /// Number of shadow (goal-coverage) roles the wall always emits; the *staffed*
 /// count emerges from threat-scaled importance.
-pub const SHADOW_MAX: usize = 2; // TODO: CHECk
+pub const SHADOW_MAX: usize = 3; // TODO: CHECk
 /// Fix A: per-arc-step importance falloff for the always-emitted shadow wall.
 /// The central shadow (on the ball→goal ray) keeps full importance; each step out
 /// toward a wing multiplies by this, so at low threat only the centre is staffed
@@ -379,7 +379,7 @@ pub const COMPACT_SPACING: f64 = SHADOW_SPACING;
 /// Together they replace the goal-centre-radial `SHADOW_STANDOFF`. Sits ~one
 /// robot-width-plus outside the anchor so a 2-body wall never stacks. Tuning surface
 /// — changes wall depth/coverage; validate in sim.
-pub const SHADOW_BOX_OFFSET: f64 = 100.0;
+pub const SHADOW_BOX_OFFSET: f64 = 300.0;
 /// Half-width (mm) of the bounded band around each shadow offset curve. The
 /// no-overshoot envelope keeps a waller within `offset ± this` of the box. Must
 /// exceed the executor's BOUNDS_MARGIN (30) or the target sits on an unreachable

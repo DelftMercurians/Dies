@@ -667,7 +667,18 @@ impl Strategy for ConcertoStrategy {
             .map(|f| f.center_circle_radius)
             .unwrap_or(500.0)
             + KICKOFF_CIRCLE_MARGIN;
+        // Live plan slots take precedence over Formation's commands. A PURSUIT
+        // replan runs after `formation.update` (it needs the elected capturer),
+        // so a pass created there names a receiver Formation has already
+        // generated a command for this tick — applying it would overwrite the
+        // receiver's pass command, break the pair at the executor, and fail the
+        // pass every other tick (the one_timer↔support role-flicker loop). Skip
+        // those robots here; from the next tick they are properly reserved.
+        let plan_slots = self.driver.plan_slots();
         for cmd in &fout.commands {
+            if plan_slots.contains(&cmd.id) {
+                continue;
+            }
             if let Some(p) = ctx.player(cmd.id) {
                 let mut target = cmd.target;
                 // The kickoff guard positions itself tight to the centre circle on
@@ -892,9 +903,9 @@ impl ConcertoStrategy {
             return;
         }
         // Committed: hold until possession resolves to either side.
-        if matches!(possession, Possession::We(_) | Possession::Opp(_)) {
-            return;
-        }
+        // if matches!(possession, Possession::We(_) | Possession::Opp(_)) {
+        //     return;
+        // }
         self.pass_follow = Some(f);
     }
 
