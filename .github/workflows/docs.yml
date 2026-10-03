@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-    paths: ["docs/**/*", "src/**/*.rs", ".github/workflows/docs.yml"]
+    paths: ["docs/**/*", "README.md", "src/**/*.rs", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
 jobs:

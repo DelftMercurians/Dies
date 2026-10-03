@@ -45,7 +45,7 @@ dies-core ------------> dies-cli
 
 There should be a few root crates (`dies-core`) which will rarely change, a number of specialized feature crates (`dies-basestation-client`, `dies-executor`, etc.), and a few small leaf crates which just glue things together (`dies-cli`).
 
-For an up-to-date list of crates, see the README.
+For what each crate does, organised by data flow, see the [Codebase Map](./codebase_map.md).
 
 ## Error Handling
 
