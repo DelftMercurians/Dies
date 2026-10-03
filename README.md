@@ -40,26 +40,16 @@ The quickest way to find where a change belongs is to follow one frame of data t
 
 ```mermaid
 flowchart TD
-    subgraph inputs[Inputs]
-        VIS[SSL Vision / Game Controller<br/>dies-ssl-client]
-        SIM[Simulator + auto-ref<br/>dies-simulator]
-        BS[Robot feedback<br/>dies-basestation-client]
-    end
+    VIS[SSL Vision / Game Controller<br/>dies-ssl-client]
+    SIM[Simulator + auto-ref<br/>dies-simulator]
+    BS[Robot feedback<br/>dies-basestation-client]
 
     TR[World tracking<br/>dies-world]
     EX[Executor frame tick<br/>dies-executor]
+    STRAT[Strategy process<br/>StrategyHost - IPC - Strategy::update]
 
-    subgraph strat[Strategy process]
-        HOST[StrategyHost<br/>team-relative transform]
-        RUN[strategy runner]
-        STRAT[Strategy::update<br/>strategies/concerto]
-    end
-
-    subgraph ctrl[Team control - per robot]
-        SK[Skills]
-        COMP[Rule compliance]
-        PLAN[Path planning + ORCA]
-        PC[PlayerController]
+    subgraph ctrl[TeamController, per robot]
+        SK[Skills] --> COMP[Rule compliance] --> PLAN[Path planning + ORCA] --> PC[PlayerController]
     end
 
     OUT[Robot commands<br/>basestation / simulator]
@@ -70,18 +60,12 @@ flowchart TD
     SIM --> TR
     BS --> TR
     TR -- WorldData --> EX
-    EX -- WorldSnapshot --> HOST
-    HOST <-- IPC --> RUN
-    RUN --> STRAT
-    STRAT -- SkillCommands --> HOST
-    HOST -- SkillCommands --> SK
-    EX --> SK
-    SK --> COMP --> PLAN --> PC
-    PC -- PlayerCmd --> OUT
-    OUT -. feedback .-> BS
+    EX -- WorldSnapshot --> STRAT
+    STRAT -- SkillCommands --> SK
     EX -- WorldUpdate --> UI
-    UI -- ControlMsg --> EX
+    UI -. ControlMsg .-> EX
     EX --> LOG
+    PC -- PlayerCmd --> OUT
 ```
 
 ### One frame, step by step
