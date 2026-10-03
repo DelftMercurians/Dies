@@ -41,8 +41,22 @@ jobs:
           cache-all-crates: true
           cache-on-failure: true
 
-      - run: cargo install mdbook
-      - run: cargo install mdbook-mermaid
+      # dies-webui's build.rs runs `pnpm run build`, so `cargo doc` needs the
+      # frontend toolchain + installed deps.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: webui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: ./webui
+
+      # Pinned: mdbook 0.5 is a breaking release.
+      - run: cargo install mdbook --version 0.4.51 --locked
+      - run: cargo install mdbook-mermaid --version 0.15.0 --locked
 
       - name: Build API docs
         run: cargo doc --no-deps --all-features --all --exclude dies-protos
