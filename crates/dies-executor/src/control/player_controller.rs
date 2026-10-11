@@ -223,7 +223,7 @@ impl PlayerController {
             _ if self.reflex_requested && self.magnet_requested => RobotCmd::ArmReflexMagnet,
             _ if self.reflex_requested => RobotCmd::ArmReflex,
             _ if self.magnet_requested => RobotCmd::ArmMagnet,
-            _ => RobotCmd::Arm,
+            _ => RobotCmd::None, // Don't arm or disarm, do nothing
         };
 
         let global_cmd = untransformer
