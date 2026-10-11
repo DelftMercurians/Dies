@@ -848,6 +848,7 @@ fn comply(
                     new_input.with_speed_limit(0.0);
                     new_input.with_angular_speed_limit(0.0);
                     new_input.dribbling_speed = 0.0;
+		    new_input.with_kicker(KickerControlInput::Disarm);
                 }
 
                 // Timeout is treated like Stop: robots may move at the Stop-state
@@ -855,7 +856,8 @@ fn comply(
                 // 1.5 m/s rule ceiling (1300, same cap Stop gets at :760) so a
                 // Timeout never trips a BOT_TOO_FAST_IN_STOP-style over-speed.
                 if matches!(game_state, GameState::Stop | GameState::Timeout) {
-                    new_input.with_speed_limit(1300.0);
+                    new_input.with_speed_limit(1300.0);	
+		    new_input.with_kicker(KickerControlInput::Disarm);
                 }
 
                 let us_operating = world_data.current_game_state.us_operating;
