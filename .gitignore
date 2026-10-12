@@ -28,6 +28,7 @@ log*.json
 .dies
 .dies-settings/
 .dies-snapshots/
+.dies-notebooks/
 .claude
 .selfimprove/
 # scratch space for one-off log analysis (keep the README tracked)

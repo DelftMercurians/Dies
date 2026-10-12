@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use dies_core::{
-    ExecutorInfo, ExecutorSettings, GcSimCommand, PlayerId, PlayerOverrideCommand, SideAssignment,
-    SimulatorCmd, StrategyParams, TeamColor, TeamConfiguration, WorldUpdate,
+    ExecutorInfo, ExecutorSettings, GcSimCommand, NotebookCmd, NotebookEvent, PlayerId,
+    PlayerOverrideCommand, SideAssignment, SimulatorCmd, StrategyParams, TeamColor,
+    TeamConfiguration, WorldUpdate,
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -47,6 +48,8 @@ pub enum ControlMsg {
         team: TeamColor,
         params: StrategyParams,
     },
+    /// Notebook (embedded JS) command from the UI.
+    Notebook(NotebookCmd),
     Stop,
 }
 
@@ -70,6 +73,7 @@ impl ExecutorInfoReceiver {
 pub struct ExecutorHandle {
     pub control_tx: mpsc::UnboundedSender<ControlMsg>,
     pub update_rx: broadcast::Receiver<WorldUpdate>,
+    pub notebook_rx: broadcast::Receiver<NotebookEvent>,
     pub info_channel: mpsc::UnboundedSender<oneshot::Sender<ExecutorInfo>>,
 }
 
@@ -109,6 +113,7 @@ impl Clone for ExecutorHandle {
         Self {
             control_tx: self.control_tx.clone(),
             update_rx: self.update_rx.resubscribe(),
+            notebook_rx: self.notebook_rx.resubscribe(),
             info_channel: self.info_channel.clone(),
         }
     }

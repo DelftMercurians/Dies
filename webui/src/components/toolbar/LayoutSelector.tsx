@@ -20,26 +20,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAtom } from "jotai";
+import { DockviewApi } from "dockview";
 import {
   savedLayoutsAtom,
   currentLayoutNameAtom,
+  switchView,
 } from "@/components/DockviewWrapper";
+import { VIEWS, isBuiltinView } from "@/lib/views";
 
 /**
- * Layout selector dropdown with layout management.
+ * View selector: switch between built-in task views (Default, Motion, ...) and
+ * user-saved layouts, in place.
  *
  * Features:
- * - Switch between saved layouts
- * - Save current layout with custom name
+ * - Switch views (each keeps its own arrangement)
+ * - Save current arrangement under a custom name
  * - Delete saved layouts
- * - Reset to default layout
+ * - Reset the current view to its preset
  */
 
 interface LayoutSelectorProps {
   onResetToDefault?: () => void;
+  getDockviewApi?: () => DockviewApi | null;
 }
 
-const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => {
+const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault, getDockviewApi }) => {
   const [savedLayouts, setSavedLayouts] = useAtom(savedLayoutsAtom);
   const [currentLayoutName, setCurrentLayoutName] = useAtom(
     currentLayoutNameAtom
@@ -50,18 +55,8 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
 
   const layoutNames = Object.keys(savedLayouts);
 
-  // Predefined layouts that can be selected
-  const availableLayouts = [
-    { value: "default", label: "Default", available: true },
-    { value: "debugging", label: "Debugging", available: layoutNames.includes("debugging") },
-    { value: "match", label: "Match", available: layoutNames.includes("match") },
-    { value: "development", label: "Development", available: layoutNames.includes("development") },
-  ];
-
   // Custom layouts (user-created)
-  const customLayouts = layoutNames.filter(
-    (name) => !["default", "debugging", "match", "development"].includes(name)
-  );
+  const customLayouts = layoutNames.filter((name) => !isBuiltinView(name));
 
   const handleLayoutChange = (value: string) => {
     if (value === "__save__") {
@@ -71,9 +66,8 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
     } else if (value === "__reset__") {
       onResetToDefault?.();
     } else {
-      setCurrentLayoutName(value);
-      // Reload the page to apply the new layout
-      window.location.reload();
+      const api = getDockviewApi?.();
+      if (api) switchView(api, value);
     }
   };
 
@@ -88,7 +82,7 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
   };
 
   const handleDeleteLayout = (name: string) => {
-    if (name === "default") return;
+    if (isBuiltinView(name)) return;
 
     setSavedLayouts((prev) => {
       const { [name]: _, ...rest } = prev;
@@ -107,14 +101,10 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
           <SelectValue placeholder="Layout" />
         </SelectTrigger>
         <SelectContent>
-          {/* Predefined layouts */}
-          {availableLayouts.map((layout) => (
-            <SelectItem
-              key={layout.value}
-              value={layout.value}
-              disabled={!layout.available && layout.value !== "default"}
-            >
-              {layout.label}
+          {/* Built-in views */}
+          {VIEWS.map((view) => (
+            <SelectItem key={view.id} value={view.id}>
+              {view.label}
             </SelectItem>
           ))}
 
@@ -148,7 +138,7 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
           <SelectItem value="__reset__">
             <div className="flex items-center gap-2">
               <RotateCcw className="h-3 w-3" />
-              Reset to Default
+              Reset View
             </div>
           </SelectItem>
         </SelectContent>
@@ -219,7 +209,7 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ onResetToDefault }) => 
                       <span className="text-sm text-accent-cyan">(active)</span>
                     )}
                   </div>
-                  {name !== "default" && (
+                  {!isBuiltinView(name) && (
                     <Button
                       variant="ghost"
                       size="icon-sm"

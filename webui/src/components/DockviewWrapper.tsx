@@ -1,6 +1,7 @@
 import {
   useRef,
   useEffect,
+  useState,
   useCallback,
   forwardRef,
   useImperativeHandle,
@@ -12,8 +13,9 @@ import {
   IDockviewPanelProps,
 } from "dockview";
 import "dockview/dist/styles/dockview.css";
-import { useAtom } from "jotai";
+import { getDefaultStore, useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { DEFAULT_VIEW_ID, isBuiltinView, viewPreset } from "@/lib/views";
 
 // ============================================================================
 // Types
@@ -34,20 +36,29 @@ export interface LayoutConfig {
 // Bumped whenever the built-in default layout changes shape. A stored version
 // below this discards the persisted "default" layout so users pick up the new
 // arrangement (e.g. the bottom drawer + console) instead of their stale one.
-const LAYOUT_SCHEMA_VERSION = 7;
+const LAYOUT_SCHEMA_VERSION = 9;
 
 // Atom for storing layouts with localStorage persistence
+// `getOnInit`: read localStorage synchronously on first access. Without it the
+// atoms hold their defaults until mounted, so Dockview's ready handler (which
+// runs during the first render pass) would never see the persisted view.
 export const savedLayoutsAtom = atomWithStorage<Record<string, object>>(
   "dies-saved-layouts",
-  {}
+  {},
+  undefined,
+  { getOnInit: true }
 );
 export const currentLayoutNameAtom = atomWithStorage<string>(
   "dies-current-layout",
-  "default"
+  "default",
+  undefined,
+  { getOnInit: true }
 );
 export const layoutSchemaVersionAtom = atomWithStorage<number>(
   "dies-layout-version",
-  0
+  0,
+  undefined,
+  { getOnInit: true }
 );
 
 // ============================================================================
@@ -65,7 +76,41 @@ export interface DockviewWrapperRef {
 
 interface DockviewWrapperProps {
   components: PanelComponentsMap;
-  onCreateDefaultLayout: (api: DockviewApi) => void;
+}
+
+/** Load a view's built-in preset (or the default view's, for custom views). */
+export function applyViewPreset(api: DockviewApi, viewId: string) {
+  const preset = viewPreset(viewId) ?? viewPreset(DEFAULT_VIEW_ID)!;
+  api.clear();
+  api.fromJSON(preset.layout as any);
+}
+
+/**
+ * Switch to another view in place (no reload). The current arrangement is saved
+ * under the current view first; the target view restores its saved arrangement,
+ * or its preset if it has none.
+ */
+export function switchView(api: DockviewApi, viewId: string) {
+  const store = getDefaultStore();
+  const current = store.get(currentLayoutNameAtom);
+  if (current === viewId) return;
+  try {
+    store.set(savedLayoutsAtom, { ...store.get(savedLayoutsAtom), [current]: api.toJSON() });
+  } catch (error) {
+    console.error("Failed to save layout:", error);
+  }
+  store.set(currentLayoutNameAtom, viewId);
+  const saved = store.get(savedLayoutsAtom)[viewId];
+  if (saved) {
+    try {
+      api.clear();
+      api.fromJSON(saved as any);
+      return;
+    } catch (error) {
+      console.error("Failed to restore layout:", error);
+    }
+  }
+  applyViewPreset(api, viewId);
 }
 
 // ============================================================================
@@ -73,8 +118,9 @@ interface DockviewWrapperProps {
 // ============================================================================
 
 const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
-  ({ components, onCreateDefaultLayout }, ref) => {
+  ({ components }, ref) => {
     const apiRef = useRef<DockviewApi | null>(null);
+    const [apiReady, setApiReady] = useState(false);
     const [savedLayouts, setSavedLayouts] = useAtom(savedLayoutsAtom);
     const [currentLayoutName] = useAtom(currentLayoutNameAtom);
     const [layoutVersion, setLayoutVersion] = useAtom(layoutSchemaVersionAtom);
@@ -90,27 +136,30 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
         },
         resetToDefault: () => {
           if (apiRef.current) {
-            onCreateDefaultLayout(apiRef.current);
+            applyViewPreset(apiRef.current, getDefaultStore().get(currentLayoutNameAtom));
           }
         },
       }),
-      [onCreateDefaultLayout]
+      []
     );
 
     // Handle Dockview ready
     const handleReady = useCallback(
       (event: DockviewReadyEvent) => {
         apiRef.current = event.api;
+        setApiReady(true);
 
-        // One-time migration: if the persisted default predates the current
-        // layout schema, rebuild from the new default instead of restoring it.
-        const outdated =
-          layoutVersion < LAYOUT_SCHEMA_VERSION &&
-          currentLayoutName === "default";
-        if (outdated) {
+        // One-time migration: if persisted built-in views predate the current
+        // layout schema, drop them and rebuild from the presets.
+        if (layoutVersion < LAYOUT_SCHEMA_VERSION) {
           setLayoutVersion(LAYOUT_SCHEMA_VERSION);
-          onCreateDefaultLayout(event.api);
-          return;
+          setSavedLayouts((prev) =>
+            Object.fromEntries(Object.entries(prev).filter(([name]) => !isBuiltinView(name)))
+          );
+          if (isBuiltinView(currentLayoutName)) {
+            applyViewPreset(event.api, currentLayoutName);
+            return;
+          }
         }
 
         // Try to restore saved layout
@@ -125,17 +174,11 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
           }
         }
 
-        // Fall back to default layout
+        // Fall back to the view's preset
         setLayoutVersion(LAYOUT_SCHEMA_VERSION);
-        onCreateDefaultLayout(event.api);
+        applyViewPreset(event.api, currentLayoutName);
       },
-      [
-        savedLayouts,
-        currentLayoutName,
-        onCreateDefaultLayout,
-        layoutVersion,
-        setLayoutVersion,
-      ]
+      [savedLayouts, setSavedLayouts, currentLayoutName, layoutVersion, setLayoutVersion]
     );
 
     // Save layout on changes
@@ -146,9 +189,12 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
       const disposable = api.onDidLayoutChange(() => {
         try {
           const state = api.toJSON();
+          // Read the view name at event time: `switchView` changes it right
+          // before loading the next layout, ahead of this effect re-running.
+          const name = getDefaultStore().get(currentLayoutNameAtom);
           setSavedLayouts((prev) => ({
             ...prev,
-            [currentLayoutName]: state,
+            [name]: state,
           }));
         } catch (error) {
           console.error("Failed to save layout:", error);
@@ -156,7 +202,7 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
       });
 
       return () => disposable.dispose();
-    }, [currentLayoutName, setSavedLayouts]);
+    }, [apiReady, setSavedLayouts]);
 
     // Save on window close
     useEffect(() => {
@@ -168,7 +214,7 @@ const DockviewWrapper = forwardRef<DockviewWrapperRef, DockviewWrapperProps>(
             const currentLayouts = JSON.parse(
               localStorage.getItem("dies-saved-layouts") || "{}"
             );
-            currentLayouts[currentLayoutName] = state;
+            currentLayouts[getDefaultStore().get(currentLayoutNameAtom)] = state;
             localStorage.setItem(
               "dies-saved-layouts",
               JSON.stringify(currentLayouts)

@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
     Angle, BaseStationInfo, BenchCommand, DebugMap, ExecutorInfo, ExecutorSettings, FieldSnapshot,
-    GcSimCommand, ParamValue, PlayerFeedbackMsg, PlayerId, PlayerOverrideCommand, SideAssignment,
-    SimulatorCmd, TeamColor, TeamConfiguration, Vector2, WorldData, WorldUpdate,
+    GcSimCommand, NotebookCmd, NotebookEvent, ParamValue, PlayerFeedbackMsg, PlayerId,
+    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, Vector2,
+    WorldData, WorldUpdate,
 };
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ use typeshare::typeshare;
 
 mod bench;
 mod executor_task;
+mod notebooks;
 mod replay_controller;
 mod routes;
 mod server;
@@ -176,6 +178,8 @@ pub(crate) enum UiCommand {
     },
     /// Direct robot test-bench command (bypasses the executor entirely).
     Bench(BenchCommand),
+    /// Notebook (embedded JS motion-testing console) command.
+    Notebook(NotebookCmd),
     Stop,
 }
 
@@ -298,6 +302,7 @@ pub(crate) enum WsMessage<'a> {
     Debug(&'a DebugMap),
     ReplayState(&'a ReplayState),
     ConsoleLog(&'a ConsoleLogMessage),
+    Notebook(&'a NotebookEvent),
 }
 
 /// A recorded log available for replay (directory or `.dieslog` zip).

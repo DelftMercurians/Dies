@@ -187,6 +187,7 @@ impl ExecutorTask {
             // Handled by the dedicated bench task (direct-to-basestation), not
             // the executor.
             UiCommand::Bench(_) => {}
+            UiCommand::Notebook(cmd) => self.handle_executor_msg(ControlMsg::Notebook(cmd)),
         }
     }
 
@@ -340,6 +341,20 @@ impl ExecutorTask {
                                             log::info!("Executor update channel closed");
                                             break;
                                         }
+                                    }
+                                }
+                            });
+
+                            let mut notebook_rx = executor.handle().notebook_rx;
+                            let notebook_tx = server_state.notebook_tx.clone();
+                            tokio::spawn(async move {
+                                loop {
+                                    match notebook_rx.recv().await {
+                                        Ok(ev) => {
+                                            let _ = notebook_tx.send(ev);
+                                        }
+                                        Err(RecvError::Lagged(_)) => continue,
+                                        Err(RecvError::Closed) => break,
                                     }
                                 }
                             });

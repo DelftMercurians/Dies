@@ -17,85 +17,6 @@ import DockviewWrapper, {
 } from "./components/DockviewWrapper";
 import { panelComponents, PANEL_IDS, PANEL_TITLES } from "./components/panels";
 import CommandPalette from "./components/CommandPalette";
-import { DockviewApi } from "dockview";
-
-// Default workspace: FIELD fills the left, with a right-hand column split into a
-// top tab group (INSPECTOR / SETTINGS) and a bottom tab group
-// (CONSOLE / DEBUG / GAME CTRL). Stored relative sizes are scaled to the
-// real container by Dockview's `fromJSON`. Bump LAYOUT_SCHEMA_VERSION in
-// DockviewWrapper whenever this changes so stale persisted defaults are dropped.
-const DEFAULT_LAYOUT = {
-  grid: {
-    root: {
-      type: "branch",
-      data: [
-        {
-          type: "leaf",
-          data: {
-            views: ["field"],
-            activeView: "field",
-            id: "1",
-            hideHeader: true,
-          },
-          size: 1247,
-        },
-        {
-          type: "branch",
-          data: [
-            {
-              type: "leaf",
-              data: {
-                views: ["player-inspector", "settings"],
-                activeView: "player-inspector",
-                id: "4",
-              },
-              size: 655,
-            },
-            {
-              type: "leaf",
-              data: {
-                views: ["console", "debug-layers", "game-controller"],
-                activeView: "console",
-                id: "3",
-              },
-              size: 338,
-            },
-          ],
-          size: 414.5,
-        },
-      ],
-      size: 993,
-    },
-    width: 1661.5,
-    height: 993,
-    orientation: "HORIZONTAL",
-  },
-  panels: {
-    field: { id: "field", contentComponent: "field", title: "FIELD" },
-    "player-inspector": {
-      id: "player-inspector",
-      contentComponent: "player-inspector",
-      title: "INSPECTOR",
-    },
-    settings: {
-      id: "settings",
-      contentComponent: "settings",
-      title: "SETTINGS",
-    },
-    console: { id: "console", contentComponent: "console", title: "CONSOLE" },
-    "debug-layers": {
-      id: "debug-layers",
-      contentComponent: "debug-layers",
-      title: "DEBUG",
-    },
-    "game-controller": {
-      id: "game-controller",
-      contentComponent: "game-controller",
-      title: "GAME CTRL",
-    },
-  },
-  activeGroup: "4",
-};
 
 const App: React.FC = () => {
   const { data: backendState, status: backendLoadingState } = useStatus();
@@ -111,13 +32,6 @@ const App: React.FC = () => {
   const handleExecutorStop = () => {
     setSelectedPlayerId(null);
   };
-
-  // Create default layout — deserialize the canonical DEFAULT_LAYOUT. Dockview
-  // scales the stored relative sizes to the current container.
-  const createDefaultLayout = useCallback((api: DockviewApi) => {
-    api.clear();
-    api.fromJSON(DEFAULT_LAYOUT as any);
-  }, []);
 
   // Handle reset layout
   const handleResetLayout = useCallback(() => {
@@ -172,7 +86,6 @@ const App: React.FC = () => {
         <DockviewWrapper
           ref={dockviewRef}
           components={panelComponents}
-          onCreateDefaultLayout={createDefaultLayout}
         />
       </div>
 

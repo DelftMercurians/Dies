@@ -236,6 +236,42 @@ class DiesLog:
         merged = rows.set_index("frame_id").join(wide, how="left", rsuffix="_dbg")
         return self._index_t(merged.reset_index())
 
+    def trials(self):
+        """Notebook trials (`trial(name, params, body)` in the Motion notebook), one
+        row per trial: `name, id, t0, t1, duration, status, error` plus every param
+        as its own column. Indexed by `seq` (start order) — trial ids restart when
+        the notebook is reset. `t0/t1` are on the shared `t` clock; slice any
+        t-indexed frame with `df.loc[row.t0:row.t1]` or use `trial()`."""
+        ev = self.tables.get("events")
+        if ev is None or not len(ev):
+            return pd.DataFrame()
+        ev = self._index_t(ev)
+        ev = ev[ev["event_type"].astype(str).isin(["trial.start", "trial.end"])]
+        rows, open_ = [], {}
+        for t, e in ev.iterrows():
+            p = json.loads(e["payload_json"]) if e["payload_json"] else {}
+            if e["event_type"] == "trial.start":
+                row = {"name": p.get("name"), "id": p.get("id"), "t0": t, "t1": np.nan,
+                       "duration": np.nan, "status": "running", "error": None,
+                       **(p.get("params") or {})}
+                open_[p.get("id")] = row
+                rows.append(row)
+            elif p.get("id") in open_:
+                row = open_.pop(p.get("id"))
+                row.update(t1=t, duration=p.get("duration"), status=p.get("status"),
+                           error=p.get("error"))
+        out = pd.DataFrame(rows)
+        out.index.name = "seq"
+        return out
+
+    def trial(self, seq, team, player_id):
+        """A robot's fused frames (see `robot`) during notebook trial `seq`, with
+        `t` re-zeroed to the trial start."""
+        tr = self.trials().loc[seq]
+        df = self.robot(team, player_id).loc[tr.t0:tr.t1].copy()
+        df.index = df.index - tr.t0
+        return df
+
     def timeline(self, team=None, ax=None):
         """Measured speed of every robot as overlaid filled areas, with markers
         as vertical lines. `team` filters to one color. Returns the Axes."""

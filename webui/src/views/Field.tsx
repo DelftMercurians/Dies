@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { isTypingTarget } from "@/lib/commands";
 import { TeamColor, Vector2, WorldData } from "../bindings";
+import { toast } from "sonner";
 import { useResizeObserver } from "@/lib/useResizeObserver";
 import {
   CANVAS_PADDING,
@@ -985,6 +986,9 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
         </ContextMenuTrigger>
 
         <ContextMenuContent>
+          <ContextMenuItem onClick={() => copyFieldPosition(contextMenuPosRef.current)}>
+            Copy position
+          </ContextMenuItem>
           {manualControlledPlayerIds.length === 1 ? (
             <>
               <ContextMenuItem onClick={handleTargetPosition}>
@@ -1016,6 +1020,15 @@ const Field: FC<FieldProps> = ({ selectedPlayerId, onSelectPlayer }) => {
     </div>
   );
 };
+
+/** Copy a field position as a `[x, y]` literal (mm), e.g. for the notebook. */
+function copyFieldPosition(pos: Vector2) {
+  const text = `[${Math.round(pos[0])}, ${Math.round(pos[1])}]`;
+  navigator.clipboard
+    ?.writeText(text)
+    .then(() => toast.success(`Copied ${text}`))
+    .catch(() => toast.error("Clipboard unavailable"));
+}
 
 export default Field;
 

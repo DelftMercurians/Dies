@@ -9,8 +9,10 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { PrimaryTeamProvider, TeamDataProvider, startWsClient } from "./api";
 import { Toaster } from "./components/ui/sonner";
+import { ensureMonacoWorkers } from "./lib/notebook/monaco";
 import { TooltipProvider } from "./components/ui/tooltip";
 
+ensureMonacoWorkers();
 startWsClient();
 
 ReactDOM.createRoot(document.getElementById("app")!).render(

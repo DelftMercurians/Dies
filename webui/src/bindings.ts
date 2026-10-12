@@ -416,6 +416,23 @@ export interface BasestationResponse {
 	base_info?: BaseStationInfo;
 }
 
+/**
+ * One cell output, as carried by the notebook event (`data` is the event's
+ * payload: JSON for `show`, an error/abort message otherwise).
+ */
+export interface CellOutputState {
+	kind: string;
+	data?: string;
+}
+
+export interface CellRunState {
+	/** `queued` | `running` | `done` | `error` | `aborted`. */
+	status: string;
+	outputs: CellOutputState[];
+	started_ms: number;
+	finished_ms: number;
+}
+
 export enum ConsoleLogLevel {
 	Trace = "Trace",
 	Debug = "Debug",
@@ -994,6 +1011,49 @@ export interface LogsResponse {
 	logs: LogInfo[];
 }
 
+export interface NotebookCell {
+	id: string;
+	code: string;
+}
+
+/** A robot picked in the notebook UI (what `robot()` resolves to). */
+export interface NotebookRobot {
+	team: TeamColor;
+	id: PlayerId;
+}
+
+export interface Notebook {
+	id: string;
+	title: string;
+	cells: NotebookCell[];
+	/** What `robot()` resolves to; `None` = the only robot on the field. */
+	robot?: NotebookRobot;
+	updated_ms?: number;
+}
+
+export interface NotebookDoc {
+	notebook: Notebook;
+	runs: Record<string, CellRunState>;
+}
+
+/** Something a cell produced, or a change in its run state, sent to the UI. */
+export interface NotebookEvent {
+	/** Notebook id, or `None` for engine-wide events. */
+	notebook?: string;
+	/** Cell id, or `None` for notebook-wide events (engine errors, aborts). */
+	cell?: string;
+	/** `queued` | `started` | `show` | `done` | `error` | `aborted` | `reset`. */
+	kind: string;
+	/** JSON-encoded payload (`show` data, error message). */
+	data?: string;
+}
+
+export interface NotebookSummary {
+	id: string;
+	title: string;
+	updated_ms: number;
+}
+
 /**
  * A struct to store the player state from a single frame.
  * Live per-robot open-loop delay estimate (command → first visible motion on
@@ -1313,6 +1373,8 @@ export type UiCommand =
 }}
 	/** Direct robot test-bench command (bypasses the executor entirely). */
 	| { type: "Bench", data: BenchCommand }
+	/** Notebook (embedded JS motion-testing console) command. */
+	| { type: "Notebook", data: NotebookCmd }
 	| { type: "Stop",  };
 
 export interface PostUiCommandBody {
@@ -1748,6 +1810,28 @@ export enum MarkerKind {
 	KickTarget = "kick_target",
 }
 
+/** A notebook command from the UI. */
+export type NotebookCmd = 
+	/**
+	 * Evaluate a cell. `source` is plain JS, already transformed by the UI to
+	 * start its body via `__nb.run(cell, ...)`; `original` is the source as
+	 * typed, recorded in the log.
+	 */
+	| { type: "Eval", data: {
+	notebook: string;
+	cell: string;
+	source: string;
+	original: string;
+	/** The notebook's picked robot, if any (what `robot()` resolves to). */
+	robot?: NotebookRobot;
+}}
+	/** Abort every running and queued cell in every notebook; release all robots. */
+	| { type: "Abort",  }
+	/** Abort one notebook and drop its scope (globals, held commands). */
+	| { type: "Reset", data: {
+	notebook: string;
+}};
+
 /** An override command for a player for manual control. */
 export type PlayerOverrideCommand = 
 	/** Do nothing */
@@ -1844,7 +1928,8 @@ export type WsMessage =
 	| { type: "WorldUpdate", data: WorldUpdate }
 	| { type: "Debug", data: DebugMap }
 	| { type: "ReplayState", data: ReplayState }
-	| { type: "ConsoleLog", data: ConsoleLogMessage };
+	| { type: "ConsoleLog", data: ConsoleLogMessage }
+	| { type: "Notebook", data: NotebookEvent };
 
 
 export type Vector2 = [number, number];

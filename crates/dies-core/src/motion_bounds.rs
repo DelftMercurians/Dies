@@ -62,6 +62,21 @@ pub struct RectBandZone {
 }
 
 impl MotionBounds {
+    /// Mirror across the y axis (field ↔ team frame for the team attacking -x).
+    /// Only the centre moves: an arc always opens along the team's +x.
+    pub fn mirror_x(self) -> Self {
+        match self {
+            MotionBounds::Arc(mut z) => {
+                z.center.x = -z.center.x;
+                MotionBounds::Arc(z)
+            }
+            MotionBounds::RoundedRect(mut z) => {
+                z.center.x = -z.center.x;
+                MotionBounds::RoundedRect(z)
+            }
+        }
+    }
+
     /// Whether `pos` lies inside the region.
     pub fn contains(&self, pos: Vector2) -> bool {
         match self {
@@ -262,7 +277,11 @@ mod tests {
         let front = Vector2::new(-3500.0 + 200.0, 0.0); // front_x = -3500, r = 200
         let v = z.clamp_velocity(front, Vector2::new(-5000.0, 0.0), decel, 0.0);
         let expected = (2.0 * decel * (200.0 - 150.0)).sqrt();
-        assert!((-v.x - expected).abs() < 1.0, "front inward capped: {:?}", v);
+        assert!(
+            (-v.x - expected).abs() < 1.0,
+            "front inward capped: {:?}",
+            v
+        );
         // Diagonally off the front-right corner: the inward (toward-corner) speed
         // must also be braked — proves no-stop-inside holds at corners too.
         let corner = Vector2::new(-3500.0, 1000.0);

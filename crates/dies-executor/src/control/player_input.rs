@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use dies_core::{Angle, MotionBounds, PlayerId, RoleType, Vector2};
+use dies_core::{Angle, MotionBounds, PlayerId, RoleType, SideAssignment, TeamColor, Vector2};
+use serde::{Deserialize, Serialize};
 
 /// A collection of player inputs.
 pub struct PlayerInputs {
@@ -66,7 +67,7 @@ impl FromIterator<(PlayerId, PlayerControlInput)> for PlayerInputs {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Velocity {
     Global(Vector2),
     Local(Vector2),
@@ -114,7 +115,12 @@ impl Default for Velocity {
 }
 
 /// Input to the player controller.
-#[derive(Debug, Clone)]
+///
+/// Deserializable from partial JSON (missing fields take their `Default`) so the
+/// notebook can set any subset of it; unknown fields are rejected so typos fail
+/// loudly instead of being ignored.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct PlayerControlInput {
     /// Target position. If `None`, the player will just follow the given velocity
     pub position: Option<Vector2>,
@@ -326,6 +332,25 @@ impl PlayerControlInput {
         self
     }
 
+    /// Transform field-frame (absolute) fields into `color`'s team-relative
+    /// frame. The transform is an x-flip, so it is its own inverse. Local
+    /// velocities are robot-relative and left untouched.
+    pub fn to_team_frame(mut self, side_assignment: SideAssignment, color: TeamColor) -> Self {
+        if side_assignment.attacking_direction_sign(color) > 0.0 {
+            return self;
+        }
+        let flip = |v: Vector2| side_assignment.transform_vec2(color, &v);
+        self.position = self.position.map(flip);
+        self.velocity = match self.velocity {
+            Velocity::Global(v) => Velocity::Global(flip(v)),
+            local @ Velocity::Local(_) => local,
+        };
+        self.yaw = self.yaw.map(|a| side_assignment.transform_angle(color, a));
+        self.angular_velocity = self.angular_velocity.map(|w| -w);
+        self.bounds = self.bounds.map(|b| b.mirror_x());
+        self
+    }
+
     /// Set the target velocity of the player.
     pub fn add_global_velocity(&mut self, vel: Vector2) -> &mut Self {
         self.velocity = match self.velocity {
@@ -338,7 +363,7 @@ impl PlayerControlInput {
 }
 
 /// Kicker state in the current update.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KickerControlInput {
     /// Kicker is not used
     #[default]
