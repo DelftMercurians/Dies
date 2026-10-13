@@ -44,6 +44,9 @@ import {
   ReplayState,
   LogsResponse,
   LogInfo,
+  VaultLogInfo,
+  VaultLogsResponse,
+  VaultPushResponse,
   ConsoleLogMessage,
   SettingsSnapshot,
   SettingsSnapshotsResponse,
@@ -560,6 +563,78 @@ export const useLogs = (enabled: boolean) => {
   });
   return query.data ?? [];
 };
+
+/** Logs stored on the log vault server (proxied through the backend). */
+export const useVaultLogs = (enabled: boolean) => {
+  const query = useQuery({
+    queryKey: ["vault-logs"],
+    queryFn: async (): Promise<VaultLogsResponse> => {
+      const res = await fetch("/api/vault/logs");
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as VaultLogsResponse;
+    },
+    enabled,
+    retry: false,
+    refetchInterval: enabled ? 15000 : false,
+  });
+  return {
+    logs: (query.data?.logs ?? []) as VaultLogInfo[],
+    vaultUrl: query.data?.vault_url,
+    error: query.error ? String(query.error.message) : null,
+    isLoading: query.isLoading,
+  };
+};
+
+/** Upload a local log to the vault; copies the share link to the clipboard. */
+export async function pushLogToVault(path: string): Promise<string | null> {
+  const id = toast.loading("Uploading log to vault…");
+  try {
+    const res = await fetch("/api/vault/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const body = (await res.json()) as VaultPushResponse;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(body.url);
+      copied = true;
+    } catch {
+      // Clipboard needs a secure context / focus; the link is in the toast anyway.
+    }
+    toast.success(
+      `${body.already_stored ? "Already in vault" : "Uploaded"}${copied ? " · link copied" : ""}`,
+      { id, description: body.url, duration: 10000 }
+    );
+    return body.url;
+  } catch (e) {
+    toast.error("Upload failed", { id, description: String(e) });
+    return null;
+  }
+}
+
+/** Download a shared log (vault link) and load it for replay. */
+export async function openVaultLink(link: string): Promise<boolean> {
+  const id = toast.loading("Fetching shared log…");
+  try {
+    const res = await fetch("/api/vault/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ link }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    toast.success("Shared log loaded", { id });
+    return true;
+  } catch (e) {
+    toast.error("Could not open shared log", { id, description: String(e) });
+    return false;
+  }
+}
+
+/** True if `s` looks like a vault share link (`http(s)://…/l/<id>`). */
+export const isVaultLink = (s: string) =>
+  /^https?:\/\/\S+\/(l|api\/logs)\/[A-Za-z0-9]+(\/file)?\/?$/.test(s.trim());
 
 // WebSocket connection status and dt tracking
 const wsConnectionStatusAtom = atom<{

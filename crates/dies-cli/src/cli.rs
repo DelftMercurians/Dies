@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::commands::{
+    logs::{logs, LogsCmd},
     self_play::self_play, start_ui::start_ui, test_radio::test_radio, test_vision::test_vision,
 };
 
@@ -135,6 +136,13 @@ enum Command {
         #[clap(long, default_value = "match-checklist.md")]
         checklist: PathBuf,
     },
+
+    /// Log vault: push logs to the shared server, list them, pull a shared link.
+    #[clap(name = "logs")]
+    Logs {
+        #[clap(subcommand)]
+        cmd: LogsCmd,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ValueEnum)]
@@ -193,6 +201,11 @@ pub struct Cli {
     #[clap(long, default_value = "simulation")]
     pub ui_mode: String,
 
+    /// Log vault server. Falls back to `$DIES_LOGVAULT_URL`, then
+    /// `http://mercury11:8420`.
+    #[clap(long)]
+    pub logvault_url: Option<String>,
+
     #[clap(long, default_value = "false", action)]
     pub auto_start: bool,
 
@@ -250,6 +263,14 @@ impl Cli {
     /// Resolve the strategy management mode from the mutually-exclusive
     /// `--launch` / `--build` / `--watch` flags (defaults to `Build`). Exclusivity
     /// is enforced by clap via the `strategy_mode` arg group.
+    pub fn logvault_url(&self) -> String {
+        self.logvault_url
+            .clone()
+            .or_else(|| std::env::var("DIES_LOGVAULT_URL").ok())
+            .filter(|u| !u.is_empty())
+            .unwrap_or_else(|| dies_logvault_client::DEFAULT_URL.to_string())
+    }
+
     pub fn strategy_mode(&self) -> StrategyMode {
         if self.watch {
             StrategyMode::Watch
@@ -359,6 +380,16 @@ impl Cli {
                     }
                 }
             }
+            Some(Command::Logs { ref cmd }) => {
+                let cmd = cmd.clone();
+                match logs(cmd, self.logvault_url(), PathBuf::from(&self.log_directory)).await {
+                    Ok(_) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        eprintln!("Error: {:#}", err);
+                        ExitCode::FAILURE
+                    }
+                }
+            }
             Some(Command::Match { ref checklist }) => {
                 let checklist = checklist.clone();
                 match crate::commands::match_mode::run(self, checklist).await {
@@ -393,7 +424,9 @@ impl Cli {
             Some(self.strategy.clone())
         };
 
+        let logvault_url = self.logvault_url();
         Ok(UiConfig {
+            logvault_url,
             settings_file: self.settings_file,
             environment,
             port: self.webui_port,

@@ -22,6 +22,7 @@ dies-webui = { version = "0.1.0", path = "../dies-webui" }
 dies-executor = { version = "0.1.0", path = "../dies-executor" }
 dies-simulator = { version = "0.1.0", path = "../dies-simulator" }
 dies-logger = { version = "0.1.0", path = "../dies-logger" }
+dies-logvault-client = { version = "0.1.0", path = "../dies-logvault-client" }
 env_logger = "0.11.3"
 serde_json = "1.0.120"
 network-interface = "2.0.0"

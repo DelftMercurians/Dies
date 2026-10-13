@@ -50,6 +50,8 @@ pub struct UiConfig {
     pub vision_delay_ms: u32,
     /// Directory where session logs are written/browsed for replay.
     pub log_directory: PathBuf,
+    /// Log vault server (share/browse logs across machines).
+    pub logvault_url: String,
     /// Initial strategy params seeded into the executor at build (CLI
     /// `--strategy-param`). Applied to every controlled team.
     pub initial_strategy_params: dies_core::StrategyParams,
@@ -321,6 +323,58 @@ pub(crate) struct LogInfo {
 #[typeshare]
 pub(crate) struct LogsResponse {
     pub(crate) logs: Vec<LogInfo>,
+}
+
+/// A log stored on the log vault server.
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct VaultLogInfo {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    /// Share link (`<vault>/l/<id>`).
+    pub(crate) url: String,
+    #[typeshare(serialized_as = "number")]
+    pub(crate) size_stored: u64,
+    pub(crate) session_start_unix: Option<f64>,
+    pub(crate) duration_s: Option<f64>,
+    #[typeshare(serialized_as = "number")]
+    pub(crate) frame_count: Option<u64>,
+    pub(crate) is_simulation: bool,
+    pub(crate) is_match: bool,
+    pub(crate) blue_strategy: Option<String>,
+    pub(crate) yellow_strategy: Option<String>,
+    pub(crate) blue_team_name: Option<String>,
+    pub(crate) yellow_team_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct VaultLogsResponse {
+    pub(crate) vault_url: String,
+    pub(crate) logs: Vec<VaultLogInfo>,
+}
+
+/// Upload a local log (path as listed by `/api/logs`) to the vault.
+#[derive(Debug, Clone, Deserialize)]
+#[typeshare]
+pub(crate) struct VaultPushBody {
+    pub(crate) path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[typeshare]
+pub(crate) struct VaultPushResponse {
+    pub(crate) url: String,
+    pub(crate) name: String,
+    /// The vault already had this exact file.
+    pub(crate) already_stored: bool,
+}
+
+/// Download a shared log by its link and load it for replay.
+#[derive(Debug, Clone, Deserialize)]
+#[typeshare]
+pub(crate) struct VaultOpenBody {
+    pub(crate) link: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

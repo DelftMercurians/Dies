@@ -1509,6 +1509,46 @@ export interface UiStatus {
 	executor: ExecutorStatus;
 }
 
+/** A log stored on the log vault server. */
+export interface VaultLogInfo {
+	id: string;
+	name: string;
+	/** Share link (`<vault>/l/<id>`). */
+	url: string;
+	size_stored: number;
+	session_start_unix?: number;
+	duration_s?: number;
+	frame_count: number;
+	is_simulation: boolean;
+	is_match: boolean;
+	blue_strategy?: string;
+	yellow_strategy?: string;
+	blue_team_name?: string;
+	yellow_team_name?: string;
+}
+
+export interface VaultLogsResponse {
+	vault_url: string;
+	logs: VaultLogInfo[];
+}
+
+/** Download a shared log by its link and load it for replay. */
+export interface VaultOpenBody {
+	link: string;
+}
+
+/** Upload a local log (path as listed by `/api/logs`) to the vault. */
+export interface VaultPushBody {
+	path: string;
+}
+
+export interface VaultPushResponse {
+	url: string;
+	name: string;
+	/** The vault already had this exact file. */
+	already_stored: boolean;
+}
+
 export interface WorldData {
 	/**
 	 * Timestamp of the frame, in seconds. This timestamp is relative to the time the

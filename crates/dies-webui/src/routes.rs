@@ -31,7 +31,8 @@ use crate::{
     ExecutorSettingsResponse, FieldSnapshot, GetDebugMapResponse, LogInfo, LogsResponse,
     PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, ReplayState, SaveSnapshotBody,
     SettingsSnapshot, SettingsSnapshotsResponse, SnapshotsResponse, StrategiesResponse, UiCommand,
-    UiMode, UiStatus, UiWorldState, WsMessage,
+    UiMode, UiStatus, UiWorldState, VaultLogInfo, VaultLogsResponse, VaultOpenBody, VaultPushBody,
+    VaultPushResponse, WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -308,6 +309,77 @@ pub async fn get_logs(state: State<Arc<ServerState>>) -> Json<LogsResponse> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     Json(LogsResponse { logs })
+}
+
+#[derive(Deserialize)]
+pub struct VaultLogsQuery {
+    q: Option<String>,
+}
+
+/// List logs stored on the vault server.
+pub async fn get_vault_logs(
+    state: State<Arc<ServerState>>,
+    Query(query): Query<VaultLogsQuery>,
+) -> Result<Json<VaultLogsResponse>, (StatusCode, String)> {
+    let logs = state
+        .vault
+        .list(query.q.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
+    Ok(Json(VaultLogsResponse {
+        vault_url: state.vault.base_url().to_string(),
+        logs: logs
+            .into_iter()
+            .map(|l| VaultLogInfo {
+                id: l.id,
+                name: l.name,
+                url: l.url,
+                size_stored: l.size_stored,
+                session_start_unix: l.session_start_unix,
+                duration_s: l.duration_s,
+                frame_count: l.frame_count,
+                is_simulation: l.is_simulation,
+                is_match: l.is_match,
+                blue_strategy: l.blue_strategy,
+                yellow_strategy: l.yellow_strategy,
+                blue_team_name: l.blue_team_name,
+                yellow_team_name: l.yellow_team_name,
+            })
+            .collect(),
+    }))
+}
+
+/// Upload a local log to the vault, returning its share link.
+pub async fn post_vault_push(
+    state: State<Arc<ServerState>>,
+    Json(body): Json<VaultPushBody>,
+) -> Result<Json<VaultPushResponse>, (StatusCode, String)> {
+    let pushed = state
+        .vault
+        .push(std::path::Path::new(&body.path))
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
+    log::info!("Pushed {} to log vault: {}", body.path, pushed.log.url);
+    Ok(Json(VaultPushResponse {
+        url: pushed.log.url,
+        name: pushed.log.name,
+        already_stored: pushed.already_stored,
+    }))
+}
+
+/// Download a shared log (cached under `<log_dir>/vault/`) and load it for
+/// replay. The link carries its own server, so links from any vault work.
+pub async fn post_vault_open(
+    state: State<Arc<ServerState>>,
+    Json(body): Json<VaultOpenBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let path = dies_logvault_client::pull(&body.link, &state.log_directory)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
+    let _ = state.cmd_tx.send(UiCommand::LoadLog {
+        path: path.to_string_lossy().to_string(),
+    });
+    Ok(StatusCode::OK)
 }
 
 pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {

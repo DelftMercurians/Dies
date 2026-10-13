@@ -49,6 +49,8 @@ pub struct ServerState {
     pub replay_state: watch::Sender<ReplayState>,
     /// Directory where session logs live (for the replay browser).
     pub log_directory: PathBuf,
+    /// Log vault client (share/browse logs across machines).
+    pub vault: dies_logvault_client::VaultClient,
     settings_file: PathBuf,
     /// Local store backing the settings baseline + auto-history (explore/revert).
     settings_store: SettingsStore,
@@ -62,6 +64,7 @@ impl ServerState {
         ui_mode: UiMode,
         settings_file: PathBuf,
         log_directory: PathBuf,
+        logvault_url: &str,
         debug_sub: DebugSubscriber,
         update_rx: watch::Receiver<Option<WorldUpdate>>,
         cmd_tx: broadcast::Sender<UiCommand>,
@@ -108,6 +111,7 @@ impl ServerState {
             console_log_tx,
             replay_state,
             log_directory,
+            vault: dies_logvault_client::VaultClient::new(logvault_url),
             settings_file,
             settings_store,
             snapshot_store,
@@ -212,6 +216,7 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
         },
         config.settings_file,
         config.log_directory.clone(),
+        &config.logvault_url,
         debug_sub.clone(),
         update_rx.clone(),
         cmd_tx.clone(),
@@ -529,6 +534,9 @@ async fn start_webserver(
         .route("/api/command", post(routes::post_command))
         .route("/api/list", get(routes::list_files))
         .route("/api/logs", get(routes::get_logs))
+        .route("/api/vault/logs", get(routes::get_vault_logs))
+        .route("/api/vault/push", post(routes::post_vault_push))
+        .route("/api/vault/open", post(routes::post_vault_open))
         .route("/api/strategies", get(routes::get_strategies))
         .route(
             "/api/snapshots",

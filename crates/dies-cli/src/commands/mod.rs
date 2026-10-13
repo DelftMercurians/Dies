@@ -1,3 +1,4 @@
+pub mod logs;
 pub mod match_mode;
 pub mod self_play;
 pub mod start_ui;
