@@ -93,7 +93,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
       {getDockviewApi && <AddPanelMenu getApi={getDockviewApi} />}
 
       {/* Layout Selector */}
-      <LayoutSelector onResetToDefault={onResetLayout} />
+      <LayoutSelector onResetToDefault={onResetLayout} getDockviewApi={getDockviewApi} />
 
       {/* Separator */}
       <div className="w-px h-5 bg-border-muted" />

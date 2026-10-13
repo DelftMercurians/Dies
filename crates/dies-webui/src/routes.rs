@@ -8,12 +8,13 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use dies_core::{DebugMap, DebugSubscriber, TeamColor, WorldUpdate};
+use dies_core::{DebugMap, DebugSubscriber, NotebookCmd, NotebookEvent, TeamColor, WorldUpdate};
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 use tokio::time::MissedTickBehavior;
@@ -27,6 +28,7 @@ use tokio::time::MissedTickBehavior;
 const DEBUG_SEND_HZ: u64 = 30;
 
 use crate::{
+    notebooks::{Notebook, NotebookDoc, NotebookSummary},
     server::ServerState, BasestationResponse, ConsoleLogMessage, ExecutorInfoResponse,
     ExecutorSettingsResponse, FieldSnapshot, GetDebugMapResponse, LogInfo, LogsResponse,
     PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, ReplayState, SaveSnapshotBody,
@@ -383,16 +385,63 @@ pub async fn post_vault_open(
 }
 
 pub async fn websocket(ws: WebSocketUpgrade, state: State<Arc<ServerState>>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| {
+    ws.on_upgrade(move |socket| async move {
+        state.ws_clients.fetch_add(1, Ordering::SeqCst);
         handle_ws_conn(
             state.cmd_tx.clone(),
             state.update_rx.clone(),
             state.debug_sub.clone(),
             state.console_log_tx.subscribe(),
             state.replay_state.subscribe(),
+            state.notebook_tx.subscribe(),
             socket,
         )
+        .await;
+        // Last viewer gone: stop notebook-driven robots (dead-man switch).
+        if state.ws_clients.fetch_sub(1, Ordering::SeqCst) == 1 {
+            let _ = state.cmd_tx.send(UiCommand::Notebook(NotebookCmd::Abort));
+        }
     })
+}
+
+/// List stored notebooks, most recently updated first.
+pub async fn get_notebooks(state: State<Arc<ServerState>>) -> Json<Vec<NotebookSummary>> {
+    Json(state.notebook_store.list())
+}
+
+/// A notebook with the latest run state + outputs of its cells.
+pub async fn get_notebook(
+    state: State<Arc<ServerState>>,
+    Path(id): Path<String>,
+) -> Result<Json<NotebookDoc>, StatusCode> {
+    state.notebook_store.get(&id).map(Json).ok_or(StatusCode::NOT_FOUND)
+}
+
+/// Create or replace a notebook (cells, title, picked robot).
+pub async fn put_notebook(
+    state: State<Arc<ServerState>>,
+    Path(id): Path<String>,
+    Json(mut notebook): Json<Notebook>,
+) -> Result<Json<Notebook>, StatusCode> {
+    notebook.id = id;
+    state
+        .notebook_store
+        .save(notebook)
+        .map(Json)
+        .ok_or(StatusCode::BAD_REQUEST)
+}
+
+pub async fn delete_notebook(state: State<Arc<ServerState>>, Path(id): Path<String>) -> StatusCode {
+    if state.notebook_store.delete(&id) {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    }
+}
+
+/// Type declarations of the notebook prelude API, for editor autocompletion.
+pub async fn get_notebook_types() -> impl IntoResponse {
+    dies_executor::notebook::PRELUDE_TYPES
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -402,6 +451,7 @@ async fn handle_ws_conn(
     debug_rx: DebugSubscriber,
     mut console_rx: broadcast::Receiver<ConsoleLogMessage>,
     mut replay_rx: watch::Receiver<ReplayState>,
+    mut notebook_rx: broadcast::Receiver<NotebookEvent>,
     mut socket: WebSocket,
 ) {
     // Rate-limit debug pushes: tick at a fixed rate and send the latest
@@ -436,6 +486,22 @@ async fn handle_ws_conn(
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => {}
+                }
+            }
+            notebook_event = notebook_rx.recv() => {
+                match notebook_event {
+                    Ok(ev) => {
+                        let text = serde_json::to_string(&WsMessage::Notebook(&ev));
+                        if let Ok(text) = text {
+                            if socket.send(Message::Text(text)).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        log::warn!("notebook events lagged, dropped {n}");
+                    }
                     Err(broadcast::error::RecvError::Closed) => {}
                 }
             }

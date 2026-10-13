@@ -15,6 +15,7 @@ members = [
     "crates/dies-logger",
     "crates/dies-logvault-client",
     "crates/dies-tunables-macro",
+    "crates/dies-notebook",
     # Strategy crates
     "strategies/concerto",
     # Skill-test scenarios (each binary is a Strategy)

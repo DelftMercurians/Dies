@@ -32,6 +32,27 @@ pub struct StrategyInput {
     pub player_roles: HashMap<PlayerId, String>,
 }
 
+/// A command from the notebook for one robot, already in team-relative
+/// coordinates.
+#[derive(Debug, Clone)]
+pub enum NotebookCommand {
+    /// Run a skill, exactly like a strategy-issued command.
+    Skill(SkillCommand),
+    /// Drive the controller directly with this input (no skill).
+    Input(PlayerControlInput),
+}
+
+/// Per-frame notebook overlay on top of the strategy's commands. Precedence:
+/// manual override > notebook > strategy. Notebook output still goes through
+/// compliance, avoidance and the player controller like any strategy output.
+#[derive(Debug, Clone, Default)]
+pub struct NotebookInput {
+    pub commands: HashMap<PlayerId, NotebookCommand>,
+    /// Robots the notebook just let go of: their skill state is reset (one
+    /// `Stop`) so a stale notebook skill can't resume under the strategy.
+    pub released: HashSet<PlayerId>,
+}
+
 pub struct TeamController {
     player_controllers: HashMap<PlayerId, PlayerController>,
     settings: ExecutorSettings,
@@ -42,6 +63,8 @@ pub struct TeamController {
     joint_skill_executor: JointSkillExecutor,
     /// Current strategy input (skill commands and roles).
     strategy_input: StrategyInput,
+    /// Notebook commands for this frame, overlaid on `strategy_input`.
+    notebook_input: NotebookInput,
 
     /// Global path planner (owns per-robot path cache for hysteresis).
     planner: GlobalPlanner,
@@ -74,6 +97,7 @@ impl TeamController {
             skill_executor: SkillExecutor::new(),
             joint_skill_executor: JointSkillExecutor::new(),
             strategy_input: StrategyInput::default(),
+            notebook_input: NotebookInput::default(),
             planner: GlobalPlanner::new(&settings.avoidance),
             orca: OrcaSolver::new(&settings.avoidance),
             removing_players: HashSet::new(),
@@ -98,6 +122,11 @@ impl TeamController {
     /// Set strategy input (skill commands and roles from strategy host).
     pub fn set_strategy_input(&mut self, input: StrategyInput) {
         self.strategy_input = input;
+    }
+
+    /// Set this frame's notebook overlay (replaces the previous one).
+    pub fn set_notebook_input(&mut self, input: NotebookInput) {
+        self.notebook_input = input;
     }
 
     /// Yellow-card removal *decision*, run as a pre-pass by the executor BEFORE
@@ -576,6 +605,23 @@ impl TeamController {
     ) {
         let mut player_inputs = HashMap::new();
 
+        // Overlay the notebook on the strategy's commands. A direct input (or a
+        // release) resets that robot's skill state with a `Stop`; the input itself
+        // replaces the skill output below.
+        let mut skill_commands = self.strategy_input.skill_commands.clone();
+        let mut roles = self.strategy_input.player_roles.clone();
+        for id in &self.notebook_input.released {
+            skill_commands.insert(*id, Some(SkillCommand::Stop));
+        }
+        for (id, cmd) in &self.notebook_input.commands {
+            let skill = match cmd {
+                NotebookCommand::Skill(skill) => skill.clone(),
+                NotebookCommand::Input(_) => SkillCommand::Stop,
+            };
+            skill_commands.insert(*id, Some(skill));
+            roles.insert(*id, "notebook".to_string());
+        }
+
         // Joint (pass) coordination runs first, as a single first-class tick. It
         // claims a set of robots (`managed`); those are skipped below so the
         // per-player skill executor never sees a `Pass` command.
@@ -585,7 +631,7 @@ impl TeamController {
         };
         let joint = self
             .joint_skill_executor
-            .tick_all(&self.strategy_input.skill_commands, &pass_ctx);
+            .tick_all(&skill_commands, &pass_ctx);
 
         for player_id in active_robots {
             let player_data = match world_data.own_players.iter().find(|p| p.id == *player_id) {
@@ -599,11 +645,7 @@ impl TeamController {
                 continue;
             }
 
-            let skill_cmd = self
-                .strategy_input
-                .skill_commands
-                .get(player_id)
-                .and_then(|opt| opt.as_ref());
+            let skill_cmd = skill_commands.get(player_id).and_then(|opt| opt.as_ref());
 
             // Capture/aim view of the world for ball-relative pose selection:
             // walls + defense boxes + opponents (frozen), but NOT the ball — the
@@ -635,11 +677,15 @@ impl TeamController {
             let input = self
                 .skill_executor
                 .process_command(*player_id, skill_cmd, ctx);
+            let input = match self.notebook_input.commands.get(player_id) {
+                Some(NotebookCommand::Input(direct)) => direct.clone(),
+                _ => input,
+            };
 
             player_inputs.insert(*player_id, input);
         }
 
-        (player_inputs, self.strategy_input.player_roles.clone())
+        (player_inputs, roles)
     }
 
     /// Per-player last computed velocity setpoint in global frame (mm/s).

@@ -20,6 +20,7 @@ import {
 import { TeamColor } from "@/bindings";
 import { PanelId, PANEL_IDS, PANEL_TITLES } from "@/components/panels";
 import { openOrFocusPanel } from "@/components/toolbar/AddPanelMenu";
+import { switchView } from "@/components/DockviewWrapper";
 import { openMarkerToast } from "@/components/MarkerToast";
 import { CommandContext, isTypingTarget, matchKeyboard } from "./commands";
 
@@ -78,6 +79,10 @@ export function useCommandContext(
     focusPanel: (id: PanelId) => {
       const api = getDockviewApi();
       if (api) openOrFocusPanel(api, id, PANEL_TITLES[id]);
+    },
+    switchView: (id: string) => {
+      const api = getDockviewApi();
+      if (api) switchView(api, id);
     },
     toggleCommandPalette: () => setCommandPaletteOpen((v) => !v),
     drivingActive,

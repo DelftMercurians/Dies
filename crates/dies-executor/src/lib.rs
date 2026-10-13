@@ -26,6 +26,7 @@ pub mod control;
 mod gc_client;
 mod handle;
 pub mod headless;
+pub mod notebook;
 pub mod skills;
 pub mod strategy_host;
 
@@ -33,33 +34,6 @@ pub use control::*;
 pub use headless::{
     EndReason, GoalEvent, HeadlessConfig, MatchResult, ScriptedEvent, ScriptedEventKind,
 };
-
-/// Manual override inputs from the webui (MoveTo position, global velocity, yaw)
-/// arrive in absolute world coordinates, matching the absolute world data the UI
-/// renders. The team controller works in team-relative coordinates, so these
-/// field-frame fields must be transformed into team coordinates before use --
-/// otherwise the x axis is flipped for whichever team is attacking towards -x.
-/// Local velocities are robot-relative and left untouched.
-fn override_to_team_coords(
-    side_assignment: SideAssignment,
-    color: TeamColor,
-    mut input: PlayerControlInput,
-) -> PlayerControlInput {
-    if let Some(pos) = input.position {
-        input.position = Some(side_assignment.transform_vec2(color, &pos));
-    }
-    input.velocity = match input.velocity {
-        Velocity::Global(v) => Velocity::Global(side_assignment.transform_vec2(color, &v)),
-        local @ Velocity::Local(_) => local,
-    };
-    if let Some(yaw) = input.yaw {
-        input.yaw = Some(side_assignment.transform_angle(color, yaw));
-    }
-    if let Some(av) = input.angular_velocity {
-        input.angular_velocity = Some(av * side_assignment.attacking_direction_sign(color));
-    }
-    input
-}
 
 const SIMULATION_DT: Duration = Duration::from_micros(1_000_000 / 60); // 60 Hz
 const CMD_INTERVAL: Duration = Duration::from_micros(1_000_000 / 40); // 40 Hz
@@ -417,6 +391,9 @@ pub struct Executor {
     /// Online open-loop delay estimator per own robot (command → visible motion).
     open_loop_detectors: HashMap<(TeamColor, PlayerId), control::DelayDetector>,
     update_tx: broadcast::Sender<WorldUpdate>,
+    /// Notebook (embedded JS) command source; inert until the first cell runs.
+    notebook: notebook::NotebookHost,
+    notebook_tx: broadcast::Sender<dies_core::NotebookEvent>,
     command_tx: mpsc::UnboundedSender<ControlMsg>,
     command_rx: mpsc::UnboundedReceiver<ControlMsg>,
     paused_tx: watch::Sender<bool>,
@@ -479,6 +456,7 @@ impl Executor {
     fn build(settings: ExecutorSettings, mut environment: Environment) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (update_tx, _) = broadcast::channel(16);
+        let (notebook_tx, _) = broadcast::channel(1024);
         let (paused_tx, _) = watch::channel(false);
         let (info_channel_tx, info_channel_rx) = mpsc::unbounded_channel();
 
@@ -543,6 +521,8 @@ impl Executor {
             command_tx,
             command_rx,
             update_tx,
+            notebook: notebook::NotebookHost::new(notebook_tx.clone()),
+            notebook_tx,
             paused_tx,
             info_channel_rx,
             info_channel_tx,
@@ -1247,8 +1227,56 @@ impl Executor {
         ExecutorHandle {
             control_tx: self.command_tx.clone(),
             update_rx: self.update_tx.subscribe(),
+            notebook_rx: self.notebook_tx.subscribe(),
             info_channel: self.info_channel_tx.clone(),
         }
+    }
+
+    /// Build the notebook's per-frame snapshot (absolute field coordinates).
+    fn notebook_snapshot(&self, world: &WorldData) -> String {
+        let side = self.team_controllers.side_assignment;
+        let mut robots = Vec::new();
+        for (color, ctrl, roster) in [
+            (
+                TeamColor::Blue,
+                &self.team_controllers.blue_team,
+                &world.blue_team,
+            ),
+            (
+                TeamColor::Yellow,
+                &self.team_controllers.yellow_team,
+                &world.yellow_team,
+            ),
+        ] {
+            let Some(ctrl) = ctrl else { continue };
+            let statuses = ctrl.get_skill_statuses();
+            let passes = ctrl.get_pass_results();
+            let target_vels = ctrl.target_velocities_global();
+            for p in roster {
+                robots.push(notebook::RobotInfo {
+                    team: color,
+                    id: p.id,
+                    skill: statuses.get(&p.id).copied(),
+                    target_vel: target_vels
+                        .get(&p.id)
+                        .map(|v| side.transform_vec2(color, v)),
+                    pass: passes.get(&p.id).copied(),
+                    feedback: self.latest_feedback.get(&(color, p.id)),
+                });
+            }
+        }
+        let snapshot = notebook::Snapshot {
+            frame: self.frame_counter,
+            t: world.t_received,
+            dt: world.dt,
+            teams: self.team_controllers.active_teams(),
+            world,
+            robots,
+        };
+        notebook::to_json(&snapshot).unwrap_or_else(|e| {
+            log::error!("{e}");
+            "{}".to_string()
+        })
     }
 
     /// Log a discrete event to the columnar log (no-op on the legacy path).
@@ -1358,6 +1386,16 @@ impl Executor {
                         "side_assignment": format!("{:?}", self.team_controllers.side_assignment),
                     }),
                 );
+            }
+            ControlMsg::Notebook(cmd) => {
+                let snapshot = if self.notebook.has_engine() {
+                    String::new()
+                } else {
+                    let world = self.tracker.get();
+                    self.notebook_snapshot(&world)
+                };
+                let (frame_id, t) = (self.frame_counter, self.last_t);
+                self.notebook.handle_cmd(cmd, frame_id, t, || snapshot);
             }
             ControlMsg::Stop => {}
 
@@ -1539,6 +1577,31 @@ impl Executor {
             }
         }
 
+        // Notebook: a second command source next to the strategy host. Its
+        // overlay is (re)set every frame so a stale one never lingers.
+        let mut notebook_inputs = if self.notebook.is_active() {
+            let snapshot = self.notebook_snapshot(&world_data);
+            self.notebook.frame(
+                &snapshot,
+                self.team_controllers.side_assignment,
+                frame_id,
+                world_data.t_received,
+            )
+        } else {
+            HashMap::new()
+        };
+        if let Some(ref mut controller) = self.team_controllers.blue_team {
+            controller
+                .set_notebook_input(notebook_inputs.remove(&TeamColor::Blue).unwrap_or_default());
+        }
+        if let Some(ref mut controller) = self.team_controllers.yellow_team {
+            controller.set_notebook_input(
+                notebook_inputs
+                    .remove(&TeamColor::Yellow)
+                    .unwrap_or_default(),
+            );
+        }
+
         // Webui overrides arrive in absolute world coordinates (matching the absolute
         // world data the UI renders), so transform them into team-relative coordinates
         // here.
@@ -1549,7 +1612,7 @@ impl Executor {
             .map(|((color, id), s)| {
                 (
                     (*color, *id),
-                    override_to_team_coords(side_assignment, *color, s.advance()),
+                    s.advance().to_team_frame(side_assignment, *color),
                 )
             })
             .collect();

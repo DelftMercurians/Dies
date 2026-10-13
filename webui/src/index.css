@@ -407,3 +407,28 @@ body,
 .dockview-theme-dies .groupview.maximized {
   border: 2px solid var(--color-accent-cyan);
 }
+
+/* Notebook: robot chip inside robot() and in the notebook toolbar. */
+.nb-chip {
+  background: color-mix(in srgb, var(--color-accent-cyan) 18%, transparent);
+  color: var(--color-accent-cyan);
+  border-radius: 3px;
+  padding: 0 2px;
+  cursor: pointer;
+  font-size: 0.92em;
+}
+.nb-chip-warn {
+  background: color-mix(in srgb, var(--color-accent-amber) 22%, transparent);
+  color: var(--color-accent-amber);
+}
+
+/* Notebook plots: Observable Plot tips and crosshair labels on the dark UI. */
+/* Plot sets --plot-background (white) on its own svg/figure with :where(),
+ * so override it there, not on the container. */
+.notebook-plot svg,
+.notebook-plot figure {
+  --plot-background: #1a1d24;
+}
+.notebook-plot [aria-label="tip"] path {
+  stroke: #3a4250;
+}

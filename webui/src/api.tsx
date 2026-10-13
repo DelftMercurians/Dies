@@ -1,3 +1,4 @@
+import { applyNotebookEvent } from "./lib/notebook/store";
 import React, {
   useEffect,
   PropsWithChildren,
@@ -820,6 +821,8 @@ export function startWsClient() {
           store.set(consoleLogsAtom, next);
         } else if (msg.type === "ReplayState") {
           store.set(replayStateAtom, msg.data.loaded ? msg.data : null);
+        } else if (msg.type === "Notebook") {
+          applyNotebookEvent(msg.data);
         }
       };
       socket.onerror = () => done();

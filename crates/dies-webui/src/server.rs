@@ -15,8 +15,8 @@ use axum::{
     Router,
 };
 use dies_core::{
-    BaseStationInfo, DebugSubscriber, ExecutorInfo, ExecutorSettings, PlayerFeedbackMsg, PlayerId,
-    TeamColor, WorldUpdate,
+    BaseStationInfo, DebugSubscriber, ExecutorInfo, ExecutorSettings, NotebookEvent,
+    PlayerFeedbackMsg, PlayerId, TeamColor, WorldUpdate,
 };
 use dies_executor::{ControlMsg, ExecutorHandle};
 use tokio::sync::{broadcast, watch};
@@ -24,7 +24,8 @@ use tower_http::services::ServeDir;
 use tower_layer::Layer;
 
 use crate::{
-    executor_task::ExecutorTask, routes, settings_store::SettingsStore, snapshots::SnapshotStore,
+    executor_task::ExecutorTask, notebooks::NotebookStore, routes, settings_store::SettingsStore,
+    snapshots::SnapshotStore,
     ConsoleLogMessage, ControlledTeam, ExecutorStatus, FieldSnapshot, ReplayState,
     SettingsSnapshot, SettingsSnapshotsResponse, UiCommand, UiConfig, UiEnvironment, UiMode,
     UiStatus,
@@ -47,6 +48,13 @@ pub struct ServerState {
     pub console_log_tx: broadcast::Sender<ConsoleLogMessage>,
     /// Latest replay-player state, pushed to WS clients on change.
     pub replay_state: watch::Sender<ReplayState>,
+    /// Notebook cell events from the executor, fanned out to WS clients.
+    pub notebook_tx: broadcast::Sender<NotebookEvent>,
+    /// Notebooks and their latest cell runs (`.dies-notebooks/`).
+    pub(crate) notebook_store: NotebookStore,
+    /// Connected WS clients. When the last one leaves, running notebook cells
+    /// are aborted (nobody is watching the robots anymore).
+    pub ws_clients: std::sync::atomic::AtomicUsize,
     /// Directory where session logs live (for the replay browser).
     pub log_directory: PathBuf,
     /// Log vault client (share/browse logs across machines).
@@ -97,6 +105,8 @@ impl ServerState {
             });
         }
         let (replay_state, _) = watch::channel(ReplayState::default());
+        let (notebook_tx, _) = broadcast::channel::<NotebookEvent>(1024);
+        let notebook_store = NotebookStore::load(settings_parent.join(".dies-notebooks"));
         Self {
             is_live_available,
             update_rx,
@@ -110,6 +120,9 @@ impl ServerState {
             executor_settings: RwLock::new(settings),
             console_log_tx,
             replay_state,
+            notebook_tx,
+            notebook_store,
+            ws_clients: std::sync::atomic::AtomicUsize::new(0),
             log_directory,
             vault: dies_logvault_client::VaultClient::new(logvault_url),
             settings_file,
@@ -286,6 +299,28 @@ pub async fn start(config: UiConfig, shutdown_rx: broadcast::Receiver<()>) {
             crate::bench::run(state, env, cmd_rx, shutdown_rx).await;
         })
     };
+
+    // Record notebook cell runs server side (survive refreshes, shared between
+    // clients); pending writes are flushed periodically.
+    {
+        let state = Arc::clone(&state);
+        let mut rx = state.notebook_tx.subscribe();
+        tokio::spawn(async move {
+            let mut flush = tokio::time::interval(std::time::Duration::from_secs(2));
+            loop {
+                tokio::select! {
+                    ev = rx.recv() => match ev {
+                        Ok(ev) => state.notebook_store.on_event(&ev),
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            log::warn!("notebook store lagged, dropped {n} events");
+                        }
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    },
+                    _ = flush.tick() => state.notebook_store.flush(),
+                }
+            }
+        });
+    }
 
     // Start executor task
     let executor_task = {
@@ -518,6 +553,7 @@ async fn start_webserver(
         .route("/api/world-state", get(routes::get_world_state))
         .route("/api/ui-status", get(routes::get_ui_status))
         .route("/api/ws", get(routes::websocket))
+        .route("/api/notebook/types", get(routes::get_notebook_types))
         .route("/api/settings", get(routes::get_executor_settings))
         .route("/api/basestation", get(routes::get_basesation_info))
         .route("/api/debug", get(routes::get_debug_map))
@@ -541,6 +577,13 @@ async fn start_webserver(
         .route(
             "/api/snapshots",
             get(routes::get_snapshots).post(routes::post_snapshot),
+        )
+        .route("/api/notebooks", get(routes::get_notebooks))
+        .route(
+            "/api/notebooks/:id",
+            get(routes::get_notebook)
+                .put(routes::put_notebook)
+                .delete(routes::delete_notebook),
         )
         .route(
             "/api/snapshots/:name",

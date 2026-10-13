@@ -29,4 +29,4 @@ pub use player_input::*;
 pub use skill_executor::{
     ExecutableSkill, SkillContext, SkillExecutor, SkillProgress, SkillResult,
 };
-pub use team_controller::{StrategyInput, TeamController};
+pub use team_controller::{NotebookCommand, NotebookInput, StrategyInput, TeamController};

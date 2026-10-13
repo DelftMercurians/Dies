@@ -2,6 +2,7 @@ import { getDefaultStore } from "jotai";
 import { TeamColor, UiCommand } from "@/bindings";
 import { ALL_PANELS, PanelId, PANEL_IDS } from "@/components/panels";
 import { benchOpenAtom } from "@/api";
+import { VIEWS } from "@/lib/views";
 
 /**
  * Central command registry. Each command is a self-contained action with a
@@ -22,6 +23,8 @@ export interface CommandContext {
   toggleKeyboardControl: () => void;
   toggleKeyboardMode: () => void;
   focusPanel: (id: PanelId) => void;
+  /** Switch to a built-in or saved view (layout) in place. */
+  switchView: (id: string) => void;
   toggleCommandPalette: () => void;
   /** True when manual keyboard-driving is active (suppresses plain-letter keys). */
   drivingActive: boolean;
@@ -222,6 +225,19 @@ export const buildPaletteEntries = (ctx: CommandContext): PaletteEntry[] => {
       run: () => {
         ctx.setSelectedPlayerId(id);
         ctx.feedback(`Select #${id}`);
+      },
+    });
+  }
+
+  // Views.
+  for (const view of VIEWS) {
+    entries.push({
+      id: `view-${view.id}`,
+      title: `View: ${view.label} — ${view.description}`,
+      section: "Views",
+      run: () => {
+        ctx.switchView(view.id);
+        ctx.feedback(`${view.label} view`);
       },
     });
   }
