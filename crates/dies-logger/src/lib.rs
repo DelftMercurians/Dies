@@ -15,5 +15,5 @@ pub mod worker;
 mod writer;
 
 pub use frame::side_assignment_str;
-pub use meta::{MetaJson, FORMAT_VERSION};
+pub use meta::{read_attachment, MetaJson, FORMAT_VERSION};
 pub use worker::set_console_observer;

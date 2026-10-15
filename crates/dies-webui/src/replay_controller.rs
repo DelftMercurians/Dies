@@ -35,9 +35,12 @@ impl ReplayController {
         update_tx: watch::Sender<Option<WorldUpdate>>,
         replay_tx: watch::Sender<ReplayState>,
     ) -> Result<Self> {
+        let log_path = path.as_ref().to_string_lossy().to_string();
         let reader = LogReader::open(path)?;
         let (ctrl_tx, ctrl_rx) = mpsc::unbounded_channel();
-        let task = tokio::spawn(playback_loop(reader, ctrl_rx, update_tx, replay_tx));
+        let task = tokio::spawn(playback_loop(
+            reader, log_path, ctrl_rx, update_tx, replay_tx,
+        ));
         Ok(Self { ctrl_tx, task })
     }
 
@@ -70,6 +73,7 @@ impl ReplayController {
 
 async fn playback_loop(
     reader: LogReader,
+    log_path: String,
     mut ctrl_rx: mpsc::UnboundedReceiver<ReplayCmd>,
     update_tx: watch::Sender<Option<WorldUpdate>>,
     replay_tx: watch::Sender<ReplayState>,
@@ -151,6 +155,7 @@ async fn playback_loop(
     let publish_state = |idx: usize, playing: bool, speed: f64| {
         let _ = replay_tx.send(ReplayState {
             loaded: true,
+            log_path: Some(log_path.clone()),
             playing,
             speed,
             t_min,

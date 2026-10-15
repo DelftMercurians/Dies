@@ -25,10 +25,9 @@ use tower_layer::Layer;
 
 use crate::{
     executor_task::ExecutorTask, notebooks::NotebookStore, routes, settings_store::SettingsStore,
-    snapshots::SnapshotStore,
-    ConsoleLogMessage, ControlledTeam, ExecutorStatus, FieldSnapshot, ReplayState,
-    SettingsSnapshot, SettingsSnapshotsResponse, UiCommand, UiConfig, UiEnvironment, UiMode,
-    UiStatus,
+    snapshots::SnapshotStore, ConsoleLogMessage, ControlledTeam, ExecutorStatus, FieldSnapshot,
+    ReplayState, SettingsSnapshot, SettingsSnapshotsResponse, UiCommand, UiConfig, UiEnvironment,
+    UiMode, UiStatus,
 };
 
 pub struct ServerState {
@@ -579,6 +578,11 @@ async fn start_webserver(
             get(routes::get_snapshots).post(routes::post_snapshot),
         )
         .route("/api/notebooks", get(routes::get_notebooks))
+        .route("/api/log-notebooks", get(routes::get_log_notebooks))
+        .route(
+            "/api/log-notebooks/open",
+            post(routes::post_open_log_notebook),
+        )
         .route(
             "/api/notebooks/:id",
             get(routes::get_notebook)

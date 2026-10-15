@@ -88,8 +88,11 @@ class DiesLog:
         path = pathlib.Path(path)
         self.path = path
         self.tables = {}
+        self.notebook_docs = []
         if path.is_dir():
             self.meta = json.loads((path / "meta.json").read_text())
+            if (path / "notebooks.json").exists():
+                self.notebook_docs = json.loads((path / "notebooks.json").read_text())
             for t in TABLES:
                 p, a = path / f"{t}.parquet", path / f"{t}.arrow"
                 if p.exists():
@@ -100,6 +103,9 @@ class DiesLog:
             with zipfile.ZipFile(path) as z:
                 names = z.namelist()
                 self.meta = json.loads(z.read(next(n for n in names if n.endswith("meta.json"))))
+                nb = next((n for n in names if n.endswith("notebooks.json")), None)
+                if nb:
+                    self.notebook_docs = json.loads(z.read(nb))
                 for t in TABLES:
                     p = next((n for n in names if n.endswith(f"{t}.parquet")), None)
                     a = next((n for n in names if n.endswith(f"{t}.arrow")), None)
@@ -235,6 +241,21 @@ class DiesLog:
         wide = self._wide(f"team_{team.capitalize()}.p{player_id}.")
         merged = rows.set_index("frame_id").join(wide, how="left", rsuffix="_dbg")
         return self._index_t(merged.reset_index())
+
+    def notebooks(self):
+        """Notebooks that ran during this log: one row per cell (code, status,
+        outputs as JSON strings). Raw docs are in `self.notebook_docs`."""
+        rows = []
+        for doc in self.notebook_docs:
+            nb, runs = doc["notebook"], doc["runs"]
+            for i, cell in enumerate(nb["cells"]):
+                run = runs.get(cell["id"], {})
+                rows.append({
+                    "notebook": nb["title"], "cell": i, "code": cell["code"],
+                    "status": run.get("status"),
+                    "outputs": [o.get("data") for o in run.get("outputs", [])],
+                })
+        return pd.DataFrame(rows)
 
     def trials(self):
         """Notebook trials (`trial(name, params, body)` in the Motion notebook), one

@@ -6,6 +6,7 @@
 import { atom, getDefaultStore } from "jotai";
 import {
   CellRunState,
+  LogNotebook,
   Notebook,
   NotebookCell,
   NotebookDoc,
@@ -71,6 +72,13 @@ async function http<T>(method: string, url: string, body?: unknown): Promise<T> 
 
 export const listNotebooks = () => http<NotebookSummary[]>("GET", "/api/notebooks");
 export const deleteNotebook = (id: string) => http<void>("DELETE", `/api/notebooks/${id}`);
+
+/** Notebooks stored in a recorded log. */
+export const listLogNotebooks = (path: string) =>
+  http<LogNotebook[]>("GET", `/api/log-notebooks?path=${encodeURIComponent(path)}`);
+/** Copy a log's notebook into the notebook list (once) and return it. */
+export const openLogNotebook = (path: string, id: string) =>
+  http<NotebookSummary>("POST", "/api/log-notebooks/open", { path, id });
 
 export async function createNotebook(title: string, codes: string[]): Promise<Notebook> {
   const id = newId("n");

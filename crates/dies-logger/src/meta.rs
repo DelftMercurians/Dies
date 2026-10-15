@@ -113,6 +113,27 @@ impl MetaJson {
     }
 }
 
+/// Read an attached file (see [`crate::worker::log_attach`]) from a log
+/// directory or `.dieslog` zip. `Ok(None)` if the log has no such file.
+pub fn read_attachment(path: &Path, name: &str) -> Result<Option<Vec<u8>>> {
+    if path.is_dir() {
+        return match std::fs::read(path.join(name)) {
+            Ok(b) => Ok(Some(b)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        };
+    }
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
+    let mut entry = match archive.by_name(name) {
+        Ok(e) => e,
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes)?;
+    Ok(Some(bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

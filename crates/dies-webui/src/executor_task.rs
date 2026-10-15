@@ -266,8 +266,9 @@ impl ExecutorTask {
                         format!("dies-{time}")
                     };
                     dies_core::debug_clear();
+                    let log_start_ms = chrono::Utc::now().timestamp_millis();
                     let mut meta = dies_logger::MetaJson::new(
-                        chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                        log_start_ms as f64 / 1000.0,
                         matches!(mode, UiMode::Simulation),
                         settings.team_configuration.blue_strategy.clone(),
                         settings.team_configuration.yellow_strategy.clone(),
@@ -368,6 +369,18 @@ impl ExecutorTask {
                             log::error!("Failed to start executor: {}", err);
                             server_state
                                 .set_executor_status(ExecutorStatus::Failed(format!("{}", err)));
+                        }
+                    }
+
+                    // Keep the notebooks that ran during this log with it.
+                    let notebooks = server_state.notebook_store.snapshot_since(log_start_ms);
+                    if !notebooks.is_empty() {
+                        match serde_json::to_vec(&notebooks) {
+                            Ok(bytes) => dies_logger::worker::log_attach(
+                                crate::notebooks::LOG_ATTACHMENT,
+                                bytes,
+                            ),
+                            Err(e) => log::warn!("Failed to serialize notebooks for the log: {e}"),
                         }
                     }
 

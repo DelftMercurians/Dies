@@ -241,6 +241,8 @@ pub(crate) struct ReplayGoal {
 #[typeshare]
 pub(crate) struct ReplayState {
     pub loaded: bool,
+    /// The loaded log (directory or `.dieslog`).
+    pub log_path: Option<String>,
     pub playing: bool,
     pub speed: f64,
     pub t_min: f64,

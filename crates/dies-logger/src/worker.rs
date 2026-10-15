@@ -54,6 +54,10 @@ enum WorkerMsg {
     CloseLog {
         ack: Option<Sender<()>>,
     },
+    Attach {
+        name: String,
+        bytes: Vec<u8>,
+    },
     Frame(Box<FrameRecord>),
     Feedback(Box<FeedbackRecord>),
     Settings {
@@ -165,6 +169,13 @@ fn handle(writer: &mut Option<LogWriter>, msg: WorkerMsg) {
                 let _ = ack.send(());
             }
         }
+        WorkerMsg::Attach { name, bytes } => {
+            if let Some(w) = writer {
+                if let Err(e) = w.attach(&name, &bytes) {
+                    eprintln!("dies-logger: attaching {name} failed: {e}");
+                }
+            }
+        }
         WorkerMsg::Frame(rec) => {
             if let Some(w) = writer {
                 w.push_frame(&rec);
@@ -247,6 +258,18 @@ pub fn log_set_team_names(blue: Option<String>, yellow: Option<String>) {
 pub fn log_close() {
     if let Some(l) = ARROW_LOGGER.get() {
         l.send(WorkerMsg::CloseLog { ack: None });
+    }
+}
+
+/// Store an extra file (e.g. `notebooks.json`) in the open log. It ends up in
+/// the `.dieslog` zip next to the tables; read it back with
+/// [`crate::read_attachment`]. A later call with the same name replaces it.
+pub fn log_attach(name: &str, bytes: Vec<u8>) {
+    if let Some(l) = ARROW_LOGGER.get() {
+        l.send(WorkerMsg::Attach {
+            name: name.to_string(),
+            bytes,
+        });
     }
 }
 

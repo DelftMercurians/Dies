@@ -105,10 +105,20 @@ mod tests {
         for fid in 0..5 {
             w.push_frame(&FrameRecord::from_world(fid, &world, &debug));
         }
+        w.attach("notebooks.json", b"[]").unwrap();
+        assert!(w.attach("meta.json", b"x").is_err());
+        assert!(w.attach("../x", b"x").is_err());
         w.close(Instant::now()).unwrap();
 
         let zip = finalize(&dir).unwrap();
         assert!(zip.exists(), "zip not created");
+        for path in [&dir, &zip] {
+            let got = crate::read_attachment(path, "notebooks.json").unwrap();
+            assert_eq!(got.as_deref(), Some(&b"[]"[..]));
+            assert!(crate::read_attachment(path, "missing.json")
+                .unwrap()
+                .is_none());
+        }
         // .arrow removed, .parquet present
         assert!(!dir.join("frames.arrow").exists());
         assert!(dir.join("frames.parquet").exists());

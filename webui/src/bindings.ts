@@ -1007,6 +1007,14 @@ export interface LogInfo {
 	is_zip: boolean;
 }
 
+/** A notebook stored in a log (see [`crate::notebooks::LOG_ATTACHMENT`]). */
+export interface LogNotebook {
+	id: string;
+	title: string;
+	/** Cells that ran while the log was recorded. */
+	runs: number;
+}
+
 export interface LogsResponse {
 	logs: LogInfo[];
 }
@@ -1052,6 +1060,11 @@ export interface NotebookSummary {
 	id: string;
 	title: string;
 	updated_ms: number;
+}
+
+export interface OpenLogNotebookBody {
+	path: string;
+	id: string;
 }
 
 /**
@@ -1465,6 +1478,8 @@ export interface ReplayMarker {
 /** State of the replay player, pushed to the frontend on change. */
 export interface ReplayState {
 	loaded: boolean;
+	/** The loaded log (directory or `.dieslog`). */
+	log_path?: string;
 	playing: boolean;
 	speed: number;
 	t_min: number;

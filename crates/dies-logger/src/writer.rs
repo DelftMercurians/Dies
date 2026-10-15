@@ -194,6 +194,21 @@ impl LogWriter {
         }
     }
 
+    /// Write an extra file into the log directory. `name` must be a plain file
+    /// name that doesn't clash with a table or `meta.json`.
+    pub fn attach(&self, name: &str, bytes: &[u8]) -> Result<()> {
+        let plain = !name.is_empty()
+            && !name.contains(['/', '\\'])
+            && name != "."
+            && name != ".."
+            && name != crate::meta::META_FILE
+            && !name.ends_with(".arrow")
+            && !name.ends_with(".parquet");
+        anyhow::ensure!(plain, "invalid attachment name {name:?}");
+        std::fs::write(self.dir.join(name), bytes)?;
+        Ok(())
+    }
+
     /// Flush builders to disk if the interval elapsed, a builder is large, or
     /// `force` is set.
     pub fn maybe_flush(&mut self, now: Instant, force: bool) -> Result<()> {

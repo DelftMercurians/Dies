@@ -29,12 +29,13 @@ const DEBUG_SEND_HZ: u64 = 30;
 
 use crate::{
     notebooks::{Notebook, NotebookDoc, NotebookSummary},
-    server::ServerState, BasestationResponse, ConsoleLogMessage, ExecutorInfoResponse,
-    ExecutorSettingsResponse, FieldSnapshot, GetDebugMapResponse, LogInfo, LogsResponse,
-    PostExecutorSettingsBody, PostUiCommandBody, PostUiModeBody, ReplayState, SaveSnapshotBody,
-    SettingsSnapshot, SettingsSnapshotsResponse, SnapshotsResponse, StrategiesResponse, UiCommand,
-    UiMode, UiStatus, UiWorldState, VaultLogInfo, VaultLogsResponse, VaultOpenBody, VaultPushBody,
-    VaultPushResponse, WsMessage,
+    server::ServerState,
+    BasestationResponse, ConsoleLogMessage, ExecutorInfoResponse, ExecutorSettingsResponse,
+    FieldSnapshot, GetDebugMapResponse, LogInfo, LogsResponse, PostExecutorSettingsBody,
+    PostUiCommandBody, PostUiModeBody, ReplayState, SaveSnapshotBody, SettingsSnapshot,
+    SettingsSnapshotsResponse, SnapshotsResponse, StrategiesResponse, UiCommand, UiMode, UiStatus,
+    UiWorldState, VaultLogInfo, VaultLogsResponse, VaultOpenBody, VaultPushBody, VaultPushResponse,
+    WsMessage,
 };
 
 pub async fn get_world_state(state: State<Arc<ServerState>>) -> Json<UiWorldState> {
@@ -414,7 +415,11 @@ pub async fn get_notebook(
     state: State<Arc<ServerState>>,
     Path(id): Path<String>,
 ) -> Result<Json<NotebookDoc>, StatusCode> {
-    state.notebook_store.get(&id).map(Json).ok_or(StatusCode::NOT_FOUND)
+    state
+        .notebook_store
+        .get(&id)
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 /// Create or replace a notebook (cells, title, picked robot).
@@ -429,6 +434,101 @@ pub async fn put_notebook(
         .save(notebook)
         .map(Json)
         .ok_or(StatusCode::BAD_REQUEST)
+}
+
+/// A notebook stored in a log (see [`crate::notebooks::LOG_ATTACHMENT`]).
+#[derive(Serialize)]
+#[typeshare::typeshare]
+pub struct LogNotebook {
+    pub id: String,
+    pub title: String,
+    /// Cells that ran while the log was recorded.
+    pub runs: u32,
+}
+
+#[derive(Deserialize)]
+pub struct LogNotebooksQuery {
+    pub path: String,
+}
+
+#[derive(Deserialize)]
+#[typeshare::typeshare]
+pub struct OpenLogNotebookBody {
+    pub path: String,
+    pub id: String,
+}
+
+fn read_log_notebooks(path: &str) -> Result<Vec<NotebookDoc>, (StatusCode, String)> {
+    let bytes =
+        dies_logger::read_attachment(std::path::Path::new(path), crate::notebooks::LOG_ATTACHMENT)
+            .map_err(|e| (StatusCode::NOT_FOUND, format!("{e:#}")))?;
+    match bytes {
+        Some(b) => serde_json::from_slice(&b).map_err(|e| {
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("bad notebook snapshot: {e}"),
+            )
+        }),
+        None => Ok(vec![]),
+    }
+}
+
+/// A short name for a log: its `dies-<time>` session name. Vault copies are
+/// named by vault id, so rebuild the session name from `meta.json`.
+fn log_display_name(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    let stem = p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string();
+    if stem.starts_with("dies-") {
+        return stem;
+    }
+    dies_logger::MetaJson::read_any(p)
+        .ok()
+        .and_then(|m| chrono::DateTime::from_timestamp(m.session_start_unix as i64, 0))
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("dies-%Y-%m-%d_%H-%M-%S")
+                .to_string()
+        })
+        .unwrap_or(stem)
+}
+
+/// Notebooks stored in a log.
+pub async fn get_log_notebooks(
+    Query(query): Query<LogNotebooksQuery>,
+) -> Result<Json<Vec<LogNotebook>>, (StatusCode, String)> {
+    let docs = read_log_notebooks(&query.path)?;
+    Ok(Json(
+        docs.into_iter()
+            .map(|d| LogNotebook {
+                id: d.notebook.id,
+                title: d.notebook.title,
+                runs: d.runs.len() as u32,
+            })
+            .collect(),
+    ))
+}
+
+/// Copy a notebook from a log into the notebook store (once) and return it.
+pub async fn post_open_log_notebook(
+    state: State<Arc<ServerState>>,
+    Json(body): Json<OpenLogNotebookBody>,
+) -> Result<Json<NotebookSummary>, (StatusCode, String)> {
+    let doc = read_log_notebooks(&body.path)?
+        .into_iter()
+        .find(|d| d.notebook.id == body.id)
+        .ok_or((StatusCode::NOT_FOUND, "no such notebook in this log".into()))?;
+    state
+        .notebook_store
+        .import(&log_display_name(&body.path), doc)
+        .map(Json)
+        .ok_or((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not save notebook".into(),
+        ))
 }
 
 pub async fn delete_notebook(state: State<Arc<ServerState>>, Path(id): Path<String>) -> StatusCode {

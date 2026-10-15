@@ -21,6 +21,7 @@ import {
   Download,
   FastForward,
   FilePlus,
+  History,
   Play,
   Plus,
   RotateCcw,
@@ -29,7 +30,7 @@ import {
   X,
 } from "lucide-react";
 
-import { sendWsCommand, usePrimaryTeam, useStatus, useWorldState } from "@/api";
+import { replayStateAtom, sendWsCommand, usePrimaryTeam, useStatus, useWorldState } from "@/api";
 import { Notebook, NotebookCmd, NotebookRobot, TeamColor } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import { SimpleTooltip } from "@/components/ui/tooltip";
@@ -42,6 +43,7 @@ import {
   clearMessages,
   createNotebook,
   deleteNotebook,
+  listLogNotebooks,
   listNotebooks,
   loadNotebook,
   markFailed,
@@ -50,6 +52,7 @@ import {
   newId,
   notebookMessagesAtom,
   notebooksAtom,
+  openLogNotebook,
   setNotebookRobot,
   updateNotebook,
 } from "@/lib/notebook/store";
@@ -698,6 +701,24 @@ const NotebookLauncher: React.FC<{ panel: IDockviewPanelProps }> = ({ panel }) =
 
   const open = (nb: { id: string; title: string }) => openNotebookPanel(panel.containerApi, nb, panel.api.id);
 
+  const replay = useAtomValue(replayStateAtom);
+  const logPath = replay?.loaded ? replay.log_path : undefined;
+  const { data: logNotebooks } = useQuery({
+    queryKey: ["log-notebooks", logPath],
+    queryFn: () => listLogNotebooks(logPath!),
+    enabled: !!logPath,
+  });
+
+  const openFromLog = async (id: string) => {
+    try {
+      const nb = await openLogNotebook(logPath!, id);
+      await queryClient.invalidateQueries({ queryKey: ["notebooks"] });
+      open(nb);
+    } catch (e: any) {
+      toast.error(`Could not open notebook: ${e?.message ?? e}`);
+    }
+  };
+
   const create = async (title: string, codes: string[]) => {
     try {
       const nb = await createNotebook(title, codes);
@@ -721,6 +742,26 @@ const NotebookLauncher: React.FC<{ panel: IDockviewPanelProps }> = ({ panel }) =
 
   return (
     <div className="w-full h-full bg-bg-surface overflow-auto p-2 flex flex-col gap-3 text-xs">
+      {logPath && !!logNotebooks?.length && (
+        <div>
+          <div className="text-text-dim uppercase tracking-wider mb-1">In this log</div>
+          <div className="flex flex-col border border-border-subtle">
+            {logNotebooks.map((nb) => (
+              <button
+                key={nb.id}
+                className="flex items-center gap-2 text-left px-2 py-1 hover:bg-bg-elevated text-text-std"
+                onClick={() => openFromLog(nb.id)}
+              >
+                <History className="h-3 w-3 text-text-dim" />
+                {nb.title}
+                <span className="ml-auto text-text-dim tabular-nums">
+                  {nb.runs} {nb.runs === 1 ? "cell" : "cells"} run
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="text-text-dim uppercase tracking-wider">Notebooks</span>
