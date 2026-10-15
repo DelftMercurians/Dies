@@ -11,7 +11,7 @@ dies-protos = { version = "0.1.0", path = "../dies-protos" }
 lazy_static = "1.4.0"
 log = "0.4.21"
 nalgebra = { version = "0.32.3", features = ["serde-serialize"] }
-rand = "0.8.5"
+rand = "0.9.1"
 serde = { version = "1.0.192", features = ["derive"] }
 typeshare = "1.0.3"
 glue = { git = "https://github.com/DelftMercurians/glue.git", tag = "v0.9.4" }
