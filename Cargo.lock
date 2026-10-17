@@ -1098,6 +1098,7 @@ dependencies = [
  "dies-core",
  "glue",
  "log 0.4.27",
+ "strum",
  "tokio",
 ]
 

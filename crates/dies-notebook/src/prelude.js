@@ -20,6 +20,7 @@
     released: new Map(), // robot key → { team, id }, emitted once
     debug: [],
     events: [],
+    fw: [], // firmware variable writes: { team, id, vars: [[name, u32]] }
     outputs: [],
     frameLogs: new Map(), // robot key → { name: value } logged this frame
     recorders: new Set(), // active trials
@@ -195,6 +196,20 @@
       if (h) settleSkill(h, "Cancelled");
       S.held.delete(key);
       S.released.set(key, { team: this.team, id: this.id });
+    }
+
+    /** Write firmware config variables ({ SAS_RESERVED_1: 1.5 }); sticky on the robot until reboot. */
+    writeVars(vars, type = "f32") {
+      const dv = new DataView(new ArrayBuffer(4));
+      const bits = (v) => {
+        if (type === "f32") dv.setFloat32(0, v);
+        else if (type === "u32" || type === "i32") dv.setInt32(0, v | 0);
+        else throw new Error(`writeVars: unknown type ${type} (f32 | u32 | i32)`);
+        return dv.getUint32(0);
+      };
+      const out = Object.entries(vars).map(([name, v]) => [name, bits(v)]);
+      S.fw.push({ team: this.team, id: this.id, vars: out });
+      emit("fw.write", { team: this.team, id: this.id, type, vars });
     }
 
     /** Debug values for this frame, recorded in the log as team_<Color>.p<id>.<name>. */
@@ -583,10 +598,12 @@
         commands,
         release: [...S.released.values()],
         debug: S.debug,
+        fw: S.fw,
         ...takeOutputs(),
       };
       S.released = new Map();
       S.debug = [];
+      S.fw = [];
       return JSON.stringify(out);
     },
 

@@ -146,6 +146,9 @@ pub struct PlayerControlInput {
     /// command by [`PlayerController`]. Only effective on robots with a working
     /// ToF sensor; a no-op otherwise (and in sim).
     pub magnet: bool,
+    /// Experimental firmware flags, passed raw to the wire command (GlobalCommand
+    /// `_pad`). Bit meanings live with the firmware branch under test. No-op in sim.
+    pub fw_flags: u8,
     /// How carefully do we wish to move (e.g. move further than the target)
     /// 0 means 'as fast as possible', 1 means 'as careful as possible'
     pub care: f64,
@@ -215,6 +218,7 @@ impl Default for PlayerControlInput {
             dribbler_brake: false,
             kicker: KickerControlInput::default(),
             magnet: false,
+            fw_flags: 0,
             care: 0.0,
             aggressiveness: 0.0,
             brake_gain: None,

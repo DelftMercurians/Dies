@@ -72,6 +72,14 @@ enum CommandJson {
     Skill(SkillCommand),
 }
 
+/// Firmware config-variable write (`HG_Variable` name → raw u32 bits).
+#[derive(Deserialize)]
+pub(crate) struct FwWrite {
+    pub team: TeamColor,
+    pub id: PlayerId,
+    pub vars: Vec<(String, u32)>,
+}
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum DebugValue {
@@ -108,6 +116,7 @@ struct EngineOutput {
     debug: Vec<DebugOut>,
     events: Vec<EventOut>,
     outputs: Vec<OutputOut>,
+    fw: Vec<FwWrite>,
 }
 
 pub(crate) struct NotebookHost {
@@ -117,6 +126,8 @@ pub(crate) struct NotebookHost {
     /// Releases to apply on the next frame even if the engine is gone.
     pending_release: HashSet<(TeamColor, PlayerId)>,
     events_tx: broadcast::Sender<NotebookEvent>,
+    /// Firmware variable writes awaiting the radio (drained by the live loop).
+    fw_writes: Vec<FwWrite>,
 }
 
 impl NotebookHost {
@@ -126,6 +137,7 @@ impl NotebookHost {
             held: HashSet::new(),
             pending_release: HashSet::new(),
             events_tx,
+            fw_writes: Vec::new(),
         }
     }
 
@@ -136,6 +148,11 @@ impl NotebookHost {
 
     pub fn has_engine(&self) -> bool {
         self.engine.is_some()
+    }
+
+    /// Take the firmware variable writes issued since the last call.
+    pub fn take_fw_writes(&mut self) -> Vec<FwWrite> {
+        std::mem::take(&mut self.fw_writes)
     }
 
     /// Handle a UI command. `snapshot` builds the current snapshot JSON, used to
@@ -284,6 +301,7 @@ impl NotebookHost {
             out.release.extend(o.release);
             out.debug.extend(o.debug);
             out.events.extend(o.events);
+            self.fw_writes.extend(o.fw);
             tagged_outputs.extend(o.outputs.into_iter().map(|x| (Some(nb.clone()), x)));
         }
         let mut losers: HashMap<String, Vec<serde_json::Value>> = HashMap::new();

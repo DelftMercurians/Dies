@@ -106,6 +106,8 @@ pub struct PlayerController {
     /// Whether magnet mode is being requested this frame (held mode, composed with
     /// the kicker state into the wire command). Recomputed every `update`.
     magnet_requested: bool,
+    /// Experimental firmware flags requested this frame (held, raw to the wire).
+    fw_flags: u8,
     /// Dribble speed normalized to \[0, 1\]
     dribble_speed: f64,
 
@@ -144,6 +146,7 @@ impl PlayerController {
             kicker: KickerState::Disarming,
             reflex_requested: false,
             magnet_requested: false,
+            fw_flags: 0,
             dribble_speed: 0.0,
 
             max_accel: settings.controller_settings.max_acceleration,
@@ -226,7 +229,7 @@ impl PlayerController {
             _ => RobotCmd::None, // Don't arm or disarm, do nothing
         };
 
-        let global_cmd = untransformer
+        let mut global_cmd = untransformer
             .set_target_velocity(self.target_velocity_global)
             .set_target_yaw(Angle::from_radians(self.target_z))
             .set_w(self.w)
@@ -239,6 +242,7 @@ impl PlayerController {
                     .unwrap_or(self.max_angular_velocity),
             )
             .untransform_global_move_cmd(self.id, self.last_yaw);
+        global_cmd.fw_flags = self.fw_flags;
 
         player_context.debug_string(
             "target_vel",
@@ -602,6 +606,7 @@ impl PlayerController {
         // Magnet is a held mode (level signal), recomputed each frame; composed
         // with the kicker state when the wire command is built.
         self.magnet_requested = input.magnet;
+        self.fw_flags = input.fw_flags;
 
         // Set kicker control. Reflex is a held mode (level signal), recomputed
         // each frame; everything else drives the smart-kick state machine.

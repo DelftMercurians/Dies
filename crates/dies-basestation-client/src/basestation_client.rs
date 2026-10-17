@@ -9,6 +9,7 @@ use dies_core::{
     RobotCmd, SysStatus, TeamColor,
 };
 use glue::{BaseStation, Serial};
+use strum::IntoEnumIterator;
 use tokio::sync::{broadcast, mpsc, watch};
 
 const DEFAULT_BASE_STATION_READ_FREQ: f64 = 300.0;
@@ -194,6 +195,8 @@ enum Message {
     PlayerCmd((TeamColor, PlayerCmd)),
     ChangeIdMap(HashMap<(TeamColor, PlayerId), u32>),
     Bench(BenchOp),
+    /// Write firmware config variables (by `HG_Variable` name, raw u32 values).
+    FwWrite((TeamColor, PlayerId), Vec<(String, u32)>),
 }
 
 /// A low-level bench operation, addressing robots by raw robot id and bypassing
@@ -308,6 +311,10 @@ impl BasestationHandle {
                             id_map = new_id_map;
                         }
                         Ok(Message::Bench(op)) => dispatch_bench_op(&mut bs, op),
+                        Ok(Message::FwWrite(player, vars)) => {
+                            let id = id_map.get(&player).copied().unwrap_or(player.1.as_u32()) as u8;
+                            write_fw_vars(&mut bs, id, &vars);
+                        }
                         Err(mpsc::error::TryRecvError::Disconnected) => {
                             break 'outer;
                         }
@@ -576,6 +583,12 @@ impl BasestationHandle {
             .ok();
     }
 
+    /// Write firmware config variables on a player's robot. Variables are named
+    /// as in `HG_Variable` (e.g. `SAS_RESERVED_1`); values are raw u32 bits.
+    pub fn fw_write(&self, team_color: TeamColor, id: PlayerId, vars: Vec<(String, u32)>) {
+        self.cmd_tx.try_send(Message::FwWrite((team_color, id), vars)).ok();
+    }
+
     /// Update the id map
     pub fn update_id_map(&mut self, id_map: HashMap<(TeamColor, PlayerId), u32>) {
         self.cmd_tx.try_send(Message::ChangeIdMap(id_map)).ok();
@@ -769,6 +782,30 @@ fn dispatch_bench_op(bs: &mut BaseStation, op: BenchOp) {
                 values: [0, 0, 0, 0, 0],
             };
             bs.serial.send_mcm(robot_id, mcm).ok();
+        }
+    }
+}
+
+/// Send WRITE config messages (5 variables each) to a raw robot id. Unknown
+/// variable names are skipped with a warning.
+fn write_fw_vars(bs: &mut BaseStation, robot_id: u8, vars: &[(String, u32)]) {
+    let known: Vec<_> = vars
+        .iter()
+        .filter_map(|(name, value)| {
+            let var = glue::HG_Variable::iter().find(|v| format!("{v:?}") == *name);
+            if var.is_none() {
+                log::warn!("fw_write: unknown firmware variable {name:?}");
+            }
+            var.map(|v| (v, *value))
+        })
+        .collect();
+    for chunk in known.chunks(5) {
+        let mut mcm = glue::Radio_MultiConfigMessage::write();
+        for &(var, value) in chunk {
+            mcm = mcm.add(var, value);
+        }
+        if let Err(e) = bs.serial.send_mcm(robot_id, mcm) {
+            log::warn!("fw_write to robot {robot_id} failed: {e:?}");
         }
     }
 }

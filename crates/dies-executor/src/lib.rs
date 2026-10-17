@@ -768,6 +768,8 @@ impl Executor {
                                 }
                             }
                         }
+                        // No firmware in sim: drop variable writes.
+                        self.notebook.take_fw_writes();
                     }
                 }
             } else {
@@ -1084,6 +1086,9 @@ impl Executor {
                 _ = cmd_interval.tick() => {
                     for (team_color, cmd) in self.player_commands() {
                         bs_client.send_no_wait(team_color, cmd);
+                    }
+                    for w in self.notebook.take_fw_writes() {
+                        bs_client.fw_write(w.team, w.id, w.vars);
                     }
                     // Basestation link metrics (1 s window), so offline log
                     // analysis can separate round-robin TX scheduling from RF

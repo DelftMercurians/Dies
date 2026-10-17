@@ -370,6 +370,7 @@ fn build_setpoint(
             w: 0.0,
             max_yaw_rate: BENCH_MAX_YAW_RATE,
             preferred_rotation_direction: RotationDirection::NoPreference,
+            fw_flags: 0,
         }),
     }
 }

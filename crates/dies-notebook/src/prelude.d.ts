@@ -72,6 +72,8 @@ declare global {
     dribbler_brake?: boolean;
     kicker?: KickerControlInput;
     magnet?: boolean;
+    /** Experimental firmware flags (0..255), sent raw on the wire. Meaning is set by the firmware. */
+    fw_flags?: number;
     care?: number;
     aggressiveness?: number;
     brake_gain?: number | null;
@@ -140,6 +142,8 @@ declare global {
     skill(cmd: SkillCommand): Promise<SkillStatus | "Cancelled">;
     /** Hand the robot back to the strategy (or idle). */
     release(): void;
+    /** Write firmware variables by name, e.g. { SAS_RESERVED_1: 1.5 }. Stays set until the robot reboots. No-op in sim. */
+    writeVars(vars: Record<string, number>, type?: "f32" | "u32" | "i32"): void;
     /** Debug values this frame, logged as team_<Color>.p<id>.<name>; [x, y] → _x/_y. */
     log(values: Record<string, number | string | boolean | Vec2>): void;
   }

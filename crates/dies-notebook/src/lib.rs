@@ -338,6 +338,25 @@ mod tests {
     }
 
     #[test]
+    fn write_vars_emits_raw_bits() {
+        let mut e = engine();
+        e.eval(
+            "nb",
+            r#"__nb.run("c1", async () => {
+                robot(4).writeVars({ SAS_RESERVED_1: 1.5 });
+                robot(4).writeVars({ SAS_RESERVED_6: 3 }, "u32");
+            });"#,
+            "null",
+        )
+        .unwrap();
+        let out = all(&e.frame(&snapshot(1)).unwrap());
+        // 1.5f32 = 0x3FC00000 = 1069547520
+        assert!(out.contains(r#"["SAS_RESERVED_1",1069547520]"#), "{out}");
+        assert!(out.contains(r#"["SAS_RESERVED_6",3]"#), "{out}");
+        assert!(out.contains("fw.write"), "{out}");
+    }
+
+    #[test]
     fn error_releases_and_reports() {
         let mut e = engine();
         e.eval(

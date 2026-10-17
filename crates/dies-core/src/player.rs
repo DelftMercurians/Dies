@@ -198,6 +198,10 @@ pub struct PlayerGlobalMoveCmd {
     /// Maximum yaw rate in rad/s
     pub max_yaw_rate: f64,
     pub preferred_rotation_direction: RotationDirection,
+    /// Experimental firmware flags, sent raw in the GlobalCommand `_pad` byte.
+    /// Bit meanings are owned by the firmware branch under test; 0 = none.
+    #[serde(default)]
+    pub fw_flags: u8,
 }
 
 /// QUICK HACK: per-robot kicker charge time (`kick_time_i`, u16 ms) tuned so
@@ -260,6 +264,7 @@ impl PlayerGlobalMoveCmd {
             w: 0.0,
             max_yaw_rate: 0.0,
             preferred_rotation_direction: RotationDirection::NoPreference,
+            fw_flags: 0,
         }
     }
 }
@@ -316,7 +321,7 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
             },
             max_yaw_rate: (max_yaw_rate * 10.0) as u16,
             preferred_rotation_direction: rotation_direction.as_i8(),
-            _pad: 0,
+            _pad: val.fw_flags,
         }
     }
 }

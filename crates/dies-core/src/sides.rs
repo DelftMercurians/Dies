@@ -514,6 +514,7 @@ impl PlayerCmdUntransformer {
                 .side_assignment
                 .attacking_direction_sign(self.team_color)
                 * self.w.unwrap_or(0.0),
+            fw_flags: 0,
         }
     }
 
