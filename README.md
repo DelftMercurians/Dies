@@ -19,7 +19,8 @@ You'll need:
 
 - A stable [Rust](https://www.rust-lang.org/tools/install) toolchain (use rustup).
 - On Linux: `sudo apt install libudev-dev libssl-dev pkg-config clang`.
-- For the web UI build: [`pnpm`](https://pnpm.io/) and [`typeshare`](https://github.com/1Password/typeshare) (`cargo install typeshare-cli`) on your `PATH`. The `dies-webui` build script regenerates the TypeScript bindings and the frontend bundle itself.
+
+That's all for building and running Dies: the web UI bundle is committed in `crates/dies-webui/static` and served as-is.
 
 ```sh
 cargo run -- --strategy concerto            # build the strategy once, run Dies in sim
@@ -28,7 +29,7 @@ mprocs                                      # vite dev server + dies --watch (we
 cargo run -- self-play --blue-strategy concerto --yellow-strategy concerto   # headless match
 ```
 
-The web UI is served at <http://localhost:5555>. If you work on the frontend (`./webui`), run `pnpm install` there once and use `mprocs` for hot module reloading.
+The web UI is served at <http://localhost:5555>. If you work on the frontend (`./webui`), you also need [`pnpm`](https://pnpm.io/): run `pnpm install` there once and use `mprocs` for hot module reloading. Before committing frontend changes, run `pnpm build` in `webui/` and commit `crates/dies-webui/static`. After changing Rust types shared with the UI, run `cargo run -p dies-webui --bin gen-bindings` and commit `webui/src/bindings.ts`. CI checks that both are up to date and that `pnpm tsc` passes.
 
 For hangs, [`tokio-console`](https://github.com/tokio-rs/console) (`cargo install --locked tokio-console`) attaches to a running Dies and shows task state.
 
@@ -89,7 +90,7 @@ Everything is driven by a vision frame. In sim the loop steps the simulator and 
 
 ### Side channels
 
-- **Web UI control.** The [React app][webui] reads world/debug state over a WebSocket and sends commands via REST ([`api.tsx`][webui-api]). Backend: [`server.rs`][webui-server] / [`routes.rs`][webui-routes] → [`UiCommand`][webui-lib] → [`executor_task.rs`][webui-exec-task] → [`ExecutorHandle`/`ControlMsg`][exec-handle] → `Executor::handle_control_msg`. Rust types reach TypeScript through `typeshare` (generated into `webui/src/bindings.ts` by [`build.rs`][webui-build]).
+- **Web UI control.** The [React app][webui] reads world/debug state over a WebSocket and sends commands via REST ([`api.tsx`][webui-api]). Backend: [`server.rs`][webui-server] / [`routes.rs`][webui-routes] → [`UiCommand`][webui-lib] → [`executor_task.rs`][webui-exec-task] → [`ExecutorHandle`/`ControlMsg`][exec-handle] → `Executor::handle_control_msg`. Rust types reach TypeScript through `ts-rs` (`#[derive(TS)]`), written into `webui/src/bindings.ts` by the [`gen-bindings`][webui-gen-bindings] binary.
 - **Settings and tunables.** [`ExecutorSettings`][core-settings] (persisted in `dies-settings.json`) configures tracker, controller and avoidance. Skill knobs use the [`tunables!` macro][tunables-macro] ([`tunable.rs`][core-tunable]); strategy-declared parameters use [`params.rs`][core-params]. All are editable live from the UI.
 - **Debug output.** Executor code draws/records with the global functions in [`debug_info.rs`][core-debug]; strategies use [`dies-strategy-api/src/debug.rs`][api-debug], which travels over IPC. Both end up in the UI and the log.
 - **Logging and replay.** Schema in [`schema.rs`][log-schema]; logs land in `logs/`. [`replay.rs`][log-replay] + [`replay_controller.rs`][webui-replay] play a log back through the live UI channels. Offline analysis: [`tools/dieslog.py`][dieslog] and [`tools/match_analytics.py`][match-analytics].
@@ -204,7 +205,7 @@ Everything is driven by a vision frame. In sim the loop steps the simulator and 
 [webui-routes]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-webui/src/routes.rs
 [webui-exec-task]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-webui/src/executor_task.rs
 [webui-replay]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-webui/src/replay_controller.rs
-[webui-build]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-webui/build.rs
+[webui-gen-bindings]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-webui/src/bin/gen-bindings.rs
 [cli]: https://github.com/DelftMercurians/Dies/tree/main/crates/dies-cli
 [cli-args]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-cli/src/cli.rs
 [cli-commands]: https://github.com/DelftMercurians/Dies/tree/main/crates/dies-cli/src/commands
