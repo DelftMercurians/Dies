@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::{
-    distance_to_line, player::PlayerId, Angle, FieldGeometry, Handicap, Possession,
+    distance_to_line, player::PlayerId, Angle, DurationTs, FieldGeometry, Handicap, Possession,
     ReflexKickState, RoleType, SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2,
     Vector2Ts, Vector3, Vector3Ts,
 };
@@ -623,14 +623,6 @@ pub struct AutorefKickedBallTeam {
     pub robot_id: PlayerId,
     pub we_kicked: bool,
 }
-
-/// A duration, in TypeScript a plain `number`.
-///
-/// TypeScript binding of `std::time::Duration`; use it as
-/// `#[ts(as = "Option<DurationTs>")]` on `Option<Duration>` fields.
-#[derive(TS)]
-#[ts(rename = "Duration", as = "f64")]
-pub struct DurationTs;
 
 #[derive(Serialize, Deserialize, Clone, Debug, TS)]
 #[ts(optional_fields)]

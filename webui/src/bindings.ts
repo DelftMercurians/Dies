@@ -414,10 +414,8 @@ angle_cutoff_distance: number, };
 export enum DebugColor { "red" = "red", "green" = "green", "orange" = "orange", "purple" = "purple", "blue" = "blue", "gray" = "gray" }
 
 /**
- * A map of debug messages, keyed as described on the Rust `DebugMap` alias.
- *
- * TypeScript binding of `DebugMap` (an alias can't derive `TS`); use it as
- * `#[ts(as = "DebugMapTs")]` on `DebugMap` fields.
+ * A map of debug messages. Keys are `snake_case`, with `.` separating the
+ * parts; `p{player_id}.{value}` keys hold a value associated with a player.
  */
 export type DebugMap = { [key in string]: DebugValue };
 
@@ -425,12 +423,6 @@ export type DebugShape = { "type": "Cross", "data": { center: Vector2, color: De
 
 export type DebugValue = { "type": "Shape", "data": DebugShape } | { "type": "Number", "data": number } | { "type": "String", "data": string } | { "type": "Plan", "data": PlanData };
 
-/**
- * A duration, in TypeScript a plain `number`.
- *
- * TypeScript binding of `std::time::Duration`; use it as
- * `#[ts(as = "Option<DurationTs>")]` on `Option<Duration>` fields.
- */
 export type Duration = number;
 
 /**
@@ -1622,16 +1614,8 @@ export type VaultPushResponse = { url: string, name: string,
  */
 already_stored: boolean, };
 
-/**
- * TypeScript binding of `Vector2`: nalgebra serializes it as `[x, y]`. Use it
- * as `#[ts(as = "Vector2Ts")]` on `Vector2` fields (nalgebra types can't derive `TS`).
- */
 export type Vector2 = [number, number];
 
-/**
- * TypeScript binding of `Vector3`: nalgebra serializes it as `[x, y, z]`. Use it
- * as `#[ts(as = "Vector3Ts")]` on `Vector3` fields.
- */
 export type Vector3 = [number, number, number];
 
 export type WorldData = { 

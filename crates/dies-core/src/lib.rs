@@ -41,17 +41,24 @@ pub type Scalar = f64;
 pub type Vector2 = nalgebra::Vector2<Scalar>;
 pub type Vector3 = nalgebra::Vector3<Scalar>;
 
-/// TypeScript binding of `Vector2`: nalgebra serializes it as `[x, y]`. Use it
-/// as `#[ts(as = "Vector2Ts")]` on `Vector2` fields (nalgebra types can't derive `TS`).
+// TypeScript bindings of foreign types that can't derive `TS`. Use them on
+// fields as `#[ts(as = "Vector2Ts")]`, `#[ts(as = "Option<DurationTs>")]`, ...
+// (`//`, not `///`: doc comments end up in `bindings.ts`.)
+
+// nalgebra serializes `Vector2` as `[x, y]`.
 #[derive(TS)]
 #[ts(rename = "Vector2", as = "[f64; 2]")]
 pub struct Vector2Ts;
 
-/// TypeScript binding of `Vector3`: nalgebra serializes it as `[x, y, z]`. Use it
-/// as `#[ts(as = "Vector3Ts")]` on `Vector3` fields.
+// nalgebra serializes `Vector3` as `[x, y, z]`.
 #[derive(TS)]
 #[ts(rename = "Vector3", as = "[f64; 3]")]
 pub struct Vector3Ts;
+
+// `std::time::Duration`.
+#[derive(TS)]
+#[ts(rename = "Duration", as = "f64")]
+pub struct DurationTs;
 
 /// Command to modify the simulator state.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

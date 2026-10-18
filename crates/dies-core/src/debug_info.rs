@@ -134,10 +134,11 @@ pub enum DebugValue {
 /// - `p{player_id}.{value}`: A value associated with a player.
 pub type DebugMap = HashMap<String, DebugValue>;
 
-/// A map of debug messages, keyed as described on the Rust `DebugMap` alias.
-///
-/// TypeScript binding of `DebugMap` (an alias can't derive `TS`); use it as
-/// `#[ts(as = "DebugMapTs")]` on `DebugMap` fields.
+// TypeScript binding of `DebugMap` (an alias can't derive `TS`); use it as
+// `#[ts(as = "DebugMapTs")]` on `DebugMap` fields. Its doc comment is the one
+// `bindings.ts` shows.
+/// A map of debug messages. Keys are `snake_case`, with `.` separating the
+/// parts; `p{player_id}.{value}` keys hold a value associated with a player.
 #[derive(TS)]
 #[ts(rename = "DebugMap")]
 pub struct DebugMapTs(DebugMap);
