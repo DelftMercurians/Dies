@@ -1,0 +1,70 @@
+name: Freshness
+
+# The web UI bundle (crates/dies-webui/static) and the TypeScript bindings
+# (webui/src/bindings.ts) are committed. Fail if either is stale.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: webui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: ./webui
+      - run: pnpm tsc
+        working-directory: ./webui
+      - run: pnpm build
+        working-directory: ./webui
+
+      # `git status`, not `git diff`: a rebuilt bundle gets new hashed asset
+      # names, which show up as untracked files.
+      - name: Check bundle is up to date
+        run: |
+          status=$(git status --porcelain -- crates/dies-webui/static)
+          if [ -n "$status" ]; then
+            echo "$status"
+            echo "::error::crates/dies-webui/static is stale; run 'pnpm build' in webui/ and commit it."
+            exit 1
+          fi
+
+  bindings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libudev-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - run: cargo run -p dies-webui --bin gen-bindings
+
+      - name: Check bindings are up to date
+        run: |
+          if ! git diff --exit-code -- webui/src/bindings.ts; then
+            echo "::error::webui/src/bindings.ts is stale; run 'cargo run -p dies-webui --bin gen-bindings' and commit it."
+            exit 1
+          fi

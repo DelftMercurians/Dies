@@ -542,7 +542,8 @@ async fn start_webserver(
 ) {
     // Resolve relative to this crate's source dir (baked at compile time) rather
     // than the process cwd, so the binary serves the bundle regardless of where
-    // it's launched from. The bundle is produced by build.rs for release builds.
+    // it's launched from. The bundle is committed; rebuild it with `pnpm build`
+    // in `webui/`.
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("static");
     let serve_dir = ServeDir::new(path);
     let serve_dir_with_csp = middleware::from_fn(add_csp_header);

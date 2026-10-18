@@ -9,7 +9,8 @@ Dies is the RoboCup SSL (Small Size League) framework for the Delft Mercurians t
 ## Build & Run
 
 Plain Cargo workspace — no `just`/justfile anymore. The CLI manages the
-strategy build, and `dies-webui`'s `build.rs` handles TS bindings + frontend.
+strategy build. Building needs no node: the frontend bundle in
+`crates/dies-webui/static` and `webui/src/bindings.ts` are committed.
 
 ```bash
 # Run dies in sim. How the strategy binary is managed (mutually exclusive flags):
@@ -24,17 +25,23 @@ mprocs                        # Dev: vite dev server + dies (--watch). Old `just
 cargo build -p dies-cli       # Build main binary only
 cargo build -p concerto       # Build a specific strategy
 
-# Release build of dies-cli + all strategies (build.rs produces the frontend
-# bundle; needs `typeshare` + `pnpm` on PATH):
+# Release build of dies-cli + all strategies:
 cargo build --release -p dies-cli -p concerto
+
+cd webui && pnpm build        # After frontend changes: rebuild + commit crates/dies-webui/static
+cargo run -p dies-webui --bin gen-bindings   # After shared Rust type changes: commit webui/src/bindings.ts
+                                             # (+ `pnpm build`: the bundle embeds bindings.ts for the notebook editor)
 ```
 
 **Strategy hot-reload:** with `--watch`, the CLI watches strategy
 sources and runs `cargo build -p <strategy>` on change; the executor notices the
-rebuilt binary (mtime) and hot-swaps the strategy process. `dies-webui/build.rs`
-regenerates `webui/src/bindings.ts` on every build and runs `vite build` (into
-`crates/dies-webui/static`) whenever the hash of the frontend inputs changes (any
-profile) — dev iteration normally uses the vite dev server instead.
+rebuilt binary (mtime) and hot-swaps the strategy process.
+
+**Committed artefacts:** `cargo build` never runs pnpm/vite or the bindings
+generator; the server serves `crates/dies-webui/static` as-is. CI
+(`.github/workflows/freshness.yml`) fails if `pnpm build` or `gen-bindings`
+would change the committed files, or if `pnpm tsc` fails. Dev iteration on the
+frontend uses the vite dev server (`mprocs`).
 
 **Headless self-play (FTR):** `cargo run -- self-play --blue-strategy <A>
 --yellow-strategy <B>` runs one deterministic, faster-than-realtime A-vs-B match
@@ -206,7 +213,7 @@ Strategies are separate binaries that implement the `Strategy` trait from `dies-
 
 ### Web UI
 
-React/TypeScript frontend in `webui/` (Vite + Tailwind), using **pnpm** as package manager. Backend is Axum with WebSocket in `dies-webui`. TypeScript bindings are generated via `typeshare`.
+React/TypeScript frontend in `webui/` (Vite + Tailwind), using **pnpm** as package manager. Backend is Axum with WebSocket in `dies-webui`. TypeScript bindings are derived with `ts-rs` (`#[derive(TS)]`) and written to `webui/src/bindings.ts` by `cargo run -p dies-webui --bin gen-bindings`.
 
 ## Conventions
 
@@ -245,6 +252,6 @@ React/TypeScript frontend in `webui/` (Vite + Tailwind), using **pnpm** as packa
 
 ## Key dependencies
 
-Rust: tokio (async runtime), nalgebra (linear algebra), axum (web), serde/bincode (serialization), pyo3 (Python interop, optional mpc feature), clap (CLI), tracing (logging), anyhow/thiserror (errors), typeshare (TS bindings)
+Rust: tokio (async runtime), nalgebra (linear algebra), axum (web), serde/bincode (serialization), pyo3 (Python interop, optional mpc feature), clap (CLI), tracing (logging), anyhow/thiserror (errors), ts-rs (TS bindings)
 
 Web UI: React 18, Vite, Tailwind, Radix UI, TanStack Query, Jotai, Monaco Editor, Dockview

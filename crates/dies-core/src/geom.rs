@@ -2,17 +2,17 @@ use std::f64::consts::PI;
 
 use dies_protos::ssl_vision_geometry::SSL_GeometryFieldSize;
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
-use crate::Vector2;
+use crate::{Vector2, Vector2Ts};
 
 /// A single field arc -- eg. the center circle
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 pub struct FieldCircularArc {
     /// Readable name of the arc
     pub name: String,
     /// Center of the arc, in dies coordinates
+    #[ts(as = "Vector2Ts")]
     pub center: Vector2,
     // Radius of the arc, in mm
     pub radius: f64,
@@ -38,14 +38,15 @@ impl FieldCircularArc {
 }
 
 /// A single field line segment
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 pub struct FieldLineSegment {
     /// Readable name of the line segment
     pub name: String,
     /// Start Vector2 of the line segment, in dies coordinates
+    #[ts(as = "Vector2Ts")]
     pub p1: Vector2,
     /// End Vector2 of the line segment, in dies coordinates
+    #[ts(as = "Vector2Ts")]
     pub p2: Vector2,
     /// Thickness of the line segment, in mm
     pub thickness: f64,
@@ -63,8 +64,7 @@ impl FieldLineSegment {
 }
 
 /// The field geometry.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 pub struct FieldGeometry {
     /// Field length (distance between goal lines) in mm
     pub field_length: f64,

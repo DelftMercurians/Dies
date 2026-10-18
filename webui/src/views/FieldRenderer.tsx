@@ -590,7 +590,7 @@ export class FieldRenderer {
     for (const shape of this.debugShapes) {
       if (shape.type !== "Marker") continue;
       const m = shape.data;
-      if (m.kind !== MarkerKind.Target || m.owner == null) continue;
+      if (m.kind !== MarkerKind.target || m.owner == null) continue;
       const player = team.find((p) => p.id === m.owner);
       if (!player) continue;
 
@@ -672,7 +672,7 @@ export class FieldRenderer {
     this.ctx.fillStyle = c;
     this.ctx.lineWidth = 2;
 
-    if (m.kind === MarkerKind.Target) {
+    if (m.kind === MarkerKind.target) {
       // Crosshair inside a ring — the "go here" destination.
       const r = 9;
       this.ctx.beginPath();
@@ -684,12 +684,12 @@ export class FieldRenderer {
       this.ctx.beginPath();
       this.ctx.arc(x, y, r, 0, 2 * Math.PI);
       this.ctx.stroke();
-    } else if (m.kind === MarkerKind.Waypoint) {
+    } else if (m.kind === MarkerKind.waypoint) {
       // Small hollow dot — clearly subordinate to a target.
       this.ctx.beginPath();
       this.ctx.arc(x, y, 3.5, 0, 2 * Math.PI);
       this.ctx.stroke();
-    } else if (m.kind === MarkerKind.KickTarget) {
+    } else if (m.kind === MarkerKind.kick_target) {
       // Concentric reticle with a center dot — a shot aim point.
       this.ctx.beginPath();
       this.ctx.arc(x, y, 9, 0, 2 * Math.PI);

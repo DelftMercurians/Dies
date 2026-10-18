@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use crate::{
     avoidance_config::AvoidanceConfig, FieldGeometry, PlayerId, PossessionConfig, SideAssignment,
@@ -20,9 +20,8 @@ use crate::{
 /// follower (`PathFollower`) produces a speed profile (cruise / cornering /
 /// braking-to-goal) and the player controller applies a first-order asymmetric
 /// acceleration clamp; `YawController` handles heading.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(default)]
-#[typeshare]
 pub struct ControllerSettings {
     // --- Translational limits.
     /// Acceleration cap when speeding up (mm/s²).
@@ -89,8 +88,7 @@ impl Default for ControllerSettings {
 }
 
 /// A field mask for the `WorldTracker`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct FieldMask {
     pub x_min: f64,
     pub x_max: f64,
@@ -132,9 +130,8 @@ impl Default for FieldMask {
 /// (`*_measurement_var`, in mm²). Higher transition variance → tracker
 /// trusts measurements more (snappier, noisier). Higher measurement
 /// variance → tracker trusts dynamics model more (smoother, laggier).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(default)]
-#[typeshare]
 pub struct TrackerSettings {
     /// Vision crop applied at the ball tracker — fractions of the field
     /// half-extent. Defaults to the full field.
@@ -220,9 +217,9 @@ impl Default for TrackerSettings {
 }
 
 /// Team configuration that can be set before executor creation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 #[serde(default)]
-#[typeshare]
 pub struct TeamConfiguration {
     /// Whether the blue team is active
     pub blue_active: bool,
@@ -248,9 +245,9 @@ impl Default for TeamConfiguration {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, TS)]
+#[ts(repr(enum = name))]
 #[serde(rename_all = "snake_case")]
-#[typeshare]
 pub enum Handicap {
     NoKicker,
     NoDribbler,
@@ -267,9 +264,8 @@ impl std::fmt::Display for Handicap {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, TS)]
 #[serde(default)]
-#[typeshare]
 pub struct TeamSpecificSettings {
     pub handicaps: HashMap<PlayerId, Vec<Handicap>>,
     /// Per-robot ToF-backup breakbeam toggle. For a robot in this set, the
@@ -316,9 +312,8 @@ impl TeamSpecificSettings {
 }
 
 /// Settings for the executor.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(default)]
-#[typeshare]
 pub struct ExecutorSettings {
     pub controller_settings: ControllerSettings,
     pub tracker_settings: TrackerSettings,

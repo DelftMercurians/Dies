@@ -5,9 +5,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Notify};
-use typeshare::typeshare;
+use ts_rs::TS;
 
-use crate::{PlayerId, Vector2};
+use crate::{PlayerId, Vector2, Vector2Ts};
 
 static DEBUG_MESSAGES: OnceLock<mpsc::UnboundedSender<UpdateMsg>> = OnceLock::new();
 static DEBUG_SUBSCRIBER: OnceLock<DebugSubscriber> = OnceLock::new();
@@ -17,9 +17,9 @@ static DEBUG_SUBSCRIBER: OnceLock<DebugSubscriber> = OnceLock::new();
 /// keys therefore disappear shortly after they stop being recorded.
 const DEBUG_TTL_FRAMES: u64 = 5;
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
+#[ts(repr(enum = name))]
 #[serde(rename_all = "snake_case")]
-#[typeshare]
 pub enum DebugColor {
     #[default]
     Red,
@@ -31,9 +31,9 @@ pub enum DebugColor {
 }
 
 /// Semantic kind of a [`DebugShape::Marker`], controlling which glyph the UI draws.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(repr(enum = name))]
 #[serde(rename_all = "snake_case")]
-#[typeshare]
 pub enum MarkerKind {
     /// A robot's final destination.
     Target,
@@ -43,11 +43,12 @@ pub enum MarkerKind {
     KickTarget,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum DebugShape {
     Cross {
+        #[ts(as = "Vector2Ts")]
         center: Vector2,
         color: DebugColor,
     },
@@ -55,18 +56,22 @@ pub enum DebugShape {
     /// owning robot in the UI.
     Marker {
         kind: MarkerKind,
+        #[ts(as = "Vector2Ts")]
         center: Vector2,
         color: DebugColor,
         owner: Option<PlayerId>,
     },
     Circle {
+        #[ts(as = "Vector2Ts")]
         center: Vector2,
         radius: f64,
         fill: Option<DebugColor>,
         stroke: Option<DebugColor>,
     },
     Line {
+        #[ts(as = "Vector2Ts")]
         start: Vector2,
+        #[ts(as = "Vector2Ts")]
         end: Vector2,
         color: DebugColor,
     },
@@ -82,8 +87,8 @@ pub enum DebugShape {
 }
 
 /// One step of a strategy [`DebugValue::Plan`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 pub struct PlanStep {
     /// Category (e.g. `"Capture"`, `"Shoot"`, `"Pass"`, `"Dribble"`), used by
     /// the UI for an icon / color.
@@ -99,8 +104,8 @@ pub struct PlanStep {
 /// A strategy's current plan: an ordered list of steps driven by one robot.
 /// A structured, plan-shaped debug primitive (distinct from field shapes), shown
 /// in the UI's plan panel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 pub struct PlanData {
     /// The robot id (if any) driving the plan.
     pub active_robot: Option<u32>,
@@ -108,9 +113,8 @@ pub struct PlanData {
     pub steps: Vec<PlanStep>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum DebugValue {
     Shape(DebugShape),
     Number(f64),
@@ -128,8 +132,16 @@ pub enum DebugValue {
 /// Keys can be arbitrary, but there are some patterns that are recognized by the
 /// UI:
 /// - `p{player_id}.{value}`: A value associated with a player.
-#[typeshare]
 pub type DebugMap = HashMap<String, DebugValue>;
+
+// TypeScript binding of `DebugMap` (an alias can't derive `TS`); use it as
+// `#[ts(as = "DebugMapTs")]` on `DebugMap` fields. Its doc comment is the one
+// `bindings.ts` shows.
+/// A map of debug messages. Keys are `snake_case`, with `.` separating the
+/// parts; `p{player_id}.{value}` keys hold a value associated with a player.
+#[derive(TS)]
+#[ts(rename = "DebugMap")]
+pub struct DebugMapTs(DebugMap);
 
 #[derive(Clone)]
 pub struct DebugSubscriber {
