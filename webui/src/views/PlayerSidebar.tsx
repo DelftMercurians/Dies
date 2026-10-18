@@ -494,9 +494,9 @@ export default PlayerSidebar;
 
 /** Handicap options rendered as per-robot toggles, in enum order. */
 const HANDICAP_OPTIONS: { value: Handicap; label: string }[] = [
-  { value: Handicap.NoKicker, label: "No kicker" },
-  { value: Handicap.NoDribbler, label: "No dribbler" },
-  { value: Handicap.NoBreakbeam, label: "No breakbeam" },
+  { value: Handicap.no_kicker, label: "No kicker" },
+  { value: Handicap.no_dribbler, label: "No dribbler" },
+  { value: Handicap.no_breakbeam, label: "No breakbeam" },
 ];
 
 /**
