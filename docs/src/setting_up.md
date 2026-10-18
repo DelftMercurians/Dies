@@ -30,7 +30,7 @@ You need [`pnpm`](https://pnpm.io/). Run `pnpm install` in `webui/` once, then s
 Both the bundle and the TypeScript bindings are committed, and CI fails if either is stale (or `pnpm tsc` fails):
 
 - After changing the frontend, run `pnpm build` in `webui/` and commit `crates/dies-webui/static`.
-- After changing Rust types shared with the UI (`#[derive(TS)]`), run `cargo run -p dies-webui --bin gen-bindings` and commit `webui/src/bindings.ts`.
+- After changing Rust types shared with the UI (`#[derive(TS)]`), run `cargo run -p dies-webui --bin gen-bindings` and commit `webui/src/bindings.ts`. If it changed, also run `pnpm build` and commit `crates/dies-webui/static`: the bundle embeds `bindings.ts` for the notebook editor.
 
 ## Tests and lints
 

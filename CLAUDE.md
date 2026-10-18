@@ -30,6 +30,7 @@ cargo build --release -p dies-cli -p concerto
 
 cd webui && pnpm build        # After frontend changes: rebuild + commit crates/dies-webui/static
 cargo run -p dies-webui --bin gen-bindings   # After shared Rust type changes: commit webui/src/bindings.ts
+                                             # (+ `pnpm build`: the bundle embeds bindings.ts for the notebook editor)
 ```
 
 **Strategy hot-reload:** with `--watch`, the CLI watches strategy

@@ -29,7 +29,7 @@ mprocs                                      # vite dev server + dies --watch (we
 cargo run -- self-play --blue-strategy concerto --yellow-strategy concerto   # headless match
 ```
 
-The web UI is served at <http://localhost:5555>. If you work on the frontend (`./webui`), you also need [`pnpm`](https://pnpm.io/): run `pnpm install` there once and use `mprocs` for hot module reloading. Before committing frontend changes, run `pnpm build` in `webui/` and commit `crates/dies-webui/static`. After changing Rust types shared with the UI, run `cargo run -p dies-webui --bin gen-bindings` and commit `webui/src/bindings.ts`. CI checks that both are up to date and that `pnpm tsc` passes.
+The web UI is served at <http://localhost:5555>. If you work on the frontend (`./webui`), you also need [`pnpm`](https://pnpm.io/): run `pnpm install` there once and use `mprocs` for hot module reloading. Before committing frontend changes, run `pnpm build` in `webui/` and commit `crates/dies-webui/static`. After changing Rust types shared with the UI, run `cargo run -p dies-webui --bin gen-bindings` and commit `webui/src/bindings.ts` (then `pnpm build` too: the bundle embeds `bindings.ts` for the notebook editor). CI checks that both are up to date and that `pnpm tsc` passes.
 
 For hangs, [`tokio-console`](https://github.com/tokio-rs/console) (`cargo install --locked tokio-console`) attaches to a running Dies and shows task state.
 
