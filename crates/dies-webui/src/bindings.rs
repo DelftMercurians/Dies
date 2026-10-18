@@ -1,7 +1,7 @@
 //! TypeScript bindings for the web UI, rendered as one self-contained file
 //! (`webui/src/bindings.ts`) by the `gen-bindings` binary.
 //!
-//! The file holds every `#[derive(TS)]` type reachable from [`visit_roots`]: the
+//! The file holds every `#[derive(TS)]` type reachable from `visit_roots`: the
 //! WebSocket message and the bodies/responses of the HTTP API. Types nested in
 //! those (all of `dies-core`'s UI types) follow from their fields, so a new
 //! type only needs registering here if the frontend uses it without it being
