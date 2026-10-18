@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use crate::{
     Angle, BallData, GameState, GameStateData, PlayerData, PlayerGlobalMoveCmd, PlayerId,
@@ -32,8 +32,8 @@ use crate::{
 ///
 /// - If our team attacks in the same direction as world +x: coordinates remain unchanged
 /// - If our team attacks in the opposite direction: x coordinates are negated, angles are mirrored
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Hash, PartialEq, Eq)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Hash, PartialEq, Eq, TS)]
+#[ts(repr(enum = name))]
 pub enum TeamColor {
     Blue,
     Yellow,
@@ -93,8 +93,8 @@ impl GcOverride {
 ///
 /// In RoboCup SSL, the field coordinate system is fixed, but teams can be
 /// assigned to defend either side. This enum tracks that assignment.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, TS)]
+#[ts(repr(enum = name))]
 pub enum SideAssignment {
     /// Blue team defends the positive x side (+x goal)
     BlueOnPositive,

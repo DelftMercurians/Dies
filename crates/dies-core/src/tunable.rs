@@ -10,7 +10,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 /// A single runtime-tunable `f64`, stored as its IEEE-754 bit pattern in an atomic
 /// so reads on the per-frame path are lock-free and the value can be updated live
@@ -65,8 +65,8 @@ pub fn tunable_module_prefix(module_path: &str) -> String {
 /// Code-generated description of one tunable knob, surfaced to the web UI to
 /// render a control. Values themselves are stored separately in
 /// `ExecutorSettings::skill_tunables` keyed by [`TunableSpec::key`].
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 pub struct TunableSpec {
     /// Namespaced unique key, `"<module>.<NAME>"` (the settings-map key).
     pub key: String,

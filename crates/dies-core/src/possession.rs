@@ -7,14 +7,13 @@
 //! view (see `dies-strategy-protocol`); the framework consumes this absolute one.
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use crate::TeamPlayerId;
 
 /// Who controls the ball, in absolute (team-tagged) terms.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default, TS)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum PossessionState {
     /// Nobody clearly controls the ball.
     #[default]
@@ -40,16 +39,15 @@ impl PossessionState {
 /// ball reads `Owned` (our breakbeam latches ownership the instant we touch it,
 /// hiding an opponent pressing from the far side — the deadlock the strategy
 /// otherwise can't see).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default, TS)]
 pub struct BallContest {
     /// Robots from *both* teams within `contest_dist` of the ball this frame.
     pub near: Vec<TeamPlayerId>,
 }
 
 /// Stable, debounced possession with a staleness flag.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default, TS)]
+#[ts(optional_fields)]
 pub struct Possession {
     pub state: PossessionState,
     /// True while the belief is being coasted through a vision/contact dropout
@@ -63,9 +61,8 @@ pub struct Possession {
 /// Tunable parameters for the unified possession metric. One central home for
 /// every threshold that used to be scattered across the strategy and the pass
 /// coordinator. Distances in mm, times in seconds, speeds in mm/s.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(default)]
-#[typeshare]
 pub struct PossessionConfig {
     // --- Proximity-based hold detection for UNCONTROLLED robots (opponents) ---
     // The raw condition is "ball at the dribbler mouth, moving with the robot":

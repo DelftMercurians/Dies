@@ -19,7 +19,7 @@ use std::{
 
 use dies_core::{NotebookEvent, NotebookRobot};
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 /// Name of the notebook snapshot inside a log (a JSON `Vec<NotebookDoc>`).
 pub(crate) const LOG_ATTACHMENT: &str = "notebooks.json";
@@ -29,15 +29,14 @@ const MAX_STORED_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 /// Minimum interval between run-file writes while cells produce output.
 const RUN_WRITE_INTERVAL: Duration = Duration::from_secs(1);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct NotebookCell {
     pub id: String,
     pub code: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 pub struct Notebook {
     pub id: String,
     pub title: String,
@@ -45,43 +44,37 @@ pub struct Notebook {
     /// What `robot()` resolves to; `None` = the only robot on the field.
     #[serde(default)]
     pub robot: Option<NotebookRobot>,
-    #[typeshare(serialized_as = "number")]
     #[serde(default)]
     pub updated_ms: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub struct NotebookSummary {
     pub id: String,
     pub title: String,
-    #[typeshare(serialized_as = "number")]
     pub updated_ms: i64,
 }
 
 /// One cell output, as carried by the notebook event (`data` is the event's
 /// payload: JSON for `show`, an error/abort message otherwise).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 pub struct CellOutputState {
     pub kind: String,
     pub data: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(optional_fields)]
 pub struct CellRunState {
     /// `queued` | `running` | `done` | `error` | `aborted`.
     pub status: String,
     pub outputs: Vec<CellOutputState>,
-    #[typeshare(serialized_as = "number")]
     pub started_ms: Option<i64>,
-    #[typeshare(serialized_as = "number")]
     pub finished_ms: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct NotebookDoc {
     pub notebook: Notebook,
     pub runs: HashMap<String, CellRunState>,

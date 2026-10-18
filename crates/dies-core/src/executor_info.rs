@@ -1,18 +1,16 @@
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use crate::{PlayerId, TeamColor, TeamStrategyParams, TunableSpec};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[typeshare]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, TS)]
 pub struct TeamPlayerId {
     pub team_color: TeamColor,
     pub player_id: PlayerId,
 }
 
 /// Runtime information about the active executor.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub struct ExecutorInfo {
     /// Whether the executor is currently paused.
     pub paused: bool,

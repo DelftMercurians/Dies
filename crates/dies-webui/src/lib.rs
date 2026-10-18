@@ -2,16 +2,17 @@ use std::path::PathBuf;
 
 use dies_basestation_client::BasestationHandle;
 use dies_core::{
-    Angle, BaseStationInfo, BenchCommand, DebugMap, ExecutorInfo, ExecutorSettings, FieldSnapshot,
-    GcSimCommand, NotebookCmd, NotebookEvent, ParamValue, PlayerFeedbackMsg, PlayerId,
-    PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration, Vector2,
-    WorldData, WorldUpdate,
+    Angle, BaseStationInfo, BenchCommand, DebugMap, DebugMapTs, ExecutorInfo, ExecutorSettings,
+    FieldSnapshot, GcSimCommand, NotebookCmd, NotebookEvent, ParamValue, PlayerFeedbackMsg,
+    PlayerId, PlayerOverrideCommand, SideAssignment, SimulatorCmd, TeamColor, TeamConfiguration,
+    Vector2, WorldData, WorldUpdate,
 };
 use dies_ssl_client::SslClientConfig;
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 mod bench;
+pub mod bindings;
 mod executor_task;
 mod notebooks;
 mod replay_controller;
@@ -85,9 +86,8 @@ impl UiConfig {
 }
 
 /// The current status of the executor.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub(crate) enum ExecutorStatus {
     None,
     RunningExecutor,
@@ -95,15 +95,14 @@ pub(crate) enum ExecutorStatus {
 }
 
 /// Runtime information about the active executor.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(optional_fields)]
 pub(crate) struct ExecutorInfoResponse {
     info: Option<ExecutorInfo>,
 }
 
 /// The current status of the UI.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub(crate) struct UiStatus {
     pub(crate) is_live_available: bool,
     pub(crate) ui_mode: UiMode,
@@ -111,9 +110,9 @@ pub(crate) struct UiStatus {
 }
 
 /// A command from the frontend to the backend.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(optional_fields)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub(crate) enum UiCommand {
     SetManualOverride {
         team_color: TeamColor,
@@ -171,7 +170,6 @@ pub(crate) enum UiCommand {
     },
     /// Step by a number of frames (negative = backward). Pauses playback.
     ReplayStep {
-        #[typeshare(serialized_as = "number")]
         delta: i64,
     },
     /// Step by a time delta in seconds (negative = backward). Pauses playback.
@@ -185,39 +183,35 @@ pub(crate) enum UiCommand {
     Stop,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, TS)]
 pub(crate) struct PostUiCommandBody {
     pub(crate) command: UiCommand,
 }
 
 /// The current mode of the UI - either simulation or live.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
-#[typeshare]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, TS)]
+#[ts(repr(enum = name))]
 pub enum UiMode {
     Simulation,
     Live,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
 pub(crate) struct PostUiModeBody {
     pub mode: UiMode,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub(crate) enum UiWorldState {
     Loaded(WorldData),
     None,
 }
 
 /// A user point-of-interest marker, surfaced to the replay scrubber.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(optional_fields)]
 pub(crate) struct ReplayMarker {
-    #[typeshare(serialized_as = "number")]
     pub frame_id: u64,
     pub t: f64,
     pub label: Option<String>,
@@ -226,10 +220,9 @@ pub(crate) struct ReplayMarker {
 /// A goal scored during the recorded match, surfaced to the replay scrubber.
 /// Derived from logged goal events: live matches log a `goal` event per GC
 /// score increment; sim/self-play logs use `sim_referee` events.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(optional_fields)]
 pub(crate) struct ReplayGoal {
-    #[typeshare(serialized_as = "number")]
     pub frame_id: u64,
     pub t: f64,
     /// Scoring team (`"Blue"`/`"Yellow"`), if attributed.
@@ -237,8 +230,8 @@ pub(crate) struct ReplayGoal {
 }
 
 /// State of the replay player, pushed to the frontend on change.
-#[derive(Debug, Clone, Serialize, Default)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Default, TS)]
+#[ts(optional_fields)]
 pub(crate) struct ReplayState {
     pub loaded: bool,
     /// The loaded log (directory or `.dieslog`).
@@ -248,9 +241,7 @@ pub(crate) struct ReplayState {
     pub t_min: f64,
     pub t_max: f64,
     pub current_t: f64,
-    #[typeshare(serialized_as = "number")]
     pub current_frame_id: u64,
-    #[typeshare(serialized_as = "number")]
     pub frame_count: u64,
     /// Nominal per-frame timestep in seconds (median of frame deltas), for the
     /// scrubber's frame/fps readout. Zero for degenerate single-frame logs.
@@ -261,20 +252,18 @@ pub(crate) struct ReplayState {
 }
 
 /// A single backend log line streamed to the console panel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ConsoleLogMessage {
     pub level: ConsoleLogLevel,
     /// Log target (module path).
     pub target: String,
     pub message: String,
     /// Milliseconds since UNIX epoch at emission time.
-    #[typeshare(serialized_as = "number")]
     pub ts_ms: i64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[ts(repr(enum = name))]
 pub enum ConsoleLogLevel {
     Trace,
     Debug,
@@ -296,29 +285,27 @@ impl From<log::Level> for ConsoleLogLevel {
 }
 
 /// WebSocket message types sent from backend to frontend
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub(crate) enum WsMessage<'a> {
     /// Carries the full `WorldUpdate` (world data + frame id) so the frontend can
     /// show the current frame number for both live and replay.
     WorldUpdate(&'a WorldUpdate),
-    Debug(&'a DebugMap),
+    Debug(#[ts(as = "DebugMapTs")] &'a DebugMap),
     ReplayState(&'a ReplayState),
     ConsoleLog(&'a ConsoleLogMessage),
     Notebook(&'a NotebookEvent),
 }
 
 /// A recorded log available for replay (directory or `.dieslog` zip).
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(optional_fields)]
 pub(crate) struct LogInfo {
     pub(crate) name: String,
     pub(crate) path: String,
     pub(crate) session_start_unix: f64,
     pub(crate) duration_s: Option<f64>,
     pub(crate) end_unix: Option<f64>,
-    #[typeshare(serialized_as = "number")]
     pub(crate) frame_count: Option<u64>,
     pub(crate) is_simulation: bool,
     pub(crate) blue_strategy: Option<String>,
@@ -326,25 +313,22 @@ pub(crate) struct LogInfo {
     pub(crate) is_zip: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub(crate) struct LogsResponse {
     pub(crate) logs: Vec<LogInfo>,
 }
 
 /// A log stored on the log vault server.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(optional_fields)]
 pub(crate) struct VaultLogInfo {
     pub(crate) id: String,
     pub(crate) name: String,
     /// Share link (`<vault>/l/<id>`).
     pub(crate) url: String,
-    #[typeshare(serialized_as = "number")]
     pub(crate) size_stored: u64,
     pub(crate) session_start_unix: Option<f64>,
     pub(crate) duration_s: Option<f64>,
-    #[typeshare(serialized_as = "number")]
     pub(crate) frame_count: Option<u64>,
     pub(crate) is_simulation: bool,
     pub(crate) is_match: bool,
@@ -354,22 +338,19 @@ pub(crate) struct VaultLogInfo {
     pub(crate) yellow_team_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub(crate) struct VaultLogsResponse {
     pub(crate) vault_url: String,
     pub(crate) logs: Vec<VaultLogInfo>,
 }
 
 /// Upload a local log (path as listed by `/api/logs`) to the vault.
-#[derive(Debug, Clone, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, TS)]
 pub(crate) struct VaultPushBody {
     pub(crate) path: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub(crate) struct VaultPushResponse {
     pub(crate) url: String,
     pub(crate) name: String,
@@ -378,26 +359,23 @@ pub(crate) struct VaultPushResponse {
 }
 
 /// Download a shared log by its link and load it for replay.
-#[derive(Debug, Clone, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, TS)]
 pub(crate) struct VaultOpenBody {
     pub(crate) link: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub(crate) struct GetDebugMapResponse {
+    #[ts(as = "DebugMapTs")]
     pub(crate) debug_map: DebugMap,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
 pub(crate) struct ExecutorSettingsResponse {
     pub(crate) settings: ExecutorSettings,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
 pub(crate) struct PostExecutorSettingsBody {
     pub(crate) settings: ExecutorSettings,
 }
@@ -405,18 +383,16 @@ pub(crate) struct PostExecutorSettingsBody {
 /// A captured settings configuration with provenance. `kind` is a free-form
 /// tag: `"edit"` (debounced auto-snapshot of a live edit), `"baseline"` (the
 /// user-declared known-good config), or `"revert"`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
 pub(crate) struct SettingsSnapshot {
     /// Unix epoch milliseconds.
-    #[typeshare(serialized_as = "number")]
     pub(crate) ts: i64,
     pub(crate) kind: String,
     pub(crate) settings: ExecutorSettings,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(optional_fields)]
 pub(crate) struct SettingsSnapshotsResponse {
     /// The current known-good config, or null if none has been marked yet.
     pub(crate) baseline: Option<SettingsSnapshot>,
@@ -424,8 +400,7 @@ pub(crate) struct SettingsSnapshotsResponse {
     pub(crate) history: Vec<SettingsSnapshot>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub(crate) struct SnapshotsResponse {
     /// Stored snapshot names, sorted.
     pub(crate) names: Vec<String>,
@@ -435,22 +410,20 @@ pub(crate) struct SnapshotsResponse {
 /// `strategies` are full strategy crates (e.g. `concerto`); `scenarios`
 /// are skill-test binaries from the `scenarios` crate (e.g. `handle_ball`).
 /// Both are launched the same way — they're just `Strategy` binaries.
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub(crate) struct StrategiesResponse {
     pub(crate) strategies: Vec<String>,
     pub(crate) scenarios: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Deserialize, TS)]
 pub(crate) struct SaveSnapshotBody {
     pub(crate) name: String,
     pub(crate) snapshot: FieldSnapshot,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(optional_fields)]
 pub(crate) struct BasestationResponse {
     pub(crate) blue_team: Vec<PlayerFeedbackMsg>,
     pub(crate) yellow_team: Vec<PlayerFeedbackMsg>,

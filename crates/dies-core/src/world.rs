@@ -7,12 +7,12 @@ use std::{
 
 use dies_protos::{ssl_gc_common::Team, ssl_vision_detection_tracked::TrackedFrame};
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use crate::{
     distance_to_line, player::PlayerId, Angle, FieldGeometry, Handicap, Possession,
     ReflexKickState, RoleType, SideAssignment, SysStatus, TeamColor, TeamPlayerId, Vector2,
-    Vector3,
+    Vector2Ts, Vector3, Vector3Ts,
 };
 
 const STOP_BALL_AVOIDANCE_RADIUS: f64 = 800.0;
@@ -55,13 +55,11 @@ impl WorldInstant {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, TS)]
 pub struct WorldUpdate {
     pub world_data: WorldData,
     /// Monotonic id of this world frame (minted by the executor). Exposed to the
     /// UI for the frame counter and used as the join key in recorded logs.
-    #[typeshare(serialized_as = "number")]
     pub frame_id: u64,
     /// Announcer feed items minted since the previous broadcast. The UI
     /// accumulates these into a scrolling commentary log (deduped by `id`).
@@ -73,12 +71,11 @@ pub struct WorldUpdate {
 /// A single line in the announcer commentary feed, formatted backend-side from
 /// referee commands, game events, and (in sim) the simulator's own events so it
 /// reads identically for sim and live matches.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 pub struct Announcement {
     /// Monotonic id, unique within a session. The UI uses it to dedupe and to
     /// detect freshly-arrived lines (which animate in at full opacity).
-    #[typeshare(serialized_as = "number")]
     pub id: u64,
     /// World time (seconds) when the line was minted.
     pub timestamp: f64,
@@ -91,8 +88,8 @@ pub struct Announcement {
 }
 
 /// Coarse classification of an announcer line, used by the UI for icon/color.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(repr(enum = name))]
 pub enum AnnouncementCategory {
     /// Generic state/info transition (Halt, Stop, Run, Force start, Timeout).
     Info,
@@ -111,9 +108,8 @@ pub enum AnnouncementCategory {
 }
 
 /// The game state, as reported by the referee.
-#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default, TS)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum GameState {
     #[default]
     Unknown,
@@ -121,7 +117,7 @@ pub enum GameState {
     Timeout,
     Stop,
     PrepareKickoff,
-    BallReplacement(Vector2),
+    BallReplacement(#[ts(as = "Vector2Ts")] Vector2),
     PreparePenalty,
     Kickoff,
     FreeKick,
@@ -203,31 +199,32 @@ impl StrategyGameStateMacther {
 }
 
 /// A struct to store the ball state from a single frame.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 pub struct BallData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
     pub timestamp: f64,
     /// Position of the ball filtered by us, in mm, in dies coordinates
+    #[ts(as = "Vector3Ts")]
     pub position: Vector3,
     /// Raw position as reported by vision
+    #[ts(as = "Vec<Vector3Ts>")]
     pub raw_position: Vec<Vector3>,
     /// Velocity of the ball in mm/s, in dies coordinates
+    #[ts(as = "Vector3Ts")]
     pub velocity: Vector3,
     /// Whether the ball is being detected
     pub detected: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, TS)]
+#[ts(optional_fields)]
 pub struct GameStateData {
     /// The state of current game
     pub game_state: GameState,
     /// If we are the main party currently performing tasks in the state.
     /// true for symmetric states(halt stop run timout)
     pub us_operating: bool,
-    #[typeshare(serialized_as = "u32")]
     pub yellow_cards: usize,
     /// The player who performed the freekick, if it was us (for double touch tracking)
     /// Only Some until another player touches the ball
@@ -271,8 +268,8 @@ pub fn effective_keeper_id<I: IntoIterator<Item = PlayerId>>(
     ids.first().copied()
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
+#[ts(optional_fields)]
 pub struct RawGameStateData {
     /// The state of current game
     pub game_state: GameState,
@@ -287,9 +284,7 @@ pub struct RawGameStateData {
     pub double_touch_barred: Option<TeamPlayerId>,
     pub blue_team_max_allowed_bots: u32,
     pub yellow_team_max_allowed_bots: u32,
-    #[typeshare(serialized_as = "u32")]
     pub blue_team_yellow_cards: usize,
-    #[typeshare(serialized_as = "u32")]
     pub yellow_team_yellow_cards: usize,
     /// Goals scored, from the referee `TeamInfo` (tracked in sim, real in live).
     pub blue_team_score: u32,
@@ -324,8 +319,8 @@ pub struct RawGameStateData {
 
 /// Execution state of a player's active skill, mirroring the executor's
 /// `SkillStatus` without coupling `dies-core` to the strategy protocol.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, TS)]
+#[ts(repr(enum = name))]
 pub enum SkillState {
     /// No skill has been commanded for this player.
     #[default]
@@ -340,8 +335,7 @@ pub enum SkillState {
 
 /// A snapshot of the skill a (own-team) player is currently executing, surfaced
 /// to the UI. Populated by the executor from the active skill's own report.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
 pub struct PlayerSkillInfo {
     /// Short skill type name, e.g. `"GoToPos"`, `"Shoot"`, `"Pass"`.
     pub skill_type: String,
@@ -360,8 +354,8 @@ pub struct PlayerSkillInfo {
 ///   cannot command it (non-cooperative — teammates take full avoidance).
 /// - `CardRemoved`: benched by the team controller for a yellow card and driven
 ///   off-field (still cooperative — it moves under our ORCA control).
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, TS)]
+#[ts(repr(enum = name))]
 pub enum SidelineReason {
     RadioLost,
     CardRemoved,
@@ -374,8 +368,7 @@ pub enum SidelineReason {
 /// only once at least one clean event has been measured. The rolling window is
 /// anchored to the most recent event, so a robot that sits still does not lose
 /// its last estimate — `age_s` tells you how stale it is.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, TS)]
 pub struct OpenLoopDelayStats {
     /// Median measured delay (ms) over the rolling window.
     pub median_ms: f64,
@@ -387,8 +380,8 @@ pub struct OpenLoopDelayStats {
     pub sample_count: u32,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
+#[ts(optional_fields)]
 pub struct PlayerData {
     /// Unix timestamp of the recorded frame from which this data was extracted (in
     /// seconds). This is the time that ssl-vision received the frame.
@@ -396,10 +389,13 @@ pub struct PlayerData {
     /// The player's unique id
     pub id: PlayerId,
     /// Unfiltered position as reported by vision
+    #[ts(as = "Vector2Ts")]
     pub raw_position: Vector2,
     /// Position of the player filtered by us in mm, in dies coordinates
+    #[ts(as = "Vector2Ts")]
     pub position: Vector2,
     /// Velocity of the player in mm/s, in dies coordinates
+    #[ts(as = "Vector2Ts")]
     pub velocity: Vector2,
     /// Yaw of the player, in radians, (`-pi`, `pi`), where `0` is the positive
     /// x direction, and `pi/2` is the positive y direction.
@@ -545,12 +541,14 @@ pub enum BallPrediction {
     Collision(Vector2),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
+#[ts(optional_fields)]
 pub struct AutorefKickedBall {
     /// The initial position [m] from which the ball was kicked
+    #[ts(as = "Vector2Ts")]
     pub pos: Vector2,
     /// The initial velocity [m/s] with which the ball was kicked
+    #[ts(as = "Vector3Ts")]
     pub vel: Vector3,
     /// The unix timestamp [s] when the kick was performed
     pub start_timestamp: f64,
@@ -558,15 +556,16 @@ pub struct AutorefKickedBall {
     /// The predicted unix timestamp [s] when the ball comes to a stop
     pub stop_timestamp: Option<f64>,
     /// The predicted position [m] at which the ball will come to a stop
+    #[ts(as = "Option<Vector2Ts>")]
     pub stop_pos: Option<Vector2>,
 
     /// The robot that kicked the ball
-    #[typeshare(skip)]
+    #[ts(skip)]
     pub robot_id: Option<(TeamColor, PlayerId)>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, TS)]
+#[ts(optional_fields)]
 pub struct AutorefInfo {
     pub kicked_ball: Option<AutorefKickedBall>,
 }
@@ -602,12 +601,14 @@ impl From<TrackedFrame> for AutorefInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
+#[ts(optional_fields)]
 pub struct AutorefKickedBallTeam {
     /// The initial position [m] from which the ball was kicked
+    #[ts(as = "Vector2Ts")]
     pub pos: Vector2,
     /// The initial velocity [m/s] with which the ball was kicked
+    #[ts(as = "Vector3Ts")]
     pub vel: Vector3,
     /// The unix timestamp [s] when the kick was performed
     pub start_timestamp: f64,
@@ -615,6 +616,7 @@ pub struct AutorefKickedBallTeam {
     /// The predicted unix timestamp [s] when the ball comes to a stop
     pub stop_timestamp: Option<f64>,
     /// The predicted position [m] at which the ball will come to a stop
+    #[ts(as = "Option<Vector2Ts>")]
     pub stop_pos: Option<Vector2>,
 
     /// The robot that kicked the ball
@@ -622,8 +624,16 @@ pub struct AutorefKickedBallTeam {
     pub we_kicked: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+/// A duration, in TypeScript a plain `number`.
+///
+/// TypeScript binding of `std::time::Duration`; use it as
+/// `#[ts(as = "Option<DurationTs>")]` on `Option<Duration>` fields.
+#[derive(TS)]
+#[ts(rename = "Duration", as = "f64")]
+pub struct DurationTs;
+
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
+#[ts(optional_fields)]
 pub struct WorldData {
     /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
     /// world tracking was started.
@@ -639,7 +649,9 @@ pub struct WorldData {
     pub field_geom: Option<FieldGeometry>,
     pub game_state: RawGameStateData,
     pub side_assignment: SideAssignment,
+    #[ts(as = "Option<DurationTs>")]
     pub ball_on_blue_side: Option<Duration>,
+    #[ts(as = "Option<DurationTs>")]
     pub ball_on_yellow_side: Option<Duration>,
     pub autoref_info: Option<AutorefInfo>,
     /// Unified ball-possession metric (absolute / team-tagged). Computed once in
@@ -669,8 +681,8 @@ impl WorldData {
 }
 
 /// A struct to store the world state from a single frame.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug, TS)]
+#[ts(optional_fields)]
 pub struct TeamData {
     /// Timestamp of the frame, in seconds. This timestamp is relative to the time the
     /// world tracking was started.
@@ -691,7 +703,9 @@ pub struct TeamData {
     pub ball: Option<BallData>,
     pub field_geom: Option<FieldGeometry>,
     pub current_game_state: GameStateData,
+    #[ts(as = "Option<DurationTs>")]
     pub ball_on_our_side: Option<Duration>,
+    #[ts(as = "Option<DurationTs>")]
     pub ball_on_opp_side: Option<Duration>,
     pub kicked_ball: Option<AutorefKickedBallTeam>,
     /// Unified possession metric (absolute / team-tagged — the same value as on
