@@ -4,7 +4,8 @@
 
 - A recent stable Rust toolchain, managed with [rustup](https://rustup.rs/). Install `rustfmt` and `clippy` with `rustup component add rustfmt clippy`.
 - On Linux: `sudo apt install libudev-dev libssl-dev pkg-config clang`.
-- [`pnpm`](https://pnpm.io/) and [`typeshare`](https://github.com/1Password/typeshare) (`cargo install typeshare-cli`) on your `PATH`. The `dies-webui` build script uses them to regenerate the TypeScript bindings and build the frontend bundle.
+
+No node or pnpm is needed to build and run Dies: the web UI bundle is committed in `crates/dies-webui/static` and served as-is.
 
 ## Running
 
@@ -24,7 +25,12 @@ cargo run -- self-play --blue-strategy concerto --yellow-strategy concerto
 
 ## Web UI development
 
-Run `pnpm install` in `webui/` once, then start [`mprocs`](https://github.com/pvolok/mprocs) from the repository root. It runs the Vite dev server (with hot module reloading) next to `dies --watch`.
+You need [`pnpm`](https://pnpm.io/). Run `pnpm install` in `webui/` once, then start [`mprocs`](https://github.com/pvolok/mprocs) from the repository root. It runs the Vite dev server (with hot module reloading) next to `dies --watch`.
+
+Both the bundle and the TypeScript bindings are committed, and CI fails if either is stale (or `pnpm tsc` fails):
+
+- After changing the frontend, run `pnpm build` in `webui/` and commit `crates/dies-webui/static`.
+- After changing Rust types shared with the UI (`#[derive(TS)]`), run `cargo run -p dies-webui --bin gen-bindings` and commit `webui/src/bindings.ts`.
 
 ## Tests and lints
 
