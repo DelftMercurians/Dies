@@ -13,22 +13,17 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use crate::TeamColor;
 
 /// A typed parameter value. Externally tagged → bincode- and JSON-safe.
-///
-/// Deliberately NOT `#[typeshare]`: typeshare insists algebraic enums use
-/// adjacent/internal tagging, which bincode cannot deserialize. We keep the
-/// bincode-safe external tagging and hand-write the TypeScript type in
-/// `crates/dies-webui/build.rs` (the same approach used for `Vector2`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum ParamValue {
     Bool(bool),
     Float(f64),
-    /// `i32` rather than `i64` because typeshare maps `i64` to an error (JS numbers
-    /// can't hold the full range); `i32` is ample for strategy parameters.
+    /// `i32` rather than `i64`: JS numbers can't hold the full `i64` range, and
+    /// `i32` is ample for strategy parameters.
     Int(i32),
     Text(String),
 }
@@ -66,8 +61,8 @@ impl ParamValue {
 }
 
 /// Which control the UI should render for a parameter.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(repr(enum = name))]
 pub enum ParamKind {
     Bool,
     Float,
@@ -77,8 +72,7 @@ pub enum ParamKind {
 
 /// A strategy's declaration of one parameter: how to label/render it, and its
 /// default value (used when no override has been pushed yet).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ParamSpec {
     pub key: String,
     pub label: String,
@@ -125,14 +119,13 @@ impl ParamSpec {
 }
 
 /// Current parameter values keyed by [`ParamSpec::key`]. Rust-side alias only —
-/// typeshared structs inline `HashMap<String, ParamValue>` so the alias never
-/// needs to cross to TypeScript.
+/// structs exported to TypeScript inline `HashMap<String, ParamValue>` so the
+/// alias never needs to cross to TypeScript.
 pub type StrategyParams = HashMap<String, ParamValue>;
 
 /// One team's strategy parameters (declared specs + current values), surfaced to
 /// the UI via `ExecutorInfo`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct TeamStrategyParams {
     pub team: TeamColor,
     pub specs: Vec<ParamSpec>,

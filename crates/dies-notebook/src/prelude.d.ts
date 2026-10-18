@@ -4,8 +4,8 @@
 // Units: mm, mm/s, radians, seconds. Coordinates are absolute field coordinates
 // (the same frame as the field view and the logs).
 //
-// NOTE: `ControlInput` and `SkillCommand` mirror Rust types that typeshare can't
-// generate (externally tagged enums). Keep them in sync with
+// NOTE: `ControlInput` and `SkillCommand` mirror Rust types that aren't exported to
+// `bindings.ts`. Keep them in sync with
 // `dies-executor/src/control/player_input.rs` and
 // `dies-strategy-protocol/src/skill.rs` until they are generated.
 

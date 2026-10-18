@@ -7,16 +7,15 @@
 //! obstacle-set builder, the global path planner, and the ORCA solver.
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 /// Tuning for the two-layer collision-avoidance stack (global planner + ORCA)
 /// and the shared obstacle model they both read.
 ///
 /// All distances are millimetres, times are seconds. A single `AvoidanceConfig`
 /// is shared across the whole team and applied live from settings updates.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(default)]
-#[typeshare]
 pub struct AvoidanceConfig {
     // --- Obstacle margins ---
     /// ORCA's emergency margin on top of the two-robot contact distance [mm].
@@ -57,7 +56,6 @@ pub struct AvoidanceConfig {
     /// Only robots within this distance are considered ORCA neighbours [mm].
     pub neighbor_dist: f64,
     /// Cap on the number of neighbours folded into a single ORCA LP.
-    #[typeshare(serialized_as = "u32")]
     pub max_neighbors: usize,
 
     // --- Global planner ---

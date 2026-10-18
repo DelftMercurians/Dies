@@ -1,22 +1,21 @@
 //! Wire types for the interactive notebook (UI ⇄ executor).
 
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use crate::{PlayerId, TeamColor};
 
 /// A robot picked in the notebook UI (what `robot()` resolves to).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
 pub struct NotebookRobot {
     pub team: TeamColor,
     pub id: PlayerId,
 }
 
 /// A notebook command from the UI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum NotebookCmd {
     /// Evaluate a cell. `source` is plain JS, already transformed by the UI to
     /// start its body via `__nb.run(cell, ...)`; `original` is the source as
@@ -36,8 +35,8 @@ pub enum NotebookCmd {
 }
 
 /// Something a cell produced, or a change in its run state, sent to the UI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 pub struct NotebookEvent {
     /// Notebook id, or `None` for engine-wide events.
     pub notebook: Option<String>,

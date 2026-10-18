@@ -1,11 +1,10 @@
 use serde::{Deserialize, Serialize};
-use typeshare::typeshare;
+use ts_rs::TS;
 
 use super::Vector2;
-use crate::Angle;
+use crate::{Angle, Vector2Ts};
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[typeshare(serialized_as = "u32")]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, TS)]
 pub struct PlayerId(u32);
 
 impl PlayerId {
@@ -322,8 +321,8 @@ impl From<PlayerGlobalMoveCmd> for glue::Radio_GlobalCommand {
 }
 
 /// An override command for a player for manual control.
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, TS)]
+#[ts(optional_fields)]
 #[serde(tag = "type", content = "data")]
 pub enum PlayerOverrideCommand {
     /// Do nothing
@@ -331,6 +330,7 @@ pub enum PlayerOverrideCommand {
     Stop,
     /// Move the robot to a globel position and yaw
     MoveTo {
+        #[ts(as = "Vector2Ts")]
         position: Vector2,
         yaw: Option<Angle>,
         /// Dribbler speed normalised to \[0, 1\]
@@ -339,6 +339,7 @@ pub enum PlayerOverrideCommand {
     },
     /// Move the robot with velocity in local frame
     LocalVelocity {
+        #[ts(as = "Vector2Ts")]
         velocity: Vector2,
         yaw: Option<Angle>,
         /// Dribbler speed normalised to \[0, 1\]
@@ -347,6 +348,7 @@ pub enum PlayerOverrideCommand {
     },
     /// Move the robot with velocity in global frame
     GlobalVelocity {
+        #[ts(as = "Vector2Ts")]
         velocity: Vector2,
         yaw: Option<Angle>,
         /// Dribbler speed normalised to \[0, 1\]
@@ -392,8 +394,8 @@ impl PlayerOverrideCommand {
 }
 
 /// The status of a sub-system on the robot
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, TS)]
+#[ts(repr(enum = name))]
 pub enum SysStatus {
     Emergency,
     Ok,
@@ -438,8 +440,8 @@ impl From<glue::HG_Status> for SysStatus {
 }
 
 /// State of the firmware reflex-kick state machine.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, TS)]
+#[ts(repr(enum = name))]
 pub enum ReflexKickState {
     Off,
     Armed,
@@ -488,8 +490,7 @@ impl ReflexKickState {
 }
 
 /// Echo of the last command the robot reports having received (global frame).
-#[derive(Debug, Copy, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Copy, Clone, Serialize, TS)]
 pub struct CommandEcho {
     pub global_speed_x: f32,
     pub global_speed_y: f32,
@@ -502,8 +503,7 @@ pub struct CommandEcho {
 }
 
 /// Firmware version reported by a robot.
-#[derive(Debug, Copy, Clone, Serialize)]
-#[typeshare]
+#[derive(Debug, Copy, Clone, Serialize, TS)]
 pub struct FirmwareVersion {
     pub major: u16,
     pub minor: u16,
@@ -511,8 +511,8 @@ pub struct FirmwareVersion {
 }
 
 /// A message from one of our robots to the AI
-#[derive(Clone, Copy, Debug, Serialize)]
-#[typeshare]
+#[derive(Clone, Copy, Debug, Serialize, TS)]
+#[ts(optional_fields)]
 pub struct PlayerFeedbackMsg {
     /// The robot's ID
     pub id: PlayerId,
@@ -607,8 +607,8 @@ impl PlayerFeedbackMsg {
 }
 
 /// Status of the RF basestation itself, surfaced to the bench UI.
-#[derive(Clone, Debug, Serialize)]
-#[typeshare]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(optional_fields)]
 pub struct BaseStationInfo {
     pub connected: bool,
     pub protocol_ok: bool,
@@ -662,8 +662,8 @@ impl BaseStationInfo {
 }
 
 /// Motion frame for a bench `SetMotion` command.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[typeshare]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[ts(repr(enum = name))]
 pub enum BenchMotionMode {
     /// `(vx, vy)` in the robot's local frame, `w_or_heading` is `w` \[rad/s].
     Local,
@@ -672,9 +672,8 @@ pub enum BenchMotionMode {
 }
 
 /// A one-shot bench action targeting a single robot (or broadcast).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum BenchOneShot {
     Beep,
     Reboot,
@@ -700,9 +699,9 @@ pub enum BenchOneShot {
 
 /// A command from the bench UI, sent straight to the basestation (no executor,
 /// no vision). Robots are addressed by raw robot id.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[ts(optional_fields)]
 #[serde(tag = "type", content = "data")]
-#[typeshare]
 pub enum BenchCommand {
     /// Continuously-streamed motion setpoint for a taken robot.
     SetMotion {
@@ -752,8 +751,8 @@ pub enum BenchCommand {
 }
 
 /// Role of a player according to the game rules. These are mainly for rule-compliance.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[typeshare]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash, TS)]
+#[ts(repr(enum = name))]
 pub enum RoleType {
     /// A regular player with no special role
     #[default]

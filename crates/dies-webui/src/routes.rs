@@ -18,6 +18,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 use tokio::time::MissedTickBehavior;
+use ts_rs::TS;
 
 /// Max rate at which the debug map is pushed to a connected client.
 ///
@@ -437,8 +438,7 @@ pub async fn put_notebook(
 }
 
 /// A notebook stored in a log (see [`crate::notebooks::LOG_ATTACHMENT`]).
-#[derive(Serialize)]
-#[typeshare::typeshare]
+#[derive(Serialize, TS)]
 pub struct LogNotebook {
     pub id: String,
     pub title: String,
@@ -451,8 +451,7 @@ pub struct LogNotebooksQuery {
     pub path: String,
 }
 
-#[derive(Deserialize)]
-#[typeshare::typeshare]
+#[derive(Deserialize, TS)]
 pub struct OpenLogNotebookBody {
     pub path: String,
     pub id: String,
