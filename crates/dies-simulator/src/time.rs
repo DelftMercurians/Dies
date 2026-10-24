@@ -1,3 +1,33 @@
+//! Simulation timers and periodic triggers.
+
+#[derive(Debug, Clone)]
+pub struct Timer {
+    counter: f64,
+    duration: f64, // in seconds
+}
+
+impl Timer {
+    pub fn new(duration: f64) -> Self {
+        Timer {
+            counter: 0.0,
+            duration,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.counter = 0.0;
+    }
+
+    pub fn tick(&mut self, dt: f64) -> bool {
+        self.counter += dt;
+        if self.counter >= self.duration {
+            self.reset();
+            return true;
+        }
+        false
+    }
+}
+
 /// A struct that triggers an event periodically at a given interval.
 pub struct IntervalTrigger {
     interval: f64,

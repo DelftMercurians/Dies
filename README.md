@@ -113,7 +113,7 @@ Everything is driven by a vision frame. In sim the loop steps the simulator and 
 | Change obstacle avoidance or path planning | [`control/avoidance/`][avoidance] ([`planner.rs`][avoid-planner], [`orca.rs`][avoid-orca], [`obstacle.rs`][avoid-obstacle]), config in [`avoidance_config.rs`][core-avoid] |
 | Change trajectory tracking, acceleration limits, dribbler ramp | [`player_controller.rs`][player-ctrl], [`path_follower.rs`][path-follower], [`yaw_control.rs`][yaw], [`motion_bounds.rs`][core-motion] |
 | Change what is sent to the robots / the radio protocol | [`PlayerCmd`][core-player], [`basestation_client.rs`][bs-client] |
-| Change simulator physics or auto-referee | [`dies-simulator/src/lib.rs`][sim] |
+| Change simulator physics or auto-referee | [`dies-simulator` internals][sim] |
 | Test a skill in isolation | [`strategies/scenarios`][scenarios] (one binary per scenario) |
 | Add a web UI panel or view | [`webui/src/components/panels/`][webui-panels], [`webui/src/views/`][webui-views], data hooks in [`api.tsx`][webui-api] |
 | Add a UI → executor command | [`UiCommand`][webui-lib] → [`executor_task.rs`][webui-exec-task] → [`ControlMsg`][exec-handle] → `Executor::handle_control_msg` ([`lib.rs`][executor]) |
@@ -143,7 +143,7 @@ Everything is driven by a vision frame. In sim the loop steps the simulator and 
 [tunables-macro]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-tunables-macro/src/lib.rs
 [ssl-client]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-ssl-client/src/lib.rs
 [bs-client]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-basestation-client/src/basestation_client.rs
-[sim]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-simulator/src/lib.rs
+[sim]: https://github.com/DelftMercurians/Dies/tree/main/crates/dies-simulator
 [world-lib]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-world/src/lib.rs
 [world-player]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-world/src/player.rs
 [world-ball]: https://github.com/DelftMercurians/Dies/blob/main/crates/dies-world/src/ball.rs
