@@ -2765,7 +2765,10 @@ impl Simulation {
                     new_yaw.to_degrees()
                 );
                 */
-                rigid_body.set_rotation(Rotation::from_euler_angles(0.0, 0.0, new_yaw), true);
+                // Set the heading to the target using angular velocity in one step
+                // Use .set_angvel instead of .set_rotation to ensure the physics engine doesn't
+                // have a lingering angular velocity that would cause the heading to drift. 
+                rigid_body.set_angvel((new_yaw - current_yaw) / dt * Vector::z(), true);
             } else {
                 let target_ang_vel = player.w;
                 let new_ang_vel =
