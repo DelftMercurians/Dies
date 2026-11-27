@@ -409,6 +409,12 @@ impl WorldTracker {
                     self.field_geometry.as_ref(),
                 );
                 if !in_mask {
+                    dies_core::debug_circle_stroke(
+                        format!("team_Blue.p{}.masked_raw", player.robot_id()),
+                        Vector2::new(player.x() as f64, player.y() as f64),
+                        90.0, // robot radius, mm
+                        dies_core::DebugColor::Gray,
+                    );
                     continue;
                 }
 
@@ -427,6 +433,12 @@ impl WorldTracker {
                     self.field_geometry.as_ref(),
                 );
                 if !in_mask {
+                    dies_core::debug_circle_stroke(
+                        format!("team_Yellow.p{}.masked_raw", player.robot_id()),
+                        Vector2::new(player.x() as f64, player.y() as f64),
+                        90.0, // robot radius, mm
+                        dies_core::DebugColor::Gray,
+                    );
                     continue;
                 }
 
