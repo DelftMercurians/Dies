@@ -267,7 +267,7 @@ impl PlayerTracker {
             0.0
         };
 
-        let factor = 0.99;
+        let factor = 0.9;
         self.rolling_vision = self.rolling_vision * factor + vision_val * (1.0 - factor);
         let factor = 0.99;
         self.rolling_control = self.rolling_control * factor + control_val * (1.0 - factor);
