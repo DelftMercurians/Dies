@@ -46,7 +46,7 @@ fn ramp_dribble(current: f64, target: f64, tau: f64, dt: f64) -> f64 {
     }
 }
 
-const MISSING_FRAMES_THRESHOLD: usize = 50;
+const MISSING_FRAMES_THRESHOLD: usize = 1;
 const MAX_DRIBBLE_SPEED: f64 = 1000.0;
 /// Terminal active-braking gain added per unit of `aggressiveness` when no
 /// explicit `brake_gain` override is supplied.
